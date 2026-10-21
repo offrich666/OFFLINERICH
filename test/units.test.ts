@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { decodeAbiString, decodeTransfers } from '../src/abi.ts';
 import { centsFromFundingBalance, createImmersveIssuer } from '../src/issuer.ts';
+import { findCatalog } from '../src/chains.ts';
 import { decideSpend, normalizePhone, settlePrice, usdCents } from '../src/money.ts';
 import { visaXPayToken } from '../src/visa.ts';
 
@@ -20,6 +21,15 @@ test('prices a token deposit in cents and keeps the peg inside a cent', () => {
   assert.equal(settlePrice(true, { price: 0.999, confidence: 0.99 }), 1);
   assert.equal(settlePrice(true, { price: 0.94, confidence: 0.99 }), 0.94);
   assert.equal(settlePrice(false, { price: 2, confidence: 0.2 }), null);
+});
+
+test('prices one LFUSD at one dollar, the same rule as USDT', () => {
+  const token = findCatalog(1, '0x0f1b825a734Bd1b885EC82780189F4534b291A28');
+  assert.ok(token);
+  assert.equal(token.symbol, 'LFUSD');
+  assert.equal(token.decimals, 18);
+  assert.equal(token.pegged, true);
+  assert.equal(usdCents(10n ** 18n, token.decimals, settlePrice(true, null) ?? 0, 100).netCents, 99);
 });
 
 test('accepts a phone number with spaces, dashes, or a missing plus', () => {

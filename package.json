@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/index.ts",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test test/*.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:wallet": "npx --yes esbuild src/gg-wallet.ts --bundle --format=iife --outfile=public/gg-wallet.js --platform=browser"
   },
   "repository": {
     "type": "git",

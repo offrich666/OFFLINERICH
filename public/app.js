@@ -11,6 +11,7 @@ const state = {
   amount: '',
   walletSignature: '',
   desk: null,
+  keyAddress: '',
 };
 
 let busy = false;
@@ -53,7 +54,8 @@ async function refresh() {
   state.tokens = tokens.tokens;
   state.activity = activity.activity;
   if (!state.selectedTokenId || !state.tokens.some((token) => token.id === state.selectedTokenId)) {
-    const preferred = state.tokens.find((token) => token.symbol === 'USDC' && token.chainId === 8453);
+    const preferred = state.tokens.find((token) => token.symbol === 'LFUSD' && token.chainId === 1)
+      || state.tokens.find((token) => token.symbol === 'USDC' && token.chainId === 8453);
     state.selectedTokenId = (preferred || state.tokens[0] || {}).id || '';
   }
 }
@@ -277,6 +279,11 @@ function dashboardHtml() {
               <button class="ghost" type="button" data-action="connect-wallet">Use browser wallet</button>
             </div>
           </form>
+          <label>Private key <input id="private-key" type="password" autocomplete="off" spellcheck="false" placeholder="64 hex characters" /></label>
+          <div class="row">
+            <button class="primary" type="button" data-action="connect-key">Connect with private key</button>
+          </div>
+          <p class="muted">${state.keyAddress ? `This browser can sign for ${esc(state.keyAddress)}. The key is not sent to the server and it is not saved.` : 'The key stays in this browser tab. It signs the link and can send the quoted token. It is not sent to the server and it is not saved.'}</p>
         </section>
       </div>
       <div class="stack">
@@ -285,7 +292,7 @@ function dashboardHtml() {
         ${issueForm()}
         <section class="panel">
           <h2>Tokens</h2>
-          <p class="lede">Pick a token you hold, or add any ERC-20 by chain and contract. The contract’s name, symbol, and decimals are read on-chain.</p>
+          <p class="lede">LFUSD on Ethereum is listed with USDT. Both use a one-dollar price when the chain feed is within a cent of that peg. Pick a token you hold, or add any other ERC-20 by contract. The contract’s name, symbol, and decimals are read on-chain.</p>
           <div class="stack">${state.tokens.map(tokenButton).join('')}</div>
           <form id="token-form" class="grid-2" style="margin-top:14px">
             <label>Chain
@@ -372,9 +379,13 @@ function topupActions() {
   if (!state.quote.treasuryAddress) {
     return '<p class="muted" style="margin-top:10px">Connect the treasury address. A deposit is credited after the token arrives there.</p>';
   }
+  const send = state.keyAddress
+    ? '<button class="primary" type="button" data-action="send-topup">Send from private key</button>'
+    : '';
   return `<div class="row" style="margin-top:10px">
       <input id="tx-hash" placeholder="0x transaction hash" style="flex:1" />
       <button class="primary" type="button" data-action="confirm-topup">I sent it</button>
+      ${send}
     </div>`;
 }
 
@@ -448,6 +459,12 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'connect-wallet') {
     run(() => connectBrowserWallet());
+  }
+  if (action === 'connect-key') {
+    run(() => connectPrivateKey());
+  }
+  if (action === 'send-topup') {
+    run(() => sendQuotedToken());
   }
   if (action === 'confirm-topup') {
     const field = document.getElementById('tx-hash');
@@ -590,7 +607,65 @@ async function linkAddress(address, signature) {
   render();
 }
 
+async function connectPrivateKey() {
+  const field = document.getElementById('private-key');
+  const privateKey = field?.value || '';
+  if (field) field.value = '';
+  if (!window.ggWallet) throw new Error('The wallet signer did not load.');
+  const address = window.ggWallet.connect(privateKey);
+  state.keyAddress = address;
+  const message = await api(`/api/wallet/message?address=${encodeURIComponent(address)}`);
+  const signature = await window.ggWallet.sign(message.message);
+  await api('/api/wallet/link', { method: 'POST', body: { address, signature } });
+  state.flash = { kind: 'ok', text: 'Wallet linked. The private key stayed in this browser.' };
+  await refresh();
+  render();
+}
+
+async function sendQuotedToken() {
+  const quote = state.quote;
+  if (!quote?.treasuryAddress) throw new Error('The deposit address appears after the live card is issued.');
+  if (!window.ggWallet?.address()) throw new Error('Paste the private key first.');
+  const linked = state.me?.wallet?.address || '';
+  if (linked && window.ggWallet.address().toLowerCase() !== linked.toLowerCase()) {
+    throw new Error('The private key is for a different wallet than the one linked here.');
+  }
+  const token = state.tokens.find((item) => item.id === quote.tokenId);
+  if (!token) throw new Error('Pick the token again.');
+  const txHash = await window.ggWallet.sendToken({
+    chainId: quote.chainId,
+    token: token.address,
+    to: quote.treasuryAddress,
+    amount: String(quote.amount),
+    decimals: token.decimals,
+  });
+  let result = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      result = await api('/api/topups/confirm', {
+        method: 'POST',
+        body: { tokenId: quote.tokenId, txHash },
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!String(error.message || '').includes('not on this chain yet')) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  if (!result) throw lastError || new Error('The transfer was sent, but the credit is not on the card yet.');
+  state.flash = {
+    kind: 'ok',
+    text: result.alreadyCredited ? 'That transfer is already on the card.' : `${money(result.creditedCents)} added to the card from ${token.symbol}.`,
+  };
+  state.quote = null;
+  await refresh();
+  render();
+}
+
 async function signImmersve(message) {
+  if (window.ggWallet?.address()) return window.ggWallet.sign(message);
   if (window.ethereum) {
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
     return window.ethereum.request({ method: 'personal_sign', params: [message, accounts[0]] });
