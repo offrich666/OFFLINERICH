@@ -189,6 +189,60 @@ async function link(base: string, token: string) {
   assert.equal(linked.status, 200);
 }
 
+test('shows the networks a linked wallet holds and a QR for that address', async () => {
+  const lfusd = '0x0f1b825a734bd1b885ec82780189f4534b291a28';
+  const rpc: RpcClient = {
+    async call(chainId, method, params) {
+      if (method === 'eth_getBalance') return chainId === 1 ? `0x${(10n ** 15n).toString(16)}` : '0x0';
+      if (method === 'eth_call') {
+        const request = params[0] as { to?: string; data?: string };
+        if (request.to?.toLowerCase() === lfusd && request.data?.startsWith('0x70a08231')) {
+          return `0x${(2n * 10n ** 18n).toString(16).padStart(64, '0')}`;
+        }
+        return '0x0';
+      }
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+  const started = await listen({ dbPath: ':memory:', rpc, prices, env: { TREASURY_ADDRESS: treasury } });
+  try {
+    const registered = await call(started.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    const token = String((registered.data as { token: string }).token);
+    await link(started.base, token);
+    const held = await call(started.base, '/api/wallet/holdings', token);
+    assert.equal(held.status, 200);
+    const body = held.data as {
+      holdings: Array<{ symbol: string; balance: string; chainName: string }>;
+      networks: Array<{ chainName: string; balance: string }>;
+      qr: string;
+      qrFor: string;
+      address: string;
+      depositAddress: string;
+    };
+    assert.equal(body.holdings.length, 1);
+    assert.equal(body.holdings[0].symbol, 'LFUSD');
+    assert.equal(body.holdings[0].balance, '2');
+    assert.equal(body.holdings[0].chainName, 'Ethereum');
+    assert.equal(body.networks.some((item) => item.chainName === 'Ethereum' && item.balance === '0.001'), true);
+    assert.equal(body.qrFor, 'deposit');
+    assert.match(body.qr, /<svg/i);
+    assert.equal(body.depositAddress, treasury);
+    const tokenId = `catalog_1_${lfusd.slice(2)}`;
+    const code = await call(started.base, `/api/wallet/qr?tokenId=${tokenId}&amount=2`, token);
+    assert.equal(code.status, 200);
+    const qr = code.data as { qrFor: string; text: string; qr: string };
+    assert.equal(qr.qrFor, 'transfer');
+    assert.match(qr.text, new RegExp(`ethereum:${lfusd}@1/transfer\\?address=${treasury}&uint256=2000000000000000000`));
+    assert.match(qr.qr, /<svg/i);
+    assert.equal(JSON.stringify(code.data).includes('private'), false);
+  } finally {
+    await started.close();
+  }
+});
+
 test('issues a live Immersve card and credits an on-chain deposit', async () => {
   const receipt = { current: null as unknown };
   const immersve = immersveFetch();

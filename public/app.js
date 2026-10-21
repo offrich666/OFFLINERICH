@@ -12,6 +12,8 @@ const state = {
   walletSignature: '',
   desk: null,
   keyAddress: '',
+  holdings: null,
+  payQr: null,
 };
 
 let busy = false;
@@ -51,6 +53,7 @@ async function refresh() {
   ]);
   state.me = me;
   state.desk = me.user.role === 'admin' ? await api('/api/admin/desk') : null;
+  state.holdings = me.wallet ? await api('/api/wallet/holdings').catch(() => null) : null;
   state.tokens = tokens.tokens;
   state.activity = activity.activity;
   if (!state.selectedTokenId || !state.tokens.some((token) => token.id === state.selectedTokenId)) {
@@ -266,6 +269,7 @@ function dashboardHtml() {
     </header>
     <main class="wrap stack" style="padding-bottom:72px">
       ${deskHtml()}
+      ${depositHtml()}
       <div class="layout">
       <div class="stack">
         ${cardHtml()}
@@ -306,7 +310,7 @@ function dashboardHtml() {
         </section>
         <section class="panel">
           <h2>Top up</h2>
-          <p class="lede">The deposit is valued in USD, a ${esc(String((state.config.feeBps || 0) / 100))}% fee is kept, and the rest becomes spendable.</p>
+          <p class="lede">Deposit uses the price of the token on the network this wallet holds. A ${esc(String((state.config.feeBps || 0) / 100))}% fee is kept.</p>
           <form id="quote-form" class="row">
             <label style="flex:1">Amount <input name="amount" inputmode="decimal" placeholder="25" value="${esc(state.amount)}" required /></label>
             <button class="primary" type="submit">Quote</button>
@@ -357,6 +361,53 @@ function dashboardHtml() {
       </div>
       </div>
     </main>`;
+}
+
+function depositHtml() {
+  const wallet = state.me?.wallet;
+  if (!wallet) {
+    return `<section class="panel" id="deposit-panel">
+      <h2>Deposit</h2>
+      <p class="lede">Connect the wallet with a private key. The networks that account holds will show here, with a QR code and an address.</p>
+    </section>`;
+  }
+  const info = state.holdings;
+  const holdings = info?.holdings || [];
+  const networks = info?.networks || [];
+  const rows = holdings.length
+    ? `<div class="stack">${holdings
+        .map(
+          (holding) => `<button type="button" class="token ${holding.tokenId === state.selectedTokenId ? 'on' : ''}" data-action="deposit-holding" data-id="${esc(holding.tokenId)}">
+            <span><b>${esc(holding.symbol)}</b><span>${esc(holding.chainName)} · ${esc(holding.balance)} held</span></span>
+            <span>Deposit</span>
+          </button>`,
+        )
+        .join('')}</div>`
+    : '<p class="muted">This account has no catalog token on Ethereum, Base, Polygon, Arbitrum, Optimism, or BNB Chain yet. Send some to the address below, or add a contract.</p>';
+  const gas = networks.length
+    ? `<p class="muted">This account has gas on ${esc(networks.map((item) => `${item.chainName} (${item.balance} ${item.symbol})`).join(', '))}.</p>`
+    : '';
+  const shown = info?.depositAddress || wallet.address;
+  const qr = state.payQr?.qr || info?.qr || '';
+  const caption = state.payQr?.qrFor === 'transfer'
+    ? `Scan to send ${state.payQr.symbol} on ${state.payQr.chainName} to the card.`
+    : info?.qrFor === 'deposit'
+      ? 'Scan the code or copy the address. Send the token on the network this account holds.'
+      : 'Scan the code or copy the address to send tokens into this wallet. The card deposit address appears after the live card is issued.';
+  return `<section class="panel" id="deposit-panel">
+    <h2>Deposit</h2>
+    <p class="lede">Pick a network this wallet holds, then scan the code or copy the address.</p>
+    ${rows}
+    ${gas}
+    <div class="qr-row">
+      <div class="qr">${qr}</div>
+      <div class="stack">
+        <p class="address-line" id="deposit-address">${esc(shown)}</p>
+        <div class="row"><button class="ghost" type="button" data-action="copy-address" data-value="${esc(shown)}">Copy address</button></div>
+        <p class="muted">${esc(caption)}</p>
+      </div>
+    </div>
+  </section>`;
 }
 
 function quoteHtml() {
@@ -462,6 +513,17 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'connect-key') {
     run(() => connectPrivateKey());
+  }
+  if (action === 'deposit-holding') {
+    run(() => depositHolding(button.dataset.id || ''));
+  }
+  if (action === 'copy-address') {
+    const value = button.dataset.value || '';
+    run(async () => {
+      await navigator.clipboard.writeText(value);
+      state.flash = { kind: 'ok', text: 'Address copied.' };
+      render();
+    });
   }
   if (action === 'send-topup') {
     run(() => sendQuotedToken());
@@ -604,6 +666,23 @@ async function linkAddress(address, signature) {
   await api('/api/wallet/link', { method: 'POST', body: { address, signature } });
   state.flash = { kind: 'ok', text: 'Wallet linked.' };
   await refresh();
+  render();
+}
+
+async function depositHolding(tokenId) {
+  const holding = (state.holdings?.holdings || []).find((item) => item.tokenId === tokenId);
+  if (!holding) throw new Error('That balance is no longer on the list.');
+  state.selectedTokenId = tokenId;
+  state.amount = holding.balance;
+  state.quote = await api('/api/topups/quote', {
+    method: 'POST',
+    body: { tokenId, amount: holding.balance },
+  });
+  state.payQr = await api(`/api/wallet/qr?tokenId=${encodeURIComponent(tokenId)}&amount=${encodeURIComponent(holding.balance)}`);
+  state.flash = {
+    kind: 'ok',
+    text: `${holding.balance} ${holding.symbol} on ${holding.chainName}. Scan the code or send it from the private key.`,
+  };
   render();
 }
 
