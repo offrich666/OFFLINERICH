@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Reserve Mint Address
+Comment=Reserve a BNB mint contract address with a chosen prefix and suffix
+Exec=/workspace/scripts/open-reserve-app.sh
+Icon=applications-internet
+Terminal=false
+Categories=Utility;
+StartupNotify=true

@@ -1,0 +1,19 @@
+[package]
+name = "vanity-mint"
+version = "0.1.0"
+edition = "2021"
+description = "Reserve a BNB mint contract address with a chosen 4-character prefix and suffix"
+
+[dependencies]
+base64ct = "=1.6.0"
+hex = "0.4"
+k256 = { version = "=0.13.4", features = ["ecdsa"] }
+rand = "=0.8.5"
+zeroize = "=1.8.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tiny-keccak = { version = "2.0", features = ["keccak"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
