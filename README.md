@@ -4,7 +4,7 @@ A USD debit card you fund with ERC-20 tokens, including a contract you paste in 
 
 The spend rail is live [Immersve](https://docs.immersve.com/guides/web3-wallet-card-issuing-integration/). Immersve issues the Mastercard. This server prices the token you send to their deposit contract. It does not hold a wallet private key, and it does not store the full card number. The one-time card link comes from `POST /api/cards/{id}/pan-token`.
 
-A card you can spend at a merchant needs a live Immersve partner account: API key (`imm-key-…`), API secret (`imm-secret-…`), partner account id, client application id, card program id, and funding channel id. Paste those after you sign in, or set `IMMERSVE_*` before start. The server checks the key with `GET /api/partner-profiles/{accountId}` on `https://api.immersve.com` before it saves it. Keys that contain `-test-` are refused, because the Immersve test environment cannot be added to Apple Pay or used at a merchant. Saved keys live in the gitignored SQLite file. The environment wins when both are set.
+A card you can spend at a merchant needs a live Immersve partner account. Apply at https://immersve.com/partner/ or contact https://immersve.com/contact/, then ask for live credentials (not test). Register this app’s origin on the Immersve client application. Use Immersve Universal EVM funding: deploy a Funds Storage, register a Funding Channel, paste live keys plus the Funds Storage address. Paste the live values in the console or set `IMMERSVE_*`: API key (`imm-key-…`), API secret (`imm-secret-…`), partner account id, client application id, card program id, and funding channel id. Paste those after you sign in, or set `IMMERSVE_*` before start. The server checks the key with `GET /api/partner-profiles/{accountId}` on `https://api.immersve.com` before it saves it. Keys that contain `-test-` are refused, because the Immersve test environment cannot be added to Apple Pay or used at a merchant. Saved keys live in the gitignored SQLite file. The environment wins when both are set.
 
 You still request those live values from Immersve. No card network hands out a live program without that account. After the card exists, link the funding wallet, sign the Immersve login, finish their identity check, and send the token to the deposit contract they return. Apple Pay is added in the iPhone app through PassKit and `POST /api/wallets/apple`. Google Pay and Samsung Pay use the one-time secure card link.
 
@@ -15,7 +15,7 @@ npm install
 npm start
 ```
 
-Open GG Card from the computer that runs it. The sign-in page lists every address, and the process listens on all network interfaces so another computer on the same network can use the LAN address. Open http://127.0.0.1:8787, or the `http://192.168…:8787` line printed in the terminal. The admin desk signs in with the username `offlinerich`. Customers create an account with email. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
+Open GG Card from the computer that runs it. The sign-in page lists every address, and the process listens on all network interfaces so another computer on the same network can use the LAN address. Open http://127.0.0.1:8787, or the `http://192.168…:8787` line printed in the terminal. Only the admin signs in: username `offlinerich`. There is no public sign-up. The admin adds clients by email from the console, opens a client to link their wallet and issue the card, and sees every client with their balance. The console acts for a client with the `x-client-id` header, which the server honors only for the admin session. Set `SELF_SIGNUP=1` to bring back customer sign-up and login, for example in tests. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
 
 ```bash
 npm test
@@ -67,4 +67,4 @@ Set `VISA_API_KEY`, `VISA_SHARED_SECRET`, and, when the Visa sandbox requires it
 | USD value | DefiLlama `GET https://coins.llama.fi/prices/current/{chain}:{address}` |
 | Deposit check | `eth_getTransactionReceipt` and the ERC-20 `Transfer` log |
 
-Routes on this server live under `/api`. The browser uses an httpOnly session cookie. Native apps use `Authorization: Bearer` with the token returned by `/api/register` and `/api/login`.
+Routes on this server live under `/api`. The browser uses an httpOnly session cookie. Native apps use `Authorization: Bearer` with the token returned by `/api/login`. `/api/register` answers 403 unless `SELF_SIGNUP=1`. `POST /api/admin/clients` with `{ "email": "…" }` adds a client.

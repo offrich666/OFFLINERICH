@@ -20,7 +20,7 @@ function encodeAbiString(value: string): string {
 }
 
 function listen(options: CreateAppOptions) {
-  const app = createApp(options);
+  const app = createApp({ ...options, env: { SELF_SIGNUP: '1', ...(options.env ?? {}) } });
   return new Promise<{ base: string; close: () => Promise<void> }>((resolve) => {
     const server: Server = app.listen(0, '127.0.0.1', () => {
       const address = server.address() as AddressInfo;
@@ -188,6 +188,50 @@ async function link(base: string, token: string) {
   const linked = await call(base, '/api/wallet/link', token, { address: account.address, signature });
   assert.equal(linked.status, 200);
 }
+
+test('only the admin signs in and issues client cards from the desk', async () => {
+  const started = await listen({ dbPath: ':memory:', prices, env: { SELF_SIGNUP: '' } });
+  try {
+    const closed = await call(started.base, '/api/register', undefined, { email: 'ada@example.com', password: 'correct-horse' });
+    assert.equal(closed.status, 403);
+    assert.equal((closed.data as { error: { code: string } }).error.code, 'signup_closed');
+
+    const signedIn = await call(started.base, '/api/login', undefined, { username: ADMIN_USERNAME, password: ADMIN_PASSWORD });
+    assert.equal(signedIn.status, 200);
+    const admin = String((signedIn.data as { token: string }).token);
+
+    const created = await call(started.base, '/api/admin/clients', admin, { email: 'grace@example.com' });
+    assert.equal(created.status, 201);
+    const clientId = (created.data as { client: { id: string } }).client.id;
+    const duplicate = await call(started.base, '/api/admin/clients', admin, { email: 'grace@example.com' });
+    assert.equal(duplicate.status, 409);
+
+    const clientLogin = await call(started.base, '/api/login', undefined, { email: 'grace@example.com', password: 'correct-horse' });
+    assert.equal(clientLogin.status, 401);
+
+    const desk = await call(started.base, '/api/admin/desk', admin);
+    const accounts = (desk.data as { accounts: Array<{ id: string; email: string; role: string }> }).accounts;
+    assert.equal(accounts.find((account) => account.id === clientId)?.role, 'customer');
+
+    const own = await call(started.base, '/api/me', admin);
+    assert.equal((own.data as { user: { role: string } }).user.role, 'admin');
+    const asClient = await call(started.base, '/api/me', admin, undefined, { 'x-client-id': clientId });
+    assert.equal((asClient.data as { user: { email: string } }).user.email, 'grace@example.com');
+
+    const message = await call(started.base, `/api/wallet/message?address=${account.address}`, admin, undefined, { 'x-client-id': clientId });
+    assert.equal(message.status, 200);
+    const signature = await account.signMessage({ message: String((message.data as { message: string }).message) });
+    const linked = await call(started.base, '/api/wallet/link', admin, { address: account.address, signature }, { 'x-client-id': clientId });
+    assert.equal(linked.status, 200);
+    const clientMe = await call(started.base, '/api/me', admin, undefined, { 'x-client-id': clientId });
+    assert.equal((clientMe.data as { wallet: { address: string } }).wallet.address, account.address.toLowerCase());
+
+    const missing = await call(started.base, '/api/me', admin, undefined, { 'x-client-id': 'usr_missing' });
+    assert.equal(missing.status, 404);
+  } finally {
+    await started.close();
+  }
+});
 
 test('shows the networks a linked wallet holds and a QR for that address', async () => {
   const lfusd = '0x0f1b825a734bd1b885ec82780189f4534b291a28';

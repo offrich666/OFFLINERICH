@@ -4,7 +4,10 @@ const state = {
   tokens: [],
   activity: [],
   flash: null,
-  authMode: 'register',
+  admin: null,
+  clientId: '',
+  newClient: false,
+  search: '',
   selectedTokenId: '',
   walletNote: '',
   quote: null,
@@ -14,6 +17,8 @@ const state = {
   keyAddress: '',
   holdings: null,
   payQr: null,
+  secureUrl: '',
+  kycUrl: '',
 };
 
 let busy = false;
@@ -34,10 +39,12 @@ function money(cents) {
 }
 
 async function api(path, options = {}) {
+  const headers = { 'content-type': 'application/json' };
+  if (state.clientId && !options.noClient) headers['x-client-id'] = state.clientId;
   const response = await fetch(path, {
     method: options.method || 'GET',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
@@ -52,7 +59,6 @@ async function refresh() {
     api('/api/activity'),
   ]);
   state.me = me;
-  state.desk = me.user.role === 'admin' ? await api('/api/admin/desk') : null;
   state.holdings = me.wallet ? await api('/api/wallet/holdings').catch(() => null) : null;
   state.tokens = tokens.tokens;
   state.activity = activity.activity;
@@ -90,42 +96,29 @@ function linksHtml() {
     </section>`;
 }
 
-function authHtml() {
-  const admin = state.authMode === 'admin';
-  const login = state.authMode === 'login' || admin;
-  return `<header class="top wrap">
-      <div class="mark">GG<span>CARD</span></div>
-      <p>Private card desk</p>
-    </header>
-    <main class="wrap stack auth">
-      ${flashHtml()}
-      <section class="panel">
-        <p class="kicker">GG Card</p>
-        <h1>A bank card funded by the tokens you hold.</h1>
-        <p class="lede">GG Card is the name on the plastic. Visa and Mastercard faces are both drawn here. Spending still needs a live Immersve program, which issues the Mastercard. Sign in, link a wallet, and send a token to the deposit contract.</p>
-        ${showcaseCards(null)}
+function loginHtml() {
+  return `<div class="login">
+      <section class="login-hero" aria-hidden="true">
+        <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
+        <div class="mark light">GG<span>CARD</span></div>
+        <div class="hero-cards">
+          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Visa' })}
+          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
+        </div>
+        <p class="hero-line">Cards for your clients, funded by the tokens they hold.</p>
       </section>
-      <section class="panel">
-        <h2>${admin ? 'Admin desk' : 'Customer sign in'}</h2>
-        <form id="auth-form" class="stack">
-          ${admin
-            ? '<label>Username <input name="username" autocomplete="username" placeholder="offlinerich" required /></label>'
-            : '<label>Email <input name="email" type="email" autocomplete="email" required /></label>'}
-          <label>Password <input name="password" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" minlength="8" required /></label>
-          <div class="row">
-            <button class="primary" type="submit">${admin ? 'Open the desk' : login ? 'Sign in' : 'Create account'}</button>
-            <button class="ghost" type="button" data-action="toggle-auth">${login && !admin ? 'Need an account?' : 'Have an account?'}</button>
-            <button class="ghost" type="button" data-action="show-admin">${admin ? 'Customer entrance' : 'Admin desk'}</button>
-          </div>
+      <section class="login-pane">
+        <form id="auth-form" class="login-card stack">
+          <p class="kicker">Admin desk</p>
+          <h1>Sign in</h1>
+          <p class="lede">Only the GG Card admin signs in. Clients are served from the desk.</p>
+          ${flashHtml()}
+          <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary wide" type="submit">Open the desk</button>
         </form>
       </section>
-      ${linksHtml()}
-      <section class="panel">
-        <h2>What has to be connected</h2>
-        <p class="lede">The live card is an Immersve Mastercard. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same GG Card.</p>
-        ${readinessHtml()}
-      </section>
-    </main>`;
+    </div>`;
 }
 
 function tokenButton(token) {
@@ -188,35 +181,90 @@ function cardHtml() {
   return showcaseCards(state.me);
 }
 
-function deskHtml() {
-  if (state.me?.user?.role !== 'admin' || !state.desk) return '';
-  const rows = state.desk.accounts
-    .map((account) => {
-      const who = account.username ? `${account.username}` : account.email;
-      const card = account.card ? `${account.card.brand} ·••• ${account.card.last4}` : 'No card';
-      return `<tr>
-        <td><strong>${esc(who)}</strong><div class="muted">${esc(account.email)}</div></td>
-        <td><span class="role">${esc(account.role)}</span></td>
-        <td>${esc(card)}</td>
-        <td>${esc(money(account.availableCents))}</td>
-      </tr>`;
-    })
-    .join('');
-  return `<section class="panel">
-      <h2>Card desk</h2>
-      <p class="lede">${esc(money(state.desk.totals.availableCents))} recorded across customer balances.</p>
-      <table class="desk">
-        <thead><tr><th>Account</th><th>Role</th><th>GG Card</th><th>Balance</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </section>`;
+function clientRows() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const term = state.search.trim().toLowerCase();
+  return accounts.filter((account) => !term || account.email.toLowerCase().includes(term));
+}
+
+function clientRowHtml(account) {
+  const card = account.card
+    ? `<span class="pill ${account.card.status === 'active' ? 'good' : ''}">${esc(account.card.brand)} ·••• ${esc(account.card.last4)}</span>`
+    : '<span class="pill">No card</span>';
+  return `<button type="button" class="client-row" data-action="open-client" data-id="${esc(account.id)}">
+      <span class="avatar">${esc(account.email.slice(0, 1).toUpperCase())}</span>
+      <span class="client-main"><b>${esc(account.email)}</b><span class="muted">${card.includes('No card') ? 'Ready for a card' : 'Card on file'}</span></span>
+      ${card}
+      <span class="client-balance">${esc(money(account.availableCents))}</span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>`;
+}
+
+function consoleHtml() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const issued = accounts.filter((account) => account.card).length;
+  const live = Boolean(state.config?.livemode);
+  const rows = clientRows();
+  const links = state.config?.links || [];
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="mark light">GG<span>CARD</span></div>
+        <div class="row">
+          <span class="who">${esc(state.admin.user.username || 'admin')} · admin</span>
+          <button class="ghost light" type="button" data-action="logout">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <main class="wrap stack console reveal-group">
+      ${flashHtml()}
+      <section class="stats">
+        <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
+        <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
+        <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${live ? 'Live' : 'Not connected'}</strong></article>
+      </section>
+      <div class="console-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div><h2>Clients</h2><p class="lede">Open a client to link a wallet, issue a card, and take deposits.</p></div>
+            <button class="primary" type="button" data-action="toggle-new-client">${state.newClient ? 'Close' : 'New client'}</button>
+          </div>
+          ${state.newClient
+            ? `<form id="client-form" class="inline-form">
+                <label>Client email <input name="email" type="email" autocomplete="off" placeholder="client@example.com" required /></label>
+                <button class="primary" type="submit">Add client</button>
+              </form>`
+            : ''}
+          <input id="client-search" class="search" placeholder="Search clients" value="${esc(state.search)}" />
+          <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
+        </section>
+        <div class="stack">
+          ${live
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
+            : setupHtml()}
+          ${links.length
+            ? `<section class="panel"><h2>Open on another computer</h2><p class="lede">Use the address that starts with 192, 10, or 172 on the same network.</p><ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul></section>`
+            : ''}
+          <section class="panel"><h2>Connections</h2>${readinessHtml()}</section>
+        </div>
+      </div>
+    </main>`;
 }
 
 function setupHtml() {
-  if (state.me?.user?.role !== 'admin' || state.config?.livemode) return '';
-  return `<section class="panel">
-    <h2>Connect the live card</h2>
-    <p class="lede">Immersve issues the Mastercard. Paste the live API key and secret from your Immersve partner account, plus the partner account, client application, card program, and funding channel. Test keys are refused.</p>
+  if (state.config?.livemode) return '';
+  const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
+  return `<section class="panel partner">
+    <h2>Get a real Mastercard</h2>
+    <p class="lede">GG Card uses Immersve’s <b>Universal EVM</b> funding protocol. Cards are funded by a plain ERC-20 transfer to your partner Funds Storage contract. Immersve must give you the live keys and channel first — nothing inventable here.</p>
+    <ol class="steps">
+      <li>Apply at <a href="https://immersve.com/partner/" target="_blank" rel="noopener">immersve.com/partner</a> or <a href="https://immersve.com/contact/" target="_blank" rel="noopener">immersve.com/contact</a>. Ask for live (not test) credentials and Universal EVM.</li>
+      <li>Deploy a Funds Storage per token with <code>createFundsStorage</code> on Immersve’s master contract (<a href="https://docs.immersve.com/guides/universal-evm-funding-protocol/" target="_blank" rel="noopener">docs</a>, <a href="https://github.com/immersve/funding-contract-universal-evm" target="_blank" rel="noopener">contract</a>), then register it as a Funding Channel with Immersve.</li>
+      <li>Allow this origin on the client application: <code>${esc(origin)}</code></li>
+      <li>Paste everything Immersve sends below. The server checks the live key against Immersve before it saves. Test keys are refused.</li>
+      <li>Open a client → link wallet (that address becomes the Funding Source) → issue card → KYC → send the funded token to Funds Storage → show number → Apple Wallet.</li>
+    </ol>
+    <p class="muted">Live funding types Immersve lists today include <code>base-mainnet-usdc-universal-evm</code>, <code>polygon-usdc-universal-evm-live</code>, <code>arbitrum-mainnet-usdc-universal-evm</code>, <code>bsc-usdt-universal-evm</code>. Custom tokens such as LFUSD need Immersve to add a funding type.</p>
     <form id="setup-form" class="stack">
       <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
       <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
@@ -224,18 +272,37 @@ function setupHtml() {
       <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
       <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
       <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" placeholder="https://your.domain" required /></label>
-      <label>Network <input name="network" autocomplete="off" spellcheck="false" value="ethereum-mainnet" required /></label>
-      <button class="primary" type="submit">Connect Immersve</button>
+      <label>Funds Storage address (Universal EVM) <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x… from FundsStorageCreated" /></label>
+      <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
+      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
+      <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" required /></label>
+      <button class="primary" type="submit">Connect live Immersve</button>
     </form>
   </section>`;
 }
 
 function issueForm() {
-  if (state.me.card || !state.config?.livemode) return '';
+  if (state.me.card) return '';
+  if (!state.config?.livemode) {
+    return `<section class="panel">
+      <h2>Issue the card</h2>
+      <p class="lede gate">A real Mastercard is created only after Immersve is connected on the desk with your live partner keys. Go back, finish “Get a real Mastercard”, then return here.</p>
+      <button class="primary" type="button" data-action="back-to-desk">Connect Immersve on the desk</button>
+    </section>`;
+  }
+  if (state.kycUrl) {
+    return `<section class="panel">
+      <h2>Finish identity check</h2>
+      <p class="lede">Immersve needs the cardholder to pass KYC before it creates the Mastercard. Open their check, then press Issue again.</p>
+      <div class="row">
+        <a class="primary btn" href="${esc(state.kycUrl)}" target="_blank" rel="noopener noreferrer">Open Immersve KYC</a>
+        <button class="ghost" type="button" data-action="clear-kyc">I finished KYC</button>
+      </div>
+    </section>`;
+  }
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">Immersve creates this Mastercard. Link your wallet first. The page asks that wallet to sign in, then opens identity checks when Immersve asks for them.</p>
+    <p class="lede">Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -252,23 +319,28 @@ function issueForm() {
       <label>Card type
         <select name="type"><option value="virtual">Virtual</option><option value="physical">Physical</option></select>
       </label>
-      <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>I accept the cardholder terms and I am the person named on this card.</span></label>
-      <div class="full"><button class="primary" type="submit">Issue card</button></div>
+      <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>The client accepts the cardholder terms and is the person named on this card.</span></label>
+      <div class="full"><button class="primary" type="submit">Issue real card</button></div>
     </form>
   </section>`;
 }
 
 function dashboardHtml() {
   const wallet = state.me.wallet;
-  return `<header class="top wrap">
-      <div class="mark">GG<span>CARD</span></div>
-      <div class="row">
-        <p class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</p>
-        <button class="ghost" type="button" data-action="logout">Sign out</button>
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="row">
+          <button class="ghost light" type="button" data-action="back-to-desk">‹ Desk</button>
+          <div class="mark light">GG<span>CARD</span></div>
+        </div>
+        <div class="row">
+          <span class="who">${esc(state.me.user.email)}</span>
+          <span class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</span>
+        </div>
       </div>
     </header>
-    <main class="wrap stack" style="padding-bottom:72px">
-      ${deskHtml()}
+    <main class="wrap stack reveal-group" style="padding-bottom:72px">
+      ${flashHtml()}
       ${depositHtml()}
       <div class="layout">
       <div class="stack">
@@ -291,8 +363,6 @@ function dashboardHtml() {
         </section>
       </div>
       <div class="stack">
-        ${flashHtml()}
-        ${setupHtml()}
         ${issueForm()}
         <section class="panel">
           <h2>Tokens</h2>
@@ -319,13 +389,17 @@ function dashboardHtml() {
           ${topupActions()}
         </section>
         <section class="panel">
-          <h2>Wallets</h2>
-          <p class="lede">Apple Pay is added from the iPhone app. Google Pay and Samsung Pay use the one-time secure card link.</p>
+          <h2>Card number and wallets</h2>
+          ${walletsGate()}
           <div id="secure-card" class="secure"></div>
           <div class="row" style="margin-top:12px">
-            <button class="primary" type="button" data-action="wallet" data-wallet="apple">Add to Apple Pay</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="google">Add to Google Pay</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="samsung">Add to Samsung Pay</button>
+            <button class="primary" type="button" data-action="show-card-number" ${state.me.card ? '' : 'disabled'}>Show card number</button>
+            ${state.secureUrl ? '<button class="ghost" type="button" data-action="hide-card-number">Hide</button>' : ''}
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" type="button" data-action="wallet" data-wallet="apple" ${state.me.card ? '' : 'disabled'}>Add to Apple Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="google" ${state.me.card ? '' : 'disabled'}>Add to Google Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="samsung" ${state.me.card ? '' : 'disabled'}>Add to Samsung Wallet</button>
           </div>
           <div id="apple-wallet" style="margin-top:10px"></div>
           <div id="google-wallet" style="margin-top:10px"></div>
@@ -363,12 +437,20 @@ function dashboardHtml() {
     </main>`;
 }
 
+function walletsGate() {
+  if (state.me.card) return '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
+  const why = state.config?.livemode
+    ? 'Issue this client’s card first. The number appears here right after.'
+    : 'No card exists yet, so there is no number to show. Card numbers only come from a live card program. Connect the live Immersve key on the desk, then issue this client’s card.';
+  return `<p class="lede gate">${esc(why)}</p>`;
+}
+
 function depositHtml() {
   const wallet = state.me?.wallet;
   if (!wallet) {
     return `<section class="panel" id="deposit-panel">
       <h2>Deposit</h2>
-      <p class="lede">Connect the wallet with a private key. The networks that account holds will show here, with a QR code and an address.</p>
+      <p class="lede">Connect the wallet with a private key. After Immersve creates the Funding Source for that address, send the funded ERC-20 to the Universal EVM Funds Storage shown here.</p>
     </section>`;
   }
   const info = state.holdings;
@@ -396,7 +478,7 @@ function depositHtml() {
       : 'Scan the code or copy the address to send tokens into this wallet. The card deposit address appears after the live card is issued.';
   return `<section class="panel" id="deposit-panel">
     <h2>Deposit</h2>
-    <p class="lede">Pick a network this wallet holds, then scan the code or copy the address.</p>
+    <p class="lede">Universal EVM: send the funded ERC-20 from the linked wallet to this Funds Storage address. Immersve credits that Funding Source after the transfer confirms.</p>
     ${rows}
     ${gas}
     <div class="qr-row">
@@ -442,10 +524,67 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  root.innerHTML = state.me ? dashboardHtml() : authHtml();
+  root.innerHTML = !state.admin ? loginHtml() : state.clientId && state.me ? dashboardHtml() : consoleHtml();
   mountGeneration += 1;
   mountLiveCard();
+  enhance();
 }
+
+function enhance() {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('[data-count]').forEach((node) => {
+    const target = Number(node.dataset.count || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => String(Math.round(value)));
+  });
+  document.querySelectorAll('[data-money]').forEach((node) => {
+    const target = Number(node.dataset.money || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => money(Math.round(value)));
+  });
+  document.querySelectorAll('.reveal-group > *, .layout > .stack > *').forEach((node, index) => {
+    node.style.setProperty('--i', String(index));
+  });
+}
+
+function countUp(node, target, format) {
+  const started = performance.now();
+  const duration = 900;
+  const tick = (now) => {
+    const t = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    node.textContent = format(target * eased);
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+document.body.addEventListener('pointermove', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  const box = card.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width - 0.5;
+  const y = (event.clientY - box.top) / box.height - 0.5;
+  card.style.setProperty('--rx', `${(-y * 10).toFixed(2)}deg`);
+  card.style.setProperty('--ry', `${(x * 12).toFixed(2)}deg`);
+  card.style.setProperty('--gx', `${((x + 0.5) * 100).toFixed(0)}%`);
+});
+
+document.body.addEventListener('pointerout', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  card.style.removeProperty('--rx');
+  card.style.removeProperty('--ry');
+});
+
+document.body.addEventListener('input', (event) => {
+  if (event.target.id !== 'client-search') return;
+  state.search = event.target.value;
+  const list = document.querySelector('.client-list');
+  if (!list) return;
+  const rows = clientRows();
+  list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
+});
 
 async function run(fn) {
   if (busy) return;
@@ -460,28 +599,55 @@ async function run(fn) {
   }
 }
 
-async function mountLiveCard() {
+function mountLiveCard() {
   const host = document.getElementById('secure-card');
   if (!host || !state.me?.card) return;
-  host.innerHTML = '<p class="muted">The full card number stays at Immersve. Use “Show card number” when you add it to Google Pay or Samsung Pay.</p>';
+  if (!state.secureUrl) {
+    host.innerHTML = '<p class="muted">Press “Show card number” to see the full number, expiry, and security code on this page. Immersve serves them over a one-time secure link, and this server never stores them.</p>';
+    return;
+  }
+  host.innerHTML = `<iframe class="secure-frame" title="Card number" src="${esc(state.secureUrl)}" referrerpolicy="no-referrer"></iframe>
+    <a class="muted" href="${esc(state.secureUrl)}" target="_blank" rel="noopener noreferrer">Open the card number in its own tab</a>`;
 }
 
 document.body.addEventListener('click', (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
-  if (action === 'toggle-auth') {
-    state.authMode = state.authMode === 'register' ? 'login' : 'register';
+  if (action === 'clear-kyc') {
+    state.kycUrl = '';
     render();
   }
-  if (action === 'show-admin') {
-    state.authMode = state.authMode === 'admin' ? 'login' : 'admin';
+  if (action === 'toggle-new-client') {
+    state.newClient = !state.newClient;
     render();
+  }
+  if (action === 'open-client') {
+    run(async () => {
+      resetClientView();
+      state.clientId = button.dataset.id || '';
+      state.flash = null;
+      await refresh();
+      render();
+      window.scrollTo({ top: 0 });
+    });
+  }
+  if (action === 'back-to-desk') {
+    run(async () => {
+      resetClientView();
+      state.clientId = '';
+      state.flash = null;
+      await loadDesk();
+      render();
+    });
   }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
+      resetClientView();
       state.me = null;
+      state.admin = null;
+      state.clientId = '';
       state.desk = null;
       state.flash = null;
       render();
@@ -492,20 +658,39 @@ document.body.addEventListener('click', (event) => {
     state.quote = null;
     render();
   }
+  if (action === 'show-card-number') {
+    run(async () => {
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.flash = null;
+      render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+  if (action === 'hide-card-number') {
+    state.secureUrl = '';
+  state.kycUrl = '';
+    render();
+  }
   if (action === 'wallet') {
     run(async () => {
       const wallet = button.dataset.wallet;
       if (wallet === 'google' || wallet === 'samsung') {
         const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-        state.walletNote = `Open this one-time link to read the card number, then add it in ${wallet === 'google' ? 'Google Pay' : 'Samsung Pay'}:\n${secure.callbackUrl}`;
+        state.secureUrl = secure.callbackUrl;
+        const name = wallet === 'google' ? 'Google Wallet' : 'Samsung Wallet';
+        state.walletNote = `${name}: read the number above, then in ${name} choose Add card, Credit or debit card, and type the number, expiry, and security code. Confirm with the code the wallet sends to the cardholder phone or email.`;
         state.flash = null;
         render();
+        document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      const result = await api('/api/wallets/apple', { method: 'POST', body: {} });
-      state.walletNote = walletCopy('apple', result);
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.walletNote = 'Apple Wallet: read the number above. On the iPhone open Wallet, tap +, choose Debit or Credit Card, then Enter Card Details Manually. Type the number, expiry, and security code, then confirm with the code Apple sends to the cardholder phone or email.';
       state.flash = null;
       render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
   if (action === 'connect-wallet') {
@@ -561,10 +746,20 @@ document.body.addEventListener('submit', (event) => {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
-      const path = state.authMode === 'register' ? '/api/register' : '/api/login';
-      await api(path, { method: 'POST', body: data });
+      await api('/api/login', { method: 'POST', body: data, noClient: true });
+      state.admin = await api('/api/me', { noClient: true });
       state.flash = null;
-      await refresh();
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'client-form') {
+    run(async () => {
+      const result = await api('/api/admin/clients', { method: 'POST', body: { email: data.email }, noClient: true });
+      state.newClient = false;
+      state.search = '';
+      state.flash = { kind: 'ok', text: `${result.client.email} is on the desk. Open the client to link a wallet and issue the card.` };
+      await loadDesk();
       render();
     });
   }
@@ -597,16 +792,18 @@ document.body.addEventListener('submit', (event) => {
         });
         state.walletSignature = '';
         if (issued.status === 'kyc_required') {
-          state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
-          state.walletNote = issued.kycUrl;
+          state.kycUrl = issued.kycUrl;
+          state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
         } else {
-          state.flash = { kind: 'ok', text: 'Card issued.' };
+          state.kycUrl = '';
+          state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
         }
       } else if (result.status === 'kyc_required') {
-        state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
-        state.walletNote = result.kycUrl;
+        state.kycUrl = result.kycUrl;
+        state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
       } else {
-        state.flash = { kind: 'ok', text: 'Card issued.' };
+        state.kycUrl = '';
+        state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
       }
       await refresh();
       render();
@@ -640,10 +837,9 @@ document.body.addEventListener('submit', (event) => {
   }
   if (form.id === 'setup-form') {
     run(async () => {
-      await api('/api/setup', { method: 'POST', body: data });
-      state.config = await api('/api/config');
-      state.flash = { kind: 'ok', text: 'Live Immersve is connected. Link your wallet, then issue the card.' };
-      await refresh();
+      await api('/api/setup', { method: 'POST', body: data, noClient: true });
+      state.flash = { kind: 'ok', text: 'Live Immersve is connected (Universal EVM). Open a client, link the wallet, issue the card, then deposit to Funds Storage.' };
+      await loadDesk();
       render();
     });
   }
@@ -766,12 +962,32 @@ async function connectBrowserWallet() {
   render();
 }
 
+function resetClientView() {
+  state.me = null;
+  state.quote = null;
+  state.amount = '';
+  state.holdings = null;
+  state.payQr = null;
+  state.secureUrl = '';
+  state.keyAddress = '';
+  state.walletNote = '';
+  state.walletSignature = '';
+}
+
+async function loadDesk() {
+  state.config = await api('/api/config');
+  state.desk = await api('/api/admin/desk', { noClient: true });
+}
+
 async function boot() {
   state.config = await api('/api/config');
   try {
-    await refresh();
+    const me = await api('/api/me', { noClient: true });
+    if (me.user?.role !== 'admin') throw new Error('not admin');
+    state.admin = me;
+    await loadDesk();
   } catch {
-    state.me = null;
+    state.admin = null;
   }
   render();
 }
