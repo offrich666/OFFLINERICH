@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reserve mint address</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #12140e;
+      --card: #1c2016;
+      --ink: #f4f1e6;
+      --muted: #b7b39f;
+      --line: #34392c;
+      --gold: #f0b90b;
+      --gold-ink: #1c1600;
+      --danger: #ffb4a8;
+      --ok: #c8f5c4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(1000px 420px at 10% -10%, rgba(240, 185, 11, 0.16), transparent 55%),
+        var(--bg);
+      color: var(--ink);
+      font-family: Inter, Ubuntu, sans-serif;
+    }
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 36px 0 64px;
+    }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: end; }
+    h1 { margin: 0; font-size: 40px; letter-spacing: -0.04em; line-height: 0.95; }
+    .chain {
+      margin: 0;
+      color: var(--gold);
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .lede { max-width: 62ch; color: var(--muted); line-height: 1.5; }
+    .plate {
+      margin: 22px 0;
+      padding: 18px 18px 14px;
+      background: #0c0e09;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    .plate small { color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
+    .preview {
+      margin: 8px 0 0;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 28px;
+      letter-spacing: 0.02em;
+      word-break: break-all;
+    }
+    .ox { color: #6f6b5e; }
+    .hit { color: var(--gold); }
+    .mid { color: #8d8878; }
+    form, .panel, .result {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      margin-top: 14px;
+    }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #12150f;
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font: 16px/1.4 "JetBrains Mono", ui-monospace, monospace;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    input:focus, textarea:focus { outline: 2px solid var(--gold); border-color: transparent; }
+    .hint { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: 600 15px/1 Inter, Ubuntu, sans-serif;
+      cursor: pointer;
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .primary { background: var(--gold); color: var(--gold-ink); }
+    .ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    .actions { display: flex; gap: 10px; margin-top: 14px; }
+    .error { color: var(--danger); min-height: 1.2em; }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
+    .stat { background: #12150f; border-radius: 12px; padding: 10px 12px; }
+    .stat b { display: block; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 18px; }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .bar { height: 6px; background: #2c3124; border-radius: 99px; overflow: hidden; margin-top: 12px; }
+    .bar i { display: block; height: 100%; width: 35%; background: var(--gold); animation: slide 1.1s ease-in-out infinite; }
+    @keyframes slide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+    .warn { color: var(--gold); }
+    .ok { color: var(--ok); }
+    .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 10px 0; }
+    .row code, details code {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 13px;
+      word-break: break-all;
+    }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; color: var(--muted); }
+    ol { margin: 8px 0 0; padding-left: 18px; line-height: 1.45; }
+    .hidden { display: none; }
+    @media (max-width: 720px) {
+      .grid, .stats { grid-template-columns: 1fr; }
+      h1 { font-size: 32px; }
+      .preview { font-size: 18px; }
+      header { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="chain">BNB Smart Chain</p>
+        <h1>Reserve mint address</h1>
+      </div>
+    </header>
+    <p class="lede">Choose the first 4 and last 4 characters of the contract address. <strong>0x does not count.</strong> The app keeps searching salts until a CREATE2 mint address matches, then gives you the deployer key that can deploy it.</p>
+    <section class="plate" aria-live="polite">
+      <small>0x is not part of the pattern</small>
+      <p class="preview" id="preview"></p>
+    </section>
+    <form id="form">
+      <div class="grid">
+        <div>
+          <label for="prefix">First 4</label>
+          <input id="prefix" autocomplete="off" spellcheck="false" placeholder="3489" maxlength="66">
+        </div>
+        <div>
+          <label for="suffix">Last 4</label>
+          <input id="suffix" autocomplete="off" spellcheck="false" placeholder="8db4" maxlength="66">
+        </div>
+      </div>
+      <p class="hint">Hex only: 0-9 and a-f. abcd and ABCD are the same. A match usually takes a few minutes on this computer.</p>
+      <label for="initCode">Mint creation bytecode</label>
+      <textarea id="initCode" spellcheck="false" placeholder="Paste creation bytecode, starting with 6080…. Leave empty to reserve the built-in shell contract."></textarea>
+      <p class="hint" id="bytecodeNote">Empty bytecode reserves the built-in shell. Paste your mint contract’s creation bytecode to lock the address to that contract.</p>
+      <div class="actions">
+        <button class="primary" id="start" type="submit" disabled>Reserve address</button>
+        <button class="ghost hidden" id="stop" type="button">Stop</button>
+      </div>
+      <p class="error" id="error" role="alert"></p>
+    </form>
+    <section class="panel hidden" id="progress">
+      <strong id="progressTitle">Searching</strong>
+      <div class="bar" id="bar"><i></i></div>
+      <div class="stats">
+        <div class="stat"><b id="attempts">0</b><span>salts checked</span></div>
+        <div class="stat"><b id="rate">—</b><span>per second</span></div>
+        <div class="stat"><b id="eta">—</b><span>typical wait</span></div>
+      </div>
+      <p class="hint" id="progressNote"></p>
+    </section>
+    <section class="result hidden" id="result"></section>
+  </main>
+  <script>
+    const prefixInput = document.getElementById("prefix");
+    const suffixInput = document.getElementById("suffix");
+    const initCode = document.getElementById("initCode");
+    const start = document.getElementById("start");
+    const stop = document.getElementById("stop");
+    const error = document.getElementById("error");
+    const preview = document.getElementById("preview");
+    const progress = document.getElementById("progress");
+    const result = document.getElementById("result");
+    let timer = null;
+
+    function hexBody(value) {
+      return value.replace(/^0x/i, "").replace(/[^0-9a-f]/gi, "").toLowerCase();
+    }
+    function normalize(value, side) {
+      const hex = hexBody(value);
+      if (hex.length <= 4) return hex;
+      return side === "suffix" ? hex.slice(-4) : hex.slice(0, 4);
+    }
+    function paintPreview(pre, suf, middle) {
+      preview.replaceChildren();
+      const ox = document.createElement("span");
+      ox.className = "ox";
+      ox.textContent = "0x";
+      const a = document.createElement("span");
+      a.className = "hit";
+      a.textContent = (pre || "····").padEnd(4, "·");
+      const m = document.createElement("span");
+      m.className = "mid";
+      m.textContent = middle || "································";
+      const b = document.createElement("span");
+      b.className = "hit";
+      b.textContent = (suf || "····").padEnd(4, "·");
+      preview.append(ox, a, m, b);
+    }
+    function refreshForm() {
+      const pre = normalize(prefixInput.value, "prefix");
+      const suf = normalize(suffixInput.value, "suffix");
+      if (prefixInput.value !== pre) prefixInput.value = pre;
+      if (suffixInput.value !== suf) suffixInput.value = suf;
+      paintPreview(pre, suf);
+      start.disabled = pre.length !== 4 || suf.length !== 4;
+      error.textContent = "";
+    }
+    prefixInput.addEventListener("input", refreshForm);
+    suffixInput.addEventListener("input", refreshForm);
+    prefixInput.addEventListener("keydown", (event) => { if (event.key === "Enter") document.getElementById("form").requestSubmit(); });
+    suffixInput.addEventListener("keydown", (event) => { if (event.key === "Enter") document.getElementById("form").requestSubmit(); });
+    paintPreview("", "");
+
+    function formatCount(n) {
+      if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+      return String(n);
+    }
+    function formatEta(seconds) {
+      if (!seconds) return "—";
+      if (seconds < 90) return Math.round(seconds) + "s";
+      const minutes = Math.round(seconds / 60);
+      if (minutes < 90) return minutes + " min";
+      return (minutes / 60).toFixed(1) + " hr";
+    }
+    function copyButton(value) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost";
+      button.textContent = "Copy";
+      button.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(value);
+        button.textContent = "Copied";
+        setTimeout(() => { button.textContent = "Copy"; }, 1200);
+      });
+      return button;
+    }
+    function field(label, value) {
+      const row = document.createElement("div");
+      row.className = "row";
+      const text = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "hint";
+      name.textContent = label;
+      const code = document.createElement("code");
+      code.textContent = value;
+      text.append(name, code);
+      row.append(text, copyButton(value));
+      return row;
+    }
+    function renderResult(body) {
+      const found = body.result;
+      result.classList.remove("hidden");
+      result.replaceChildren();
+      const title = document.createElement("h2");
+      title.textContent = "Address reserved";
+      result.append(title);
+      const bodyHex = found.address.slice(2);
+      paintPreview(bodyHex.slice(0, 4), bodyHex.slice(-4), bodyHex.slice(4, -4));
+      result.append(field("Contract address", found.address));
+      result.append(field("Salt", found.salt));
+      result.append(field("Deployer address", found.deployerAddress));
+      const warn = document.createElement("p");
+      warn.className = "warn";
+      warn.textContent = "The deployer key can deploy this address. Anyone who copies it can take the reservation. It is saved on this computer in reservations/latest.json.";
+      result.append(warn);
+      result.append(field("Deployer private key", found.deployerKey));
+      result.append(field("Factory address", found.factoryAddress));
+      result.append(field("Creation bytecode hash", found.initCodeHash));
+      const note = document.createElement("p");
+      note.className = found.usingShell ? "warn" : "ok";
+      note.textContent = found.usingShell
+        ? "This match is for the built-in shell contract. Paste your mint creation bytecode and search again to reserve your real contract."
+        : "This match is for the " + found.initCodeBytes + " bytes of creation bytecode you pasted. Changing that bytecode changes the address.";
+      result.append(note);
+      const steps = document.createElement("ol");
+      ["Import the deployer key. Do not send a transaction from it before the factory.",
+       "From another wallet, send a little BNB to the deployer for gas.",
+       "Deploy the factory bytecode as nonce 0. The factory address above is that contract.",
+       "Call deploy(bytes32,bytes) with the salt and the same creation bytecode. The contract address above is the mint address."
+      ].forEach((line) => {
+        const item = document.createElement("li");
+        item.textContent = line;
+        steps.append(item);
+      });
+      result.append(steps);
+      const factory = document.createElement("details");
+      const factorySummary = document.createElement("summary");
+      factorySummary.textContent = "Factory creation bytecode";
+      factory.append(factorySummary, document.createTextNode(found.factoryBytecode));
+      const call = document.createElement("details");
+      const callSummary = document.createElement("summary");
+      callSummary.textContent = "Factory deploy calldata";
+      call.append(callSummary, document.createTextNode(found.deployCalldata));
+      result.append(factory, call);
+      const done = document.createElement("p");
+      done.className = "hint";
+      done.textContent = "Checked " + formatCount(found.attempts) + " salts in " + Math.max(1, Math.round(found.elapsedMs / 1000)) + "s.";
+      result.append(done);
+    }
+    function renderProgress(body) {
+      progress.classList.remove("hidden");
+      document.getElementById("attempts").textContent = formatCount(body.attempts || 0);
+      document.getElementById("rate").textContent = body.rate ? formatCount(Math.round(body.rate)) : "—";
+      document.getElementById("eta").textContent = formatEta(body.etaSeconds);
+      document.title = body.rate ? formatCount(Math.round(body.rate)) + "/s · Reserve mint" : "Reserve mint address";
+      const note = document.getElementById("progressNote");
+      if (body.factoryAddress) {
+        note.textContent = "Factory " + body.factoryAddress + " · bytecode hash " + body.initCodeHash;
+      }
+      stop.classList.toggle("hidden", body.state !== "running");
+      document.getElementById("bar").classList.toggle("hidden", body.state !== "running");
+      document.getElementById("progressTitle").textContent = body.state === "running" ? "Searching salts" : body.state === "stopped" ? "Stopped" : "Searching";
+    }
+    async function poll() {
+      const response = await fetch("/api/status");
+      const body = await response.json();
+      if (body.state === "running") {
+        renderProgress(body);
+        if (!timer) {
+          timer = setInterval(() => { poll().catch((err) => { error.textContent = String(err); }); }, 400);
+        }
+        return;
+      }
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+      if (body.state === "found" && body.result) {
+        const hex = body.result.address.slice(2);
+        if (!prefixInput.value) prefixInput.value = hex.slice(0, 4).toLowerCase();
+        if (!suffixInput.value) suffixInput.value = hex.slice(-4).toLowerCase();
+        refreshForm();
+        renderProgress(body);
+        renderResult(body);
+        stop.classList.add("hidden");
+        document.getElementById("bar").classList.add("hidden");
+        document.getElementById("progressTitle").textContent = "Match found";
+        return;
+      }
+      if (body.state === "stopped") {
+        renderProgress(body);
+        refreshForm();
+      }
+    }
+    document.getElementById("form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      refreshForm();
+      if (start.disabled) return;
+      error.textContent = "";
+      result.classList.add("hidden");
+      start.disabled = true;
+      const response = await fetch("/api/reserve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prefix: prefixInput.value,
+          suffix: suffixInput.value,
+          initCode: initCode.value
+        })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        error.textContent = body.error || "Could not start.";
+        refreshForm();
+        return;
+      }
+      renderProgress(body);
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => { poll().catch((err) => { error.textContent = String(err); }); }, 400);
+    });
+    stop.addEventListener("click", async () => {
+      await fetch("/api/stop", { method: "POST" });
+      await poll();
+      refreshForm();
+    });
+    poll().catch(() => {});
+  </script>
+</body>
+</html>
