@@ -296,3 +296,7 @@ input:focus, select:focus { border-color: var(--navy); box-shadow: 0 0 0 3px rgb
   .client-row { grid-template-columns: 40px 1fr auto; }
   .client-row .pill, .chev { display: none; }
 }
+
+.secure-frame { width: 100%; height: 190px; border: 1px solid var(--line); border-radius: 14px; background: white; }
+.lede.gate { background: #f3ead6; border: 1px solid #e3d3a8; border-radius: 12px; padding: 12px; color: #6a5420; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }

@@ -17,6 +17,7 @@ const state = {
   keyAddress: '',
   holdings: null,
   payQr: null,
+  secureUrl: '',
 };
 
 let busy = false;
@@ -362,13 +363,17 @@ function dashboardHtml() {
           ${topupActions()}
         </section>
         <section class="panel">
-          <h2>Wallets</h2>
-          <p class="lede">Apple Pay is added from the iPhone app. Google Pay and Samsung Pay use the one-time secure card link.</p>
+          <h2>Card number and wallets</h2>
+          ${walletsGate()}
           <div id="secure-card" class="secure"></div>
           <div class="row" style="margin-top:12px">
-            <button class="primary" type="button" data-action="wallet" data-wallet="apple">Add to Apple Pay</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="google">Add to Google Pay</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="samsung">Add to Samsung Pay</button>
+            <button class="primary" type="button" data-action="show-card-number" ${state.me.card ? '' : 'disabled'}>Show card number</button>
+            ${state.secureUrl ? '<button class="ghost" type="button" data-action="hide-card-number">Hide</button>' : ''}
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" type="button" data-action="wallet" data-wallet="apple" ${state.me.card ? '' : 'disabled'}>Add to Apple Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="google" ${state.me.card ? '' : 'disabled'}>Add to Google Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="samsung" ${state.me.card ? '' : 'disabled'}>Add to Samsung Wallet</button>
           </div>
           <div id="apple-wallet" style="margin-top:10px"></div>
           <div id="google-wallet" style="margin-top:10px"></div>
@@ -404,6 +409,14 @@ function dashboardHtml() {
       </div>
       </div>
     </main>`;
+}
+
+function walletsGate() {
+  if (state.me.card) return '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
+  const why = state.config?.livemode
+    ? 'Issue this client’s card first. The number appears here right after.'
+    : 'No card exists yet, so there is no number to show. Card numbers only come from a live card program. Connect the live Immersve key on the desk, then issue this client’s card.';
+  return `<p class="lede gate">${esc(why)}</p>`;
 }
 
 function depositHtml() {
@@ -560,10 +573,15 @@ async function run(fn) {
   }
 }
 
-async function mountLiveCard() {
+function mountLiveCard() {
   const host = document.getElementById('secure-card');
   if (!host || !state.me?.card) return;
-  host.innerHTML = '<p class="muted">The full card number stays at Immersve. Use “Show card number” when you add it to Google Pay or Samsung Pay.</p>';
+  if (!state.secureUrl) {
+    host.innerHTML = '<p class="muted">Press “Show card number” to see the full number, expiry, and security code on this page. Immersve serves them over a one-time secure link, and this server never stores them.</p>';
+    return;
+  }
+  host.innerHTML = `<iframe class="secure-frame" title="Card number" src="${esc(state.secureUrl)}" referrerpolicy="no-referrer"></iframe>
+    <a class="muted" href="${esc(state.secureUrl)}" target="_blank" rel="noopener noreferrer">Open the card number in its own tab</a>`;
 }
 
 document.body.addEventListener('click', (event) => {
@@ -610,20 +628,38 @@ document.body.addEventListener('click', (event) => {
     state.quote = null;
     render();
   }
+  if (action === 'show-card-number') {
+    run(async () => {
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.flash = null;
+      render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+  if (action === 'hide-card-number') {
+    state.secureUrl = '';
+    render();
+  }
   if (action === 'wallet') {
     run(async () => {
       const wallet = button.dataset.wallet;
       if (wallet === 'google' || wallet === 'samsung') {
         const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-        state.walletNote = `Open this one-time link to read the card number, then add it in ${wallet === 'google' ? 'Google Pay' : 'Samsung Pay'}:\n${secure.callbackUrl}`;
+        state.secureUrl = secure.callbackUrl;
+        const name = wallet === 'google' ? 'Google Wallet' : 'Samsung Wallet';
+        state.walletNote = `${name}: read the number above, then in ${name} choose Add card, Credit or debit card, and type the number, expiry, and security code. Confirm with the code the wallet sends to the cardholder phone or email.`;
         state.flash = null;
         render();
+        document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
       }
-      const result = await api('/api/wallets/apple', { method: 'POST', body: {} });
-      state.walletNote = walletCopy('apple', result);
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.walletNote = 'Apple Wallet: read the number above. On the iPhone open Wallet, tap +, choose Debit or Credit Card, then Enter Card Details Manually. Type the number, expiry, and security code, then confirm with the code Apple sends to the cardholder phone or email.';
       state.flash = null;
       render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   }
   if (action === 'connect-wallet') {
@@ -899,6 +935,7 @@ function resetClientView() {
   state.amount = '';
   state.holdings = null;
   state.payQr = null;
+  state.secureUrl = '';
   state.keyAddress = '';
   state.walletNote = '';
   state.walletSignature = '';

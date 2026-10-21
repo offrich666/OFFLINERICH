@@ -45,8 +45,8 @@ export type Ctx = {
 type KnownToken = CatalogToken & { source: 'catalog' | 'custom' };
 
 const MANUAL_STEPS = [
-  'On iPhone, add the card from the OfflineRich app. Apple Pay uses the PassKit payload from this server.',
-  'For Google Pay or Samsung Pay, open the one-time secure card link and type the number into the wallet.',
+  'Press Show card number on the client page to read the number, expiry, and security code.',
+  'Apple Wallet: tap +, choose Debit or Credit Card, then Enter Card Details Manually. Google and Samsung Wallet: Add card, then type the details.',
   'Enter the code the wallet sends to the cardholder phone or email.',
 ];
 
