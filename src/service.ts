@@ -751,8 +751,8 @@ export async function connectLive(
       throw new HttpError(400, 'invalid_program', 'Paste the Immersve partner account, client application, card program, and funding channel ids.');
     }
   }
-  if (!/^https:\/\/[^\s]+$/.test(clientOrigin)) {
-    throw new HttpError(400, 'invalid_origin', 'Enter the https origin Immersve allowed for this client application.');
+  if (!/^https?:\/\/[^\s]+$/.test(clientOrigin)) {
+    throw new HttpError(400, 'invalid_origin', 'Enter the origin Immersve allowed for this client application, such as https://your.domain or http://127.0.0.1:8787.');
   }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(network)) {
     throw new HttpError(400, 'invalid_network', 'Enter an Immersve network such as ethereum-mainnet.');

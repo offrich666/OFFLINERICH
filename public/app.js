@@ -18,6 +18,7 @@ const state = {
   holdings: null,
   payQr: null,
   secureUrl: '',
+  kycUrl: '',
 };
 
 let busy = false;
@@ -252,9 +253,18 @@ function consoleHtml() {
 
 function setupHtml() {
   if (state.config?.livemode) return '';
-  return `<section class="panel">
-    <h2>Connect the live card</h2>
-    <p class="lede">Immersve issues the Mastercard. Paste the live API key and secret from your Immersve partner account, plus the partner account, client application, card program, and funding channel. Test keys are refused.</p>
+  const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
+  return `<section class="panel partner">
+    <h2>Get a real Mastercard</h2>
+    <p class="lede">GG Card issues real network cards through Immersve. No key can be invented here. You need your own Immersve live partner account.</p>
+    <ol class="steps">
+      <li>Apply at <a href="https://immersve.com/partner/" target="_blank" rel="noopener">immersve.com/partner</a> or contact them at <a href="https://immersve.com/contact/" target="_blank" rel="noopener">immersve.com/contact</a>.</li>
+      <li>Ask for the <b>live</b> API key, API secret, partner account id, client application id, card program id, and a funding channel for the chain and token you will deposit.</li>
+      <li>In Immersve, allow this origin on the client application: <code>${esc(origin)}</code></li>
+      <li>Paste the values below. The server checks them against Immersve before it saves them. Test keys are refused because they cannot spend at merchants or go into Apple Wallet.</li>
+      <li>Open a client, link their wallet, issue the card, finish Immersve identity check, show the number, add it to Apple Wallet.</li>
+    </ol>
+    <p class="muted">Docs: <a href="https://docs.immersve.com/guides/web3-wallet-card-issuing-integration/" target="_blank" rel="noopener">Web3 wallet card issuing</a>. Support: <a href="https://help.immersve.com/hc/en-us/requests/new" target="_blank" rel="noopener">open a request</a>.</p>
     <form id="setup-form" class="stack">
       <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
       <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
@@ -262,9 +272,9 @@ function setupHtml() {
       <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
       <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
       <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" placeholder="https://your.domain" required /></label>
+      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
       <label>Network <input name="network" autocomplete="off" spellcheck="false" value="ethereum-mainnet" required /></label>
-      <button class="primary" type="submit">Connect Immersve</button>
+      <button class="primary" type="submit">Connect live Immersve</button>
     </form>
   </section>`;
 }
@@ -272,11 +282,25 @@ function setupHtml() {
 function issueForm() {
   if (state.me.card) return '';
   if (!state.config?.livemode) {
-    return `<section class="panel"><h2>Issue the card</h2><p class="lede">Connect the live Immersve program from the desk first. Then this client can be issued a card.</p><button class="ghost" type="button" data-action="back-to-desk">Back to the desk</button></section>`;
+    return `<section class="panel">
+      <h2>Issue the card</h2>
+      <p class="lede gate">A real Mastercard is created only after Immersve is connected on the desk with your live partner keys. Go back, finish “Get a real Mastercard”, then return here.</p>
+      <button class="primary" type="button" data-action="back-to-desk">Connect Immersve on the desk</button>
+    </section>`;
+  }
+  if (state.kycUrl) {
+    return `<section class="panel">
+      <h2>Finish identity check</h2>
+      <p class="lede">Immersve needs the cardholder to pass KYC before it creates the Mastercard. Open their check, then press Issue again.</p>
+      <div class="row">
+        <a class="primary btn" href="${esc(state.kycUrl)}" target="_blank" rel="noopener noreferrer">Open Immersve KYC</a>
+        <button class="ghost" type="button" data-action="clear-kyc">I finished KYC</button>
+      </div>
+    </section>`;
   }
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">Immersve creates this Mastercard for the client. Link the client wallet first. That wallet signs in, then the client finishes identity checks when Immersve asks for them.</p>
+    <p class="lede">Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -294,7 +318,7 @@ function issueForm() {
         <select name="type"><option value="virtual">Virtual</option><option value="physical">Physical</option></select>
       </label>
       <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>The client accepts the cardholder terms and is the person named on this card.</span></label>
-      <div class="full"><button class="primary" type="submit">Issue card</button></div>
+      <div class="full"><button class="primary" type="submit">Issue real card</button></div>
     </form>
   </section>`;
 }
@@ -588,6 +612,10 @@ document.body.addEventListener('click', (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
+  if (action === 'clear-kyc') {
+    state.kycUrl = '';
+    render();
+  }
   if (action === 'toggle-new-client') {
     state.newClient = !state.newClient;
     render();
@@ -639,6 +667,7 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'hide-card-number') {
     state.secureUrl = '';
+  state.kycUrl = '';
     render();
   }
   if (action === 'wallet') {
@@ -761,16 +790,18 @@ document.body.addEventListener('submit', (event) => {
         });
         state.walletSignature = '';
         if (issued.status === 'kyc_required') {
-          state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
-          state.walletNote = issued.kycUrl;
+          state.kycUrl = issued.kycUrl;
+          state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
         } else {
-          state.flash = { kind: 'ok', text: 'Card issued.' };
+          state.kycUrl = '';
+          state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
         }
       } else if (result.status === 'kyc_required') {
-        state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
-        state.walletNote = result.kycUrl;
+        state.kycUrl = result.kycUrl;
+        state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
       } else {
-        state.flash = { kind: 'ok', text: 'Card issued.' };
+        state.kycUrl = '';
+        state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
       }
       await refresh();
       render();
