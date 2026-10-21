@@ -190,6 +190,9 @@ export async function login(ctx: Ctx, input: { email?: string; username?: string
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     throw new HttpError(401, 'invalid_login', 'Those sign-in details are incorrect.');
   }
+  if (user.role !== 'admin' && !ctx.config.selfSignup) {
+    throw new HttpError(403, 'admin_only', 'Only the GG Card admin signs in. Clients are served from the admin desk.');
+  }
   const token = secretToken();
   ctx.store.createSession(token, user.id, ctx.now());
   return { token, user: publicUser(user) };
@@ -205,6 +208,26 @@ export function requireAdmin(ctx: Ctx, userId: string) {
     throw new HttpError(403, 'admin_required', 'The card desk is limited to the admin account.');
   }
   return user;
+}
+
+export async function createClient(ctx: Ctx, userId: string, input: { email?: string }) {
+  requireAdmin(ctx, userId);
+  const email = (input.email ?? '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
+    throw new HttpError(400, 'invalid_email', 'Enter the client email.');
+  }
+  if (email === ADMIN_EMAIL || ctx.store.getUserByEmail(email)) {
+    throw new HttpError(409, 'email_taken', 'A client with that email is already on the desk.');
+  }
+  const clientId = id('usr_');
+  ctx.store.createUser({
+    id: clientId,
+    email,
+    passwordHash: await hashPassword(secretToken()),
+    createdAt: ctx.now(),
+    role: 'customer',
+  });
+  return { client: { id: clientId, email, role: 'customer' } };
 }
 
 export function adminDesk(ctx: Ctx, userId: string) {

@@ -4,7 +4,10 @@ const state = {
   tokens: [],
   activity: [],
   flash: null,
-  authMode: 'register',
+  admin: null,
+  clientId: '',
+  newClient: false,
+  search: '',
   selectedTokenId: '',
   walletNote: '',
   quote: null,
@@ -34,10 +37,12 @@ function money(cents) {
 }
 
 async function api(path, options = {}) {
+  const headers = { 'content-type': 'application/json' };
+  if (state.clientId && !options.noClient) headers['x-client-id'] = state.clientId;
   const response = await fetch(path, {
     method: options.method || 'GET',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
@@ -52,7 +57,6 @@ async function refresh() {
     api('/api/activity'),
   ]);
   state.me = me;
-  state.desk = me.user.role === 'admin' ? await api('/api/admin/desk') : null;
   state.holdings = me.wallet ? await api('/api/wallet/holdings').catch(() => null) : null;
   state.tokens = tokens.tokens;
   state.activity = activity.activity;
@@ -90,42 +94,29 @@ function linksHtml() {
     </section>`;
 }
 
-function authHtml() {
-  const admin = state.authMode === 'admin';
-  const login = state.authMode === 'login' || admin;
-  return `<header class="top wrap">
-      <div class="mark">GG<span>CARD</span></div>
-      <p>Private card desk</p>
-    </header>
-    <main class="wrap stack auth">
-      ${flashHtml()}
-      <section class="panel">
-        <p class="kicker">GG Card</p>
-        <h1>A bank card funded by the tokens you hold.</h1>
-        <p class="lede">GG Card is the name on the plastic. Visa and Mastercard faces are both drawn here. Spending still needs a live Immersve program, which issues the Mastercard. Sign in, link a wallet, and send a token to the deposit contract.</p>
-        ${showcaseCards(null)}
+function loginHtml() {
+  return `<div class="login">
+      <section class="login-hero" aria-hidden="true">
+        <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
+        <div class="mark light">GG<span>CARD</span></div>
+        <div class="hero-cards">
+          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Visa' })}
+          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
+        </div>
+        <p class="hero-line">Cards for your clients, funded by the tokens they hold.</p>
       </section>
-      <section class="panel">
-        <h2>${admin ? 'Admin desk' : 'Customer sign in'}</h2>
-        <form id="auth-form" class="stack">
-          ${admin
-            ? '<label>Username <input name="username" autocomplete="username" placeholder="offlinerich" required /></label>'
-            : '<label>Email <input name="email" type="email" autocomplete="email" required /></label>'}
-          <label>Password <input name="password" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" minlength="8" required /></label>
-          <div class="row">
-            <button class="primary" type="submit">${admin ? 'Open the desk' : login ? 'Sign in' : 'Create account'}</button>
-            <button class="ghost" type="button" data-action="toggle-auth">${login && !admin ? 'Need an account?' : 'Have an account?'}</button>
-            <button class="ghost" type="button" data-action="show-admin">${admin ? 'Customer entrance' : 'Admin desk'}</button>
-          </div>
+      <section class="login-pane">
+        <form id="auth-form" class="login-card stack">
+          <p class="kicker">Admin desk</p>
+          <h1>Sign in</h1>
+          <p class="lede">Only the GG Card admin signs in. Clients are served from the desk.</p>
+          ${flashHtml()}
+          <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary wide" type="submit">Open the desk</button>
         </form>
       </section>
-      ${linksHtml()}
-      <section class="panel">
-        <h2>What has to be connected</h2>
-        <p class="lede">The live card is an Immersve Mastercard. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same GG Card.</p>
-        ${readinessHtml()}
-      </section>
-    </main>`;
+    </div>`;
 }
 
 function tokenButton(token) {
@@ -188,32 +179,78 @@ function cardHtml() {
   return showcaseCards(state.me);
 }
 
-function deskHtml() {
-  if (state.me?.user?.role !== 'admin' || !state.desk) return '';
-  const rows = state.desk.accounts
-    .map((account) => {
-      const who = account.username ? `${account.username}` : account.email;
-      const card = account.card ? `${account.card.brand} ·••• ${account.card.last4}` : 'No card';
-      return `<tr>
-        <td><strong>${esc(who)}</strong><div class="muted">${esc(account.email)}</div></td>
-        <td><span class="role">${esc(account.role)}</span></td>
-        <td>${esc(card)}</td>
-        <td>${esc(money(account.availableCents))}</td>
-      </tr>`;
-    })
-    .join('');
-  return `<section class="panel">
-      <h2>Card desk</h2>
-      <p class="lede">${esc(money(state.desk.totals.availableCents))} recorded across customer balances.</p>
-      <table class="desk">
-        <thead><tr><th>Account</th><th>Role</th><th>GG Card</th><th>Balance</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </section>`;
+function clientRows() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const term = state.search.trim().toLowerCase();
+  return accounts.filter((account) => !term || account.email.toLowerCase().includes(term));
+}
+
+function clientRowHtml(account) {
+  const card = account.card
+    ? `<span class="pill ${account.card.status === 'active' ? 'good' : ''}">${esc(account.card.brand)} ·••• ${esc(account.card.last4)}</span>`
+    : '<span class="pill">No card</span>';
+  return `<button type="button" class="client-row" data-action="open-client" data-id="${esc(account.id)}">
+      <span class="avatar">${esc(account.email.slice(0, 1).toUpperCase())}</span>
+      <span class="client-main"><b>${esc(account.email)}</b><span class="muted">${card.includes('No card') ? 'Ready for a card' : 'Card on file'}</span></span>
+      ${card}
+      <span class="client-balance">${esc(money(account.availableCents))}</span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>`;
+}
+
+function consoleHtml() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const issued = accounts.filter((account) => account.card).length;
+  const live = Boolean(state.config?.livemode);
+  const rows = clientRows();
+  const links = state.config?.links || [];
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="mark light">GG<span>CARD</span></div>
+        <div class="row">
+          <span class="who">${esc(state.admin.user.username || 'admin')} · admin</span>
+          <button class="ghost light" type="button" data-action="logout">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <main class="wrap stack console reveal-group">
+      ${flashHtml()}
+      <section class="stats">
+        <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
+        <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
+        <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${live ? 'Live' : 'Not connected'}</strong></article>
+      </section>
+      <div class="console-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div><h2>Clients</h2><p class="lede">Open a client to link a wallet, issue a card, and take deposits.</p></div>
+            <button class="primary" type="button" data-action="toggle-new-client">${state.newClient ? 'Close' : 'New client'}</button>
+          </div>
+          ${state.newClient
+            ? `<form id="client-form" class="inline-form">
+                <label>Client email <input name="email" type="email" autocomplete="off" placeholder="client@example.com" required /></label>
+                <button class="primary" type="submit">Add client</button>
+              </form>`
+            : ''}
+          <input id="client-search" class="search" placeholder="Search clients" value="${esc(state.search)}" />
+          <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
+        </section>
+        <div class="stack">
+          ${live
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is connected on ${esc(state.config.network)}. Issue a card from any client.</p><span class="pill good">Live</span></section>`
+            : setupHtml()}
+          ${links.length
+            ? `<section class="panel"><h2>Open on another computer</h2><p class="lede">Use the address that starts with 192, 10, or 172 on the same network.</p><ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul></section>`
+            : ''}
+          <section class="panel"><h2>Connections</h2>${readinessHtml()}</section>
+        </div>
+      </div>
+    </main>`;
 }
 
 function setupHtml() {
-  if (state.me?.user?.role !== 'admin' || state.config?.livemode) return '';
+  if (state.config?.livemode) return '';
   return `<section class="panel">
     <h2>Connect the live card</h2>
     <p class="lede">Immersve issues the Mastercard. Paste the live API key and secret from your Immersve partner account, plus the partner account, client application, card program, and funding channel. Test keys are refused.</p>
@@ -232,10 +269,13 @@ function setupHtml() {
 }
 
 function issueForm() {
-  if (state.me.card || !state.config?.livemode) return '';
+  if (state.me.card) return '';
+  if (!state.config?.livemode) {
+    return `<section class="panel"><h2>Issue the card</h2><p class="lede">Connect the live Immersve program from the desk first. Then this client can be issued a card.</p><button class="ghost" type="button" data-action="back-to-desk">Back to the desk</button></section>`;
+  }
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">Immersve creates this Mastercard. Link your wallet first. The page asks that wallet to sign in, then opens identity checks when Immersve asks for them.</p>
+    <p class="lede">Immersve creates this Mastercard for the client. Link the client wallet first. That wallet signs in, then the client finishes identity checks when Immersve asks for them.</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -252,7 +292,7 @@ function issueForm() {
       <label>Card type
         <select name="type"><option value="virtual">Virtual</option><option value="physical">Physical</option></select>
       </label>
-      <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>I accept the cardholder terms and I am the person named on this card.</span></label>
+      <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>The client accepts the cardholder terms and is the person named on this card.</span></label>
       <div class="full"><button class="primary" type="submit">Issue card</button></div>
     </form>
   </section>`;
@@ -260,15 +300,20 @@ function issueForm() {
 
 function dashboardHtml() {
   const wallet = state.me.wallet;
-  return `<header class="top wrap">
-      <div class="mark">GG<span>CARD</span></div>
-      <div class="row">
-        <p class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</p>
-        <button class="ghost" type="button" data-action="logout">Sign out</button>
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="row">
+          <button class="ghost light" type="button" data-action="back-to-desk">‹ Desk</button>
+          <div class="mark light">GG<span>CARD</span></div>
+        </div>
+        <div class="row">
+          <span class="who">${esc(state.me.user.email)}</span>
+          <span class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</span>
+        </div>
       </div>
     </header>
-    <main class="wrap stack" style="padding-bottom:72px">
-      ${deskHtml()}
+    <main class="wrap stack reveal-group" style="padding-bottom:72px">
+      ${flashHtml()}
       ${depositHtml()}
       <div class="layout">
       <div class="stack">
@@ -291,8 +336,6 @@ function dashboardHtml() {
         </section>
       </div>
       <div class="stack">
-        ${flashHtml()}
-        ${setupHtml()}
         ${issueForm()}
         <section class="panel">
           <h2>Tokens</h2>
@@ -442,10 +485,67 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  root.innerHTML = state.me ? dashboardHtml() : authHtml();
+  root.innerHTML = !state.admin ? loginHtml() : state.clientId && state.me ? dashboardHtml() : consoleHtml();
   mountGeneration += 1;
   mountLiveCard();
+  enhance();
 }
+
+function enhance() {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('[data-count]').forEach((node) => {
+    const target = Number(node.dataset.count || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => String(Math.round(value)));
+  });
+  document.querySelectorAll('[data-money]').forEach((node) => {
+    const target = Number(node.dataset.money || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => money(Math.round(value)));
+  });
+  document.querySelectorAll('.reveal-group > *, .layout > .stack > *').forEach((node, index) => {
+    node.style.setProperty('--i', String(index));
+  });
+}
+
+function countUp(node, target, format) {
+  const started = performance.now();
+  const duration = 900;
+  const tick = (now) => {
+    const t = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    node.textContent = format(target * eased);
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+document.body.addEventListener('pointermove', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  const box = card.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width - 0.5;
+  const y = (event.clientY - box.top) / box.height - 0.5;
+  card.style.setProperty('--rx', `${(-y * 10).toFixed(2)}deg`);
+  card.style.setProperty('--ry', `${(x * 12).toFixed(2)}deg`);
+  card.style.setProperty('--gx', `${((x + 0.5) * 100).toFixed(0)}%`);
+});
+
+document.body.addEventListener('pointerout', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  card.style.removeProperty('--rx');
+  card.style.removeProperty('--ry');
+});
+
+document.body.addEventListener('input', (event) => {
+  if (event.target.id !== 'client-search') return;
+  state.search = event.target.value;
+  const list = document.querySelector('.client-list');
+  if (!list) return;
+  const rows = clientRows();
+  list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
+});
 
 async function run(fn) {
   if (busy) return;
@@ -470,18 +570,36 @@ document.body.addEventListener('click', (event) => {
   const button = event.target.closest('[data-action]');
   if (!button) return;
   const action = button.dataset.action;
-  if (action === 'toggle-auth') {
-    state.authMode = state.authMode === 'register' ? 'login' : 'register';
+  if (action === 'toggle-new-client') {
+    state.newClient = !state.newClient;
     render();
   }
-  if (action === 'show-admin') {
-    state.authMode = state.authMode === 'admin' ? 'login' : 'admin';
-    render();
+  if (action === 'open-client') {
+    run(async () => {
+      resetClientView();
+      state.clientId = button.dataset.id || '';
+      state.flash = null;
+      await refresh();
+      render();
+      window.scrollTo({ top: 0 });
+    });
+  }
+  if (action === 'back-to-desk') {
+    run(async () => {
+      resetClientView();
+      state.clientId = '';
+      state.flash = null;
+      await loadDesk();
+      render();
+    });
   }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
+      resetClientView();
       state.me = null;
+      state.admin = null;
+      state.clientId = '';
       state.desk = null;
       state.flash = null;
       render();
@@ -561,10 +679,20 @@ document.body.addEventListener('submit', (event) => {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
-      const path = state.authMode === 'register' ? '/api/register' : '/api/login';
-      await api(path, { method: 'POST', body: data });
+      await api('/api/login', { method: 'POST', body: data, noClient: true });
+      state.admin = await api('/api/me', { noClient: true });
       state.flash = null;
-      await refresh();
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'client-form') {
+    run(async () => {
+      const result = await api('/api/admin/clients', { method: 'POST', body: { email: data.email }, noClient: true });
+      state.newClient = false;
+      state.search = '';
+      state.flash = { kind: 'ok', text: `${result.client.email} is on the desk. Open the client to link a wallet and issue the card.` };
+      await loadDesk();
       render();
     });
   }
@@ -640,10 +768,9 @@ document.body.addEventListener('submit', (event) => {
   }
   if (form.id === 'setup-form') {
     run(async () => {
-      await api('/api/setup', { method: 'POST', body: data });
-      state.config = await api('/api/config');
-      state.flash = { kind: 'ok', text: 'Live Immersve is connected. Link your wallet, then issue the card.' };
-      await refresh();
+      await api('/api/setup', { method: 'POST', body: data, noClient: true });
+      state.flash = { kind: 'ok', text: 'Live Immersve is connected. Open a client to issue the card.' };
+      await loadDesk();
       render();
     });
   }
@@ -766,12 +893,31 @@ async function connectBrowserWallet() {
   render();
 }
 
+function resetClientView() {
+  state.me = null;
+  state.quote = null;
+  state.amount = '';
+  state.holdings = null;
+  state.payQr = null;
+  state.keyAddress = '';
+  state.walletNote = '';
+  state.walletSignature = '';
+}
+
+async function loadDesk() {
+  state.config = await api('/api/config');
+  state.desk = await api('/api/admin/desk', { noClient: true });
+}
+
 async function boot() {
   state.config = await api('/api/config');
   try {
-    await refresh();
+    const me = await api('/api/me', { noClient: true });
+    if (me.user?.role !== 'admin') throw new Error('not admin');
+    state.admin = me;
+    await loadDesk();
   } catch {
-    state.me = null;
+    state.admin = null;
   }
   render();
 }

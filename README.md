@@ -15,7 +15,7 @@ npm install
 npm start
 ```
 
-Open GG Card from the computer that runs it. The sign-in page lists every address, and the process listens on all network interfaces so another computer on the same network can use the LAN address. Open http://127.0.0.1:8787, or the `http://192.168…:8787` line printed in the terminal. The admin desk signs in with the username `offlinerich`. Customers create an account with email. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
+Open GG Card from the computer that runs it. The sign-in page lists every address, and the process listens on all network interfaces so another computer on the same network can use the LAN address. Open http://127.0.0.1:8787, or the `http://192.168…:8787` line printed in the terminal. Only the admin signs in: username `offlinerich`. There is no public sign-up. The admin adds clients by email from the console, opens a client to link their wallet and issue the card, and sees every client with their balance. The console acts for a client with the `x-client-id` header, which the server honors only for the admin session. Set `SELF_SIGNUP=1` to bring back customer sign-up and login, for example in tests. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
 
 ```bash
 npm test
@@ -67,4 +67,4 @@ Set `VISA_API_KEY`, `VISA_SHARED_SECRET`, and, when the Visa sandbox requires it
 | USD value | DefiLlama `GET https://coins.llama.fi/prices/current/{chain}:{address}` |
 | Deposit check | `eth_getTransactionReceipt` and the ERC-20 `Transfer` log |
 
-Routes on this server live under `/api`. The browser uses an httpOnly session cookie. Native apps use `Authorization: Bearer` with the token returned by `/api/register` and `/api/login`.
+Routes on this server live under `/api`. The browser uses an httpOnly session cookie. Native apps use `Authorization: Bearer` with the token returned by `/api/login`. `/api/register` answers 403 unless `SELF_SIGNUP=1`. `POST /api/admin/clients` with `{ "email": "…" }` adds a client.

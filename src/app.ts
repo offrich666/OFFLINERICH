@@ -117,11 +117,21 @@ export function createApp(options: CreateAppOptions = {}) {
     res.setHeader('Set-Cookie', `${cookieName}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000${secure}`);
   }
 
-  function requireUser(req: Request): string {
+  function sessionUser(req: Request): string {
     const token = sessionToken(req);
     const session = token ? store.getSession(token) : undefined;
     if (!session) throw new HttpError(401, 'auth_required', 'Sign in to continue.');
     return session.userId;
+  }
+
+  function actor(req: Request): string {
+    const userId = sessionUser(req);
+    const clientId = (req.header('x-client-id') ?? '').trim();
+    if (!clientId) return userId;
+    service.requireAdmin(ctx, userId);
+    const client = store.getUser(clientId);
+    if (!client || client.role === 'admin') throw new HttpError(404, 'client_not_found', 'That client is not on the desk.');
+    return client.id;
   }
 
   function requireOperator(req: Request): void {
@@ -158,6 +168,9 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post('/api/register', asyncRoute(async (req, res) => {
+    if (!config.selfSignup) {
+      throw new HttpError(403, 'signup_closed', 'Only the admin signs in. The admin creates client cards from the desk.');
+    }
     const result = await service.register(ctx, req.body ?? {});
     setSession(res, result.token);
     res.status(201).json(result);
@@ -176,48 +189,52 @@ export function createApp(options: CreateAppOptions = {}) {
   }));
 
   app.get('/api/me', asyncRoute((req, res) => {
-    res.json(service.me(ctx, requireUser(req)));
+    res.json(service.me(ctx, actor(req)));
   }));
 
   app.get('/api/tokens', asyncRoute(async (req, res) => {
-    res.json(await service.listTokens(ctx, requireUser(req)));
+    res.json(await service.listTokens(ctx, actor(req)));
   }));
 
   app.post('/api/tokens', asyncRoute(async (req, res) => {
-    res.status(201).json(await service.addToken(ctx, requireUser(req), req.body ?? {}));
+    res.status(201).json(await service.addToken(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/topups/quote', asyncRoute(async (req, res) => {
-    res.json(await service.quoteTopup(ctx, requireUser(req), req.body ?? {}));
+    res.json(await service.quoteTopup(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/topups/confirm', asyncRoute(async (req, res) => {
-    res.json(await service.confirmTopup(ctx, requireUser(req), req.body ?? {}));
+    res.json(await service.confirmTopup(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/setup', asyncRoute(async (req, res) => {
-    service.requireAdmin(ctx, requireUser(req));
+    service.requireAdmin(ctx, sessionUser(req));
     res.json(await service.connectLive(ctx, req.body ?? {}));
   }));
 
+  app.post('/api/admin/clients', asyncRoute(async (req, res) => {
+    res.status(201).json(await service.createClient(ctx, sessionUser(req), req.body ?? {}));
+  }));
+
   app.get('/api/admin/desk', asyncRoute((req, res) => {
-    res.json(service.adminDesk(ctx, requireUser(req)));
+    res.json(service.adminDesk(ctx, sessionUser(req)));
   }));
 
   app.get('/api/wallet/message', asyncRoute((req, res) => {
-    res.json(service.walletMessage(ctx, requireUser(req), String(req.query.address ?? '')));
+    res.json(service.walletMessage(ctx, actor(req), String(req.query.address ?? '')));
   }));
 
   app.post('/api/wallet/link', asyncRoute(async (req, res) => {
-    res.json(await service.linkWallet(ctx, requireUser(req), req.body ?? {}));
+    res.json(await service.linkWallet(ctx, actor(req), req.body ?? {}));
   }));
 
   app.get('/api/wallet/holdings', asyncRoute(async (req, res) => {
-    res.json(await service.walletHoldings(ctx, requireUser(req)));
+    res.json(await service.walletHoldings(ctx, actor(req)));
   }));
 
   app.get('/api/wallet/qr', asyncRoute(async (req, res) => {
-    res.json(await service.depositQr(ctx, requireUser(req), {
+    res.json(await service.depositQr(ctx, actor(req), {
       tokenId: String(req.query.tokenId ?? ''),
       amount: String(req.query.amount ?? ''),
     }));
@@ -225,45 +242,45 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/card', asyncRoute(async (req, res) => {
     const ip = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^::ffff:/, '');
-    const result = await service.issueCard(ctx, requireUser(req), req.body ?? {}, ip);
+    const result = await service.issueCard(ctx, actor(req), req.body ?? {}, ip);
     res.status(result.status === 'issued' ? 201 : 200).json(result);
   }));
 
   app.post('/api/card/sync', asyncRoute(async (req, res) => {
-    res.json(await service.syncCard(ctx, requireUser(req)));
+    res.json(await service.syncCard(ctx, actor(req)));
   }));
 
   app.post('/api/wallets/apple', asyncRoute(async (req, res) => {
     const body = req.body ?? {};
     if (Array.isArray(body.certChain) && body.certChain.length > 0) {
-      res.json(await service.ephemeralKey(ctx, requireUser(req), body));
+      res.json(await service.ephemeralKey(ctx, actor(req), body));
       return;
     }
-    res.json(service.describeWallet(ctx, requireUser(req), 'apple_pay'));
+    res.json(service.describeWallet(ctx, actor(req), 'apple_pay'));
   }));
 
   app.post('/api/wallets/google', asyncRoute((req, res) => {
-    res.json(service.describeWallet(ctx, requireUser(req), 'google_pay'));
+    res.json(service.describeWallet(ctx, actor(req), 'google_pay'));
   }));
 
   app.post('/api/wallets/samsung', asyncRoute(async (req, res) => {
-    res.json(await service.samsungProvision(ctx, requireUser(req), req.body ?? {}));
+    res.json(await service.samsungProvision(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/wallets/ephemeral-key', asyncRoute(async (req, res) => {
-    res.json(await service.ephemeralKey(ctx, requireUser(req), req.body ?? {}));
+    res.json(await service.ephemeralKey(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/wallets/secure-details', asyncRoute(async (req, res) => {
-    res.json(await service.secureCardLink(ctx, requireUser(req)));
+    res.json(await service.secureCardLink(ctx, actor(req)));
   }));
 
   app.post('/api/wallets/events', asyncRoute((req, res) => {
-    res.json(service.recordWalletEvent(ctx, requireUser(req), req.body ?? {}));
+    res.json(service.recordWalletEvent(ctx, actor(req), req.body ?? {}));
   }));
 
   app.get('/api/activity', asyncRoute((req, res) => {
-    res.json(service.activity(ctx, requireUser(req)));
+    res.json(service.activity(ctx, actor(req)));
   }));
 
   app.get('/api/operator/obligations', asyncRoute((req, res) => {

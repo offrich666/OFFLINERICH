@@ -36,6 +36,7 @@ export type Config = {
   operatorToken: string;
   secureCookies: boolean;
   trustProxy: boolean;
+  selfSignup: boolean;
   rpcUrls: Record<number, string>;
 };
 
@@ -92,6 +93,7 @@ export function loadConfig(env: Env): Config {
     operatorToken: env.OPERATOR_TOKEN?.trim() ?? '',
     secureCookies: env.SECURE_COOKIES === 'true',
     trustProxy: env.TRUST_PROXY === 'true',
+    selfSignup: env.SELF_SIGNUP === '1',
     rpcUrls,
   };
 }
