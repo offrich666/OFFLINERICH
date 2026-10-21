@@ -1,5 +1,4 @@
 import { HttpError } from './errors.ts';
-import { id } from './ids.ts';
 
 export type CardholderDraft = {
   name: string;
@@ -45,12 +44,28 @@ export type IssuedCard = {
 };
 
 export type CardIssuer = {
-  mode: 'simulated' | 'stripe';
+  mode: 'stripe';
   createCardholder(draft: CardholderDraft): Promise<{ id: string }>;
   createCard(draft: CreateCardDraft): Promise<IssuedCard>;
   updateCard(cardId: string, input: { status: 'active' | 'inactive'; spendingLimitCents: number }): Promise<void>;
   createEphemeralKey(input: { cardId: string; apiVersion: string; nonce?: string }): Promise<Record<string, unknown>>;
 };
+
+export const LIVE_KEY_MESSAGE =
+  'Connect a live Stripe secret key (sk_live_...). That is the key that issues a card you can spend and add to Apple Pay, Google Pay, and Samsung Pay.';
+
+export function createUnavailableIssuer(): CardIssuer {
+  const refuse = async () => {
+    throw new HttpError(400, 'live_key_required', LIVE_KEY_MESSAGE);
+  };
+  return {
+    mode: 'stripe',
+    createCardholder: refuse,
+    createCard: refuse,
+    updateCard: refuse,
+    createEphemeralKey: refuse,
+  };
+}
 
 type StripeErrorBody = { error?: { message?: string; code?: string } };
 
@@ -180,36 +195,6 @@ export function createStripeIssuer(input: {
         keyInput.apiVersion,
       );
       return { ...json, api_version: keyInput.apiVersion, ephemeralKeySecret: json.secret };
-    },
-  };
-}
-
-export function createSimulatedIssuer(now: () => number = Date.now): CardIssuer {
-  return {
-    mode: 'simulated',
-    async createCardholder() {
-      return { id: id('ich_sim_') };
-    },
-    async createCard(draft) {
-      const created = new Date(now());
-      return {
-        id: id('ic_sim_'),
-        last4: String(1000 + Math.floor(Math.random() * 9000)),
-        expMonth: created.getUTCMonth() + 1,
-        expYear: created.getUTCFullYear() + 4,
-        brand: 'visa',
-        status: draft.status,
-      };
-    },
-    async updateCard() {
-      return;
-    },
-    async createEphemeralKey() {
-      throw new HttpError(
-        409,
-        'issuer_not_live',
-        'Apple Pay and Google Pay tokenize a Stripe Issuing card. Connect STRIPE_SECRET_KEY to mint the ephemeral key.',
-      );
     },
   };
 }

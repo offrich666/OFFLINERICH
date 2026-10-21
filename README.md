@@ -2,9 +2,9 @@
 
 A USD debit card you fund with ERC-20 tokens, including a contract you paste in yourself. The same card can be added to Apple Pay, Google Pay, and Samsung Pay.
 
-The spend rail is [Stripe Issuing](https://docs.stripe.com/issuing). Phone wallets tokenize that card. This server prices deposits and approves a charge when the token balance covers it. It does not hold a treasury private key, and it does not display a full card number outside Stripe’s card frame.
+The spend rail is live [Stripe Issuing](https://docs.stripe.com/issuing). Phone wallets tokenize that card. This server prices deposits and approves a charge when the token balance covers it. It does not hold a treasury private key, and it does not display a full card number outside Stripe’s card frame.
 
-Until `STRIPE_SECRET_KEY` is set, the app issues a **simulator** card so you can add contracts, value them, and rehearse a purchase. A simulator card is not a wallet token and is not accepted in shops.
+A card you can spend at a merchant needs your own Issuing-enabled Stripe account: a live secret key (`sk_live_`), the matching live publishable key (`pk_live_`), a webhook signing secret (`whsec_`), and a treasury address you control. Paste those on the dashboard after you sign in, or set them in the environment before start. The server checks the secret against `GET /v1/issuing/cardholders` before it saves it. Test-mode keys are refused, because those cards cannot be added to a phone wallet or used at a merchant. Saved keys live in the gitignored SQLite file. The environment wins when both are set. Fund the Stripe Issuing balance for the USD you credit. Apple still has to approve the wallet (US and Canada often take one to two weeks; EU and UK programs need Stripe’s partnership). Google Pay needs the Issuer Console linked to aggregator `BCR2DN7TWDCZDZJC` and TapAndPay `18.8.0` allowlisting. Samsung manual add works once Stripe wallets are enabled; push needs Visa credentials and a vCardID.
 
 ## Run
 
@@ -28,8 +28,6 @@ npm test
 
 The treasury key stays with you. Swap or redeem what arrives and keep the Stripe Issuing balance funded for the same USD amount. `GET /api/operator/obligations` (header `Authorization: Bearer $OPERATOR_TOKEN`) shows the credited total.
 
-With no treasury address, the page can credit a simulator top-up so the rest of the flow is usable. Simulator credits turn off automatically for a live Stripe key.
-
 ## Spend it worldwide
 
 The card currency is USD. A merchant who charges in another currency is converted by the card network. No merchant country is blocked unless you set `BLOCKED_MERCHANT_COUNTRIES`.
@@ -40,7 +38,7 @@ The card stays inactive until the balance is above zero. The Stripe spending lim
 
 ## Apple Pay, Google Pay, Samsung Pay
 
-Manual add works once Stripe has enabled digital wallets: the wallet sends a 6-digit code to the cardholder phone or email. Both are collected when the card is issued. In the US and Canada, Google Pay and Samsung Pay need no extra Stripe step; Apple Pay needs Apple’s approval. EU and UK programs need Stripe’s partnership team as well. Wallet tokens exist only in live mode.
+Manual add works once Stripe has enabled digital wallets: the wallet sends a 6-digit code to the cardholder phone or email. Both are collected when the card is issued. In the US and Canada, Google Pay and Samsung Pay need no extra Stripe step; Apple Pay needs Apple’s approval. EU and UK programs need Stripe’s partnership team as well. Wallet tokens are issued only with live keys.
 
 | Wallet | On this site | In the phone app |
 | --- | --- | --- |

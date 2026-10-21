@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import fs from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
 import { test } from 'node:test';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createApp, type CreateAppOptions } from '../src/app.ts';
@@ -23,7 +26,14 @@ function listen(options: CreateAppOptions) {
       const address = server.address() as AddressInfo;
       resolve({
         base: `http://127.0.0.1:${address.port}`,
-        close: () => new Promise((done) => server.close(() => done())),
+        close: () =>
+          new Promise((done) => {
+            server.close(() => {
+              const closeStore = app.locals.closeStore as (() => void) | undefined;
+              closeStore?.();
+              done();
+            });
+          }),
       });
     });
   });
@@ -67,6 +77,46 @@ const prices = {
   },
 };
 
+const liveSecret = 'sk_live_supersecret';
+const livePublishable = 'pk_live_public';
+
+function stripeFetch() {
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  const fetchImpl: typeof fetch = async (url, init) => {
+    const target = String(url);
+    const method = init?.method ?? 'GET';
+    const body = String(init?.body ?? '');
+    calls.push({ url: target, method, body });
+    const pathname = new URL(target).pathname;
+    if (pathname === '/v1/issuing/cardholders' && method === 'GET') {
+      return new Response(JSON.stringify({ object: 'list', data: [] }), { status: 200 });
+    }
+    if (pathname === '/v1/issuing/cardholders' && method === 'POST') {
+      return new Response(JSON.stringify({ id: 'ich_live_1' }), { status: 200 });
+    }
+    if (pathname === '/v1/issuing/cards' && method === 'POST') {
+      return new Response(
+        JSON.stringify({ id: 'ic_live_1', last4: '4242', exp_month: 12, exp_year: 2030, brand: 'visa', status: 'inactive' }),
+        { status: 200 },
+      );
+    }
+    if (pathname.startsWith('/v1/issuing/cards/')) {
+      return new Response(JSON.stringify({ id: 'ic_live_1' }), { status: 200 });
+    }
+    if (pathname === '/v1/ephemeral_keys') {
+      return new Response(JSON.stringify({ id: 'ephkey_1', object: 'ephemeral_key', secret: 'ek_live_secret' }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: `unexpected ${method} ${pathname}` } }), { status: 500 });
+  };
+  return { fetchImpl, calls };
+}
+
+function sign(secret: string, payload: string): string {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const digest = createHmac('sha256', secret).update(`${timestamp}.${payload}`).digest('hex');
+  return `t=${timestamp},v1=${digest}`;
+}
+
 const cardBody = {
   firstName: 'Ada',
   lastName: 'Lovelace',
@@ -82,18 +132,26 @@ const cardBody = {
   acceptedTerms: true,
 };
 
-test('issues a card, values a custom token, and spends worldwide', async () => {
+async function webhook(base: string, secret: string, body: unknown) {
+  const payload = JSON.stringify(body);
+  return call(base, '/api/webhooks/stripe', undefined, payload, { 'stripe-signature': sign(secret, payload) });
+}
+
+test('issues a live card, values a deposit, and approves a real authorization', async () => {
   const receipt = { current: null as unknown };
+  const stripe = stripeFetch();
   const started = await listen({
     dbPath: ':memory:',
     rpc: chainRpc(receipt),
     prices,
+    fetchImpl: stripe.fetchImpl,
     env: {
+      STRIPE_SECRET_KEY: liveSecret,
+      STRIPE_PUBLISHABLE_KEY: livePublishable,
       TREASURY_ADDRESS: treasury,
       TOPUP_FEE_BPS: '0',
       MIN_TOPUP_CENTS: '1',
       BLOCKED_MERCHANT_COUNTRIES: 'KP',
-      ALLOW_SIMULATED_TOPUPS: 'true',
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
       OPERATOR_TOKEN: 'operator-token-1',
     },
@@ -106,6 +164,11 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     assert.equal(registered.status, 201);
     const token = String((registered.data as { token: string }).token);
 
+    const removedTopup = await call(started.base, '/api/topups/simulate', token, { amount: '10' });
+    assert.equal(removedTopup.status, 404);
+    const removedPurchase = await call(started.base, '/api/purchases/simulate', token, { amount: '1.00' });
+    assert.equal(removedPurchase.status, 404);
+
     const refused = await call(started.base, '/api/card', token, { ...cardBody, acceptedTerms: false });
     assert.equal(refused.status, 400);
 
@@ -113,14 +176,23 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     assert.equal(issued.status, 201);
     const card = (issued.data as { card: { status: string; last4: string; issuerCardId: string; id: string } }).card;
     assert.equal(card.status, 'inactive');
-    assert.match(card.last4, /^\d{4}$/);
+    assert.equal(card.last4, '4242');
+    assert.equal(card.issuerCardId, 'ic_live_1');
+    assert.ok(stripe.calls.some((entry) => entry.url.endsWith('/v1/issuing/cards') && entry.method === 'POST'));
 
-    const early = await call(started.base, '/api/purchases/simulate', token, {
-      amount: '4.50',
-      merchantName: 'Kissaten',
-      merchantCountry: 'JP',
+    const early = await webhook(started.base, 'whsec_test', {
+      id: 'evt_early',
+      type: 'issuing_authorization.request',
+      data: {
+        object: {
+          id: 'iauth_early',
+          card: card.issuerCardId,
+          pending_request: { amount: 450, currency: 'usd' },
+          merchant_data: { name: 'Kissaten', country: 'JP' },
+        },
+      },
     });
-    assert.equal((early.data as { reason: string }).reason, 'card_inactive');
+    assert.equal((early.data as { approved: boolean }).approved, false);
 
     const catalog = await call(started.base, '/api/tokens', token, {
       chainId: 8453,
@@ -128,32 +200,6 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     });
     assert.equal(catalog.status, 201);
     assert.equal((catalog.data as { token: { symbol: string } }).token.symbol, 'USDC');
-
-    const tokens = await call(started.base, '/api/tokens', token);
-    const usdc = ((tokens.data as { tokens: Array<{ symbol: string; chainId: number; id: string }> }).tokens).find(
-      (entry) => entry.symbol === 'USDC' && entry.chainId === 8453,
-    );
-    assert.ok(usdc);
-
-    const topped = await call(started.base, '/api/topups/simulate', token, { tokenId: usdc?.id, amount: '10' });
-    assert.equal(topped.status, 200);
-    assert.equal((topped.data as { creditedCents: number }).creditedCents, 1000);
-
-    const japan = await call(started.base, '/api/purchases/simulate', token, {
-      amount: '4.50',
-      merchantName: 'Kissaten',
-      merchantCountry: 'JP',
-    });
-    assert.equal((japan.data as { approved: boolean }).approved, true);
-    assert.equal((japan.data as { balance: { available: number } }).balance.available, 550);
-
-    const blocked = await call(started.base, '/api/purchases/simulate', token, {
-      amount: '1.00',
-      merchantName: 'Blocked',
-      merchantCountry: 'KP',
-    });
-    assert.equal((blocked.data as { reason: string }).reason, 'country_blocked');
-    assert.equal((blocked.data as { balance: { available: number } }).balance.available, 550);
 
     const custom = await call(started.base, '/api/tokens', token, { chainId: 1, address: dead });
     assert.equal(custom.status, 201);
@@ -166,11 +212,7 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     });
     assert.equal(junk.status, 400);
 
-    const message = await call(
-      started.base,
-      `/api/wallet/message?address=${account.address}`,
-      token,
-    );
+    const message = await call(started.base, `/api/wallet/message?address=${account.address}`, token);
     const signature = await account.signMessage({ message: String((message.data as { message: string }).message) });
     const linked = await call(started.base, '/api/wallet/link', token, { address: account.address, signature });
     assert.equal(linked.status, 200);
@@ -194,11 +236,10 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     const confirmed = await call(started.base, '/api/topups/confirm', token, { tokenId, txHash: tx });
     assert.equal(confirmed.status, 200);
     assert.equal((confirmed.data as { creditedCents: number }).creditedCents, 250);
-    assert.equal((confirmed.data as { balance: { available: number } }).balance.available, 800);
+    assert.equal((confirmed.data as { balance: { available: number } }).balance.available, 250);
 
     const again = await call(started.base, '/api/topups/confirm', token, { tokenId, txHash: tx });
     assert.equal((again.data as { alreadyCredited: boolean }).alreadyCredited, true);
-    assert.equal((again.data as { balance: { available: number } }).balance.available, 800);
 
     receipt.current = {
       status: '0x1',
@@ -221,19 +262,8 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
     });
     assert.equal(stranger.status, 400);
 
-    const apple = await call(started.base, '/api/wallets/apple', token, {});
-    assert.equal(apple.status, 200);
-    assert.equal((apple.data as { primaryAccountSuffix: string }).primaryAccountSuffix, card.last4);
-    assert.equal((apple.data as { push: { endpoint: string } }).push.endpoint, '/api/wallets/ephemeral-key');
-
-    const key = await call(started.base, '/api/wallets/ephemeral-key', token, { cardId: card.id, apiVersion: '2024-06-20' });
-    assert.equal(key.status, 409);
-
-    const samsung = await call(started.base, '/api/wallets/samsung', token, {});
-    assert.ok(((samsung.data as { missing: string[] }).missing).some((item) => item.includes('VISA_API_KEY')));
-
-    const payload = JSON.stringify({
-      id: 'evt_1',
+    const berlin = await webhook(started.base, 'whsec_test', {
+      id: 'evt_berlin',
       type: 'issuing_authorization.request',
       data: {
         object: {
@@ -244,27 +274,58 @@ test('issues a card, values a custom token, and spends worldwide', async () => {
         },
       },
     });
-    const timestamp = Math.floor(Date.now() / 1000);
-    const signed = createHmac('sha256', 'whsec_test').update(`${timestamp}.${payload}`).digest('hex');
-    const webhook = await call(started.base, '/api/webhooks/stripe', undefined, payload, {
-      'stripe-signature': `t=${timestamp},v1=${signed}`,
+    assert.equal((berlin.data as { approved: boolean }).approved, true);
+
+    const blocked = await webhook(started.base, 'whsec_test', {
+      id: 'evt_blocked',
+      type: 'issuing_authorization.request',
+      data: {
+        object: {
+          id: 'iauth_blocked',
+          card: card.issuerCardId,
+          pending_request: { amount: 100, currency: 'usd' },
+          merchant_data: { name: 'Blocked', country: 'KP' },
+        },
+      },
     });
-    assert.equal((webhook.data as { approved: boolean }).approved, true);
+    assert.equal((blocked.data as { approved: boolean }).approved, false);
+
+    const apple = await call(started.base, '/api/wallets/apple', token, {});
+    assert.equal(apple.status, 200);
+    assert.equal((apple.data as { primaryAccountSuffix: string }).primaryAccountSuffix, '4242');
+    assert.equal((apple.data as { push: { available: boolean } }).push.available, true);
+
+    const key = await call(started.base, '/api/wallets/ephemeral-key', token, {
+      cardId: card.id,
+      apiVersion: '2024-06-20',
+      nonce: 'nonce_abc',
+    });
+    assert.equal(key.status, 200);
+    assert.equal((key.data as { ephemeralKeySecret: string }).ephemeralKeySecret, 'ek_live_secret');
+
+    const configResponse = await fetch(`${started.base}/api/config`);
+    const configText = await configResponse.text();
+    assert.equal(configText.includes(liveSecret), false);
+    assert.equal(configText.includes('ek_live_secret'), false);
+    assert.equal(configText.includes('whsec_test'), false);
+
+    const samsung = await call(started.base, '/api/wallets/samsung', token, {});
+    assert.ok(((samsung.data as { missing: string[] }).missing).some((item) => item.includes('VISA_API_KEY')));
 
     const me = await call(started.base, '/api/me', token);
-    assert.equal((me.data as { balance: { availableCents: number } }).balance.availableCents, 700);
+    assert.equal((me.data as { balance: { availableCents: number } }).balance.availableCents, 150);
     assert.equal((me.data as { card: { status: string } }).card.status, 'active');
 
     const hidden = await call(started.base, '/api/operator/obligations');
     assert.equal(hidden.status, 401);
     const obligations = await call(started.base, '/api/operator/obligations', 'operator-token-1');
-    assert.equal((obligations.data as { creditedCents: number }).creditedCents, 1250);
+    assert.equal((obligations.data as { creditedCents: number }).creditedCents, 250);
   } finally {
     await started.close();
   }
 });
 
-test('public config lists wallet APIs and hides secrets', async () => {
+test('public config hides secrets and refuses a test key', async () => {
   const started = await listen({
     dbPath: ':memory:',
     env: { STRIPE_SECRET_KEY: 'sk_test_supersecret', STRIPE_PUBLISHABLE_KEY: 'pk_test_public' },
@@ -274,14 +335,90 @@ test('public config lists wallet APIs and hides secrets', async () => {
     const text = await response.text();
     assert.equal(text.includes('sk_test_supersecret'), false);
     const body = JSON.parse(text) as {
+      livemode: boolean;
+      issuer: string;
       stripePublishableKey: string;
       wallets: { googlePay: { aggregatorMerchantId: string } };
-      readiness: Array<{ id: string }>;
+      readiness: Array<{ id: string; ready: boolean }>;
     };
-    assert.equal(body.stripePublishableKey, 'pk_test_public');
+    assert.equal(body.livemode, false);
+    assert.equal(body.issuer, 'unconfigured');
+    assert.equal(body.stripePublishableKey, '');
     assert.equal(body.wallets.googlePay.aggregatorMerchantId, 'BCR2DN7TWDCZDZJC');
-    assert.ok(body.readiness.some((item) => item.id === 'samsung_pay'));
+    assert.equal(body.readiness.find((item) => item.id === 'stripe_issuing')?.ready, false);
+
+    const registered = await call(started.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    const token = String((registered.data as { token: string }).token);
+    const issued = await call(started.base, '/api/card', token, cardBody);
+    assert.equal(issued.status, 400);
+    assert.equal((issued.data as { error: { code: string } }).error.code, 'live_key_required');
   } finally {
     await started.close();
+  }
+});
+
+test('setup stores a live key and keeps it out of the public config', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'offlinerich-'));
+  const dbPath = path.join(dir, 'card.sqlite');
+  const stripe = stripeFetch();
+  const first = await listen({ dbPath, fetchImpl: stripe.fetchImpl, env: {} });
+  try {
+    const registered = await call(first.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    const token = String((registered.data as { token: string }).token);
+    const testKey = await call(first.base, '/api/setup', token, {
+      stripeSecretKey: 'sk_test_nope',
+      stripePublishableKey: 'pk_test_public',
+      stripeWebhookSecret: 'whsec_test',
+      treasuryAddress: treasury,
+    });
+    assert.equal(testKey.status, 400);
+    assert.equal((testKey.data as { error: { code: string } }).error.code, 'live_key_required');
+    assert.equal(stripe.calls.length, 0);
+
+    const connected = await call(first.base, '/api/setup', token, {
+      stripeSecretKey: liveSecret,
+      stripePublishableKey: livePublishable,
+      stripeWebhookSecret: 'whsec_test',
+      treasuryAddress: treasury,
+    });
+    assert.equal(connected.status, 200);
+    assert.equal((connected.data as { livemode: boolean }).livemode, true);
+    assert.equal(JSON.stringify(connected.data).includes(liveSecret), false);
+    assert.ok(stripe.calls.some((entry) => entry.url.includes('/v1/issuing/cardholders?limit=1')));
+
+    const again = await call(first.base, '/api/setup', token, {
+      stripeSecretKey: 'sk_live_other',
+      stripePublishableKey: livePublishable,
+      stripeWebhookSecret: 'whsec_test',
+      treasuryAddress: treasury,
+    });
+    assert.equal(again.status, 409);
+
+    const issued = await call(first.base, '/api/card', token, cardBody);
+    assert.equal(issued.status, 201);
+    assert.equal((issued.data as { card: { last4: string } }).card.last4, '4242');
+  } finally {
+    await first.close();
+  }
+
+  const second = await listen({ dbPath, fetchImpl: stripe.fetchImpl, env: {} });
+  try {
+    const response = await fetch(`${second.base}/api/config`);
+    const text = await response.text();
+    const body = JSON.parse(text) as { livemode: boolean; stripePublishableKey: string; treasuryAddress: string };
+    assert.equal(body.livemode, true);
+    assert.equal(body.stripePublishableKey, livePublishable);
+    assert.equal(body.treasuryAddress, treasury);
+    assert.equal(text.includes(liveSecret), false);
+    assert.equal(text.includes('whsec_test'), false);
+  } finally {
+    await second.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

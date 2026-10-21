@@ -3,10 +3,10 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chainById, CHAINS } from './chains.ts';
-import { loadConfig, readiness, type Config, type Env } from './config.ts';
+import { isLivePublishable, loadConfig, overlaySaved, readiness, type Config, type Env } from './config.ts';
 import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
-import { createSimulatedIssuer, createStripeIssuer } from './issuer.ts';
+import { createStripeIssuer, createUnavailableIssuer } from './issuer.ts';
 import { createPriceClient, type PriceClient } from './prices.ts';
 import * as service from './service.ts';
 import { openStore, type Store } from './store.ts';
@@ -91,14 +91,16 @@ export function createApp(options: CreateAppOptions = {}) {
   const config = loadConfig(env);
   const fetchImpl = options.fetchImpl ?? fetch;
   const store: Store = openStore(options.dbPath ?? config.databasePath);
+  overlaySaved(config, store.getSettings(), env);
   const ctx: service.Ctx = {
     config,
     store,
     rpc: options.rpc ?? createRpc(config, fetchImpl),
     prices: options.prices ?? createPriceClient(fetchImpl),
-    issuer: config.stripeSecretKey
+    fetchImpl,
+    issuer: config.livemode
       ? createStripeIssuer({ secretKey: config.stripeSecretKey, apiVersion: config.stripeApiVersion, fetchImpl })
-      : createSimulatedIssuer(options.now),
+      : createUnavailableIssuer(),
     now: options.now ?? (() => Date.now()),
   };
   const app = express();
@@ -161,14 +163,12 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/config', (_req, res) => {
     res.json({
-      issuer: ctx.issuer.mode,
+      issuer: config.livemode ? 'stripe' : 'unconfigured',
       livemode: config.livemode,
       currency: 'usd',
       feeBps: config.feeBps,
       treasuryAddress: config.treasuryAddress,
-      simulatedTopups: config.allowSimulatedTopups,
-      simulatePurchases: config.simulatePurchases,
-      stripePublishableKey: config.stripePublishableKey,
+      stripePublishableKey: config.livemode && isLivePublishable(config.stripePublishableKey) ? config.stripePublishableKey : '',
       stripeApiVersion: config.stripeApiVersion,
       blockedCountries: config.blockedCountries,
       wallets: {
@@ -225,8 +225,9 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json(await service.confirmTopup(ctx, requireUser(req), req.body ?? {}));
   }));
 
-  app.post('/api/topups/simulate', asyncRoute(async (req, res) => {
-    res.json(await service.simulateTopup(ctx, requireUser(req), req.body ?? {}));
+  app.post('/api/setup', asyncRoute(async (req, res) => {
+    requireUser(req);
+    res.json(await service.connectLive(ctx, req.body ?? {}));
   }));
 
   app.get('/api/wallet/message', asyncRoute((req, res) => {
@@ -244,10 +245,6 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/card/sync', asyncRoute(async (req, res) => {
     res.json(await service.syncCard(ctx, requireUser(req)));
-  }));
-
-  app.post('/api/purchases/simulate', asyncRoute((req, res) => {
-    res.json(service.simulatePurchase(ctx, requireUser(req), req.body ?? {}));
   }));
 
   app.post('/api/wallets/apple', asyncRoute((req, res) => {
@@ -297,5 +294,6 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.locals.port = config.port;
+  app.locals.closeStore = () => store.close();
   return app;
 }

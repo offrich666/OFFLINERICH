@@ -83,7 +83,7 @@ function authHtml() {
       <section class="panel">
         <p class="kicker">Worldwide card</p>
         <h1>Spend the tokens you already own.</h1>
-        <p class="lede">Add a token by its contract, send it to your treasury, and the USD value becomes spendable anywhere the card network is accepted. Apple Pay, Google Pay, and Samsung Pay use the same card.</p>
+        <p class="lede">Add a token by its contract, send it to your treasury, and the USD value becomes spendable anywhere the card network is accepted. Apple Pay, Google Pay, and Samsung Pay use the same live Stripe Issuing card. Sign in, then connect your live keys.</p>
         <form id="auth-form" class="stack">
           <label>Email <input name="email" type="email" autocomplete="email" required /></label>
           <label>Password <input name="password" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" minlength="8" required /></label>
@@ -95,7 +95,7 @@ function authHtml() {
       </section>
       <section class="panel">
         <h2>What has to be connected</h2>
-        <p class="lede">The card spends through Stripe Issuing. Token value comes from the chain and DefiLlama. The phone wallets each have their own issuer API.</p>
+        <p class="lede">The card spends through live Stripe Issuing. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same card.</p>
         ${readinessHtml()}
       </section>
     </main>`;
@@ -125,7 +125,6 @@ function cardHtml() {
   const month = String(card.expMonth).padStart(2, '0');
   const year = String(card.expYear).slice(-2);
   return `<article class="plastic">
-      ${card.issuerMode === 'simulated' ? '<em class="ribbon">Simulator</em>' : ''}
       <div class="plastic-top"><span>OfflineRich</span><span>${esc(card.brand)} · ${esc(card.type)}</span></div>
       <div class="chip"></div>
       <p class="pan">•••• •••• •••• ${esc(card.last4)}</p>
@@ -138,11 +137,26 @@ function cardHtml() {
     <p class="world">${card.status === 'active' ? 'Active' : 'Waiting for a top-up'} · USD · accepted worldwide, with network conversion at the merchant.</p>`;
 }
 
+function setupHtml() {
+  if (state.config?.livemode) return '';
+  return `<section class="panel">
+    <h2>Connect the live card</h2>
+    <p class="lede">A merchant charge, Apple Pay, Google Pay, and Samsung Pay all use the card Stripe Issuing creates with your live keys. Paste the live secret key, the live publishable key, the webhook signing secret, and the wallet that receives token deposits.</p>
+    <form id="setup-form" class="stack">
+      <label>Live secret key <input name="stripeSecretKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" required /></label>
+      <label>Live publishable key <input name="stripePublishableKey" autocomplete="off" spellcheck="false" placeholder="pk_live_…" required /></label>
+      <label>Webhook secret <input name="stripeWebhookSecret" type="password" autocomplete="off" spellcheck="false" placeholder="whsec_…" required /></label>
+      <label>Treasury address <input name="treasuryAddress" autocomplete="off" spellcheck="false" placeholder="0x…" required /></label>
+      <button class="primary" type="submit">Connect Stripe Issuing</button>
+    </form>
+  </section>`;
+}
+
 function issueForm() {
-  if (state.me.card) return '';
+  if (state.me.card || !state.config?.livemode) return '';
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">The name, phone, and email are what Apple Pay, Google Pay, and Samsung Pay use to verify the card. Identity is sent to Stripe Issuing when that key is connected.</p>
+    <p class="lede">Stripe Issuing creates this card. The name, phone, and email are what Apple Pay, Google Pay, and Samsung Pay use to verify it.</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -167,7 +181,6 @@ function issueForm() {
 
 function dashboardHtml() {
   const wallet = state.me.wallet;
-  const blocked = (state.config.blockedCountries || []).join(', ');
   return `<header class="top wrap">
       <div class="mark">OFFLINE<span>RICH</span></div>
       <div class="row">
@@ -192,6 +205,7 @@ function dashboardHtml() {
       </div>
       <div class="stack">
         ${flashHtml()}
+        ${setupHtml()}
         ${issueForm()}
         <section class="panel">
           <h2>Tokens</h2>
@@ -219,7 +233,7 @@ function dashboardHtml() {
         </section>
         <section class="panel">
           <h2>Wallets</h2>
-          <p class="lede">Add the same card to Apple Pay, Google Pay, or Samsung Pay. Live buttons appear when Stripe.js has a publishable key and the card was issued by Stripe.</p>
+          <p class="lede">Add the same card to Apple Pay, Google Pay, or Samsung Pay. The wallet buttons appear after Stripe Issuing creates the card.</p>
           <div id="secure-card" class="secure"></div>
           <div class="row" style="margin-top:12px">
             <button class="primary" type="button" data-action="wallet" data-wallet="apple">Add to Apple Pay</button>
@@ -238,7 +252,6 @@ function dashboardHtml() {
             </form>
           </details>
         </section>
-        ${purchaseHtml(blocked)}
         <section class="panel">
           <h2>Activity</h2>
           <ul class="activity">${
@@ -251,7 +264,7 @@ function dashboardHtml() {
                     return `<li><div><p>${esc(item.title)}</p><p class="muted">${esc(item.detail)}</p></div>${amount}</li>`;
                   })
                   .join('')
-              : '<li><p class="muted">Top-ups and charges will show here.</p></li>'
+              : '<li><p class="muted">Deposits and card charges show up here.</p></li>'
           }</ul>
         </section>
         <section class="panel">
@@ -269,48 +282,23 @@ function quoteHtml() {
     `${quote.amount} ${quote.symbol} on ${quote.chainName}`,
     `Price ${money(Math.round(quote.priceUsd * 100))} · fee ${money(quote.feeCents)} · you get ${money(quote.netCents)}`,
   ];
-  if (quote.treasuryAddress) lines.push(`Send the token to ${quote.treasuryAddress}, then paste the transaction hash.`);
+  lines.push(
+    quote.treasuryAddress
+      ? `Send the token to ${quote.treasuryAddress}, then paste the transaction hash.`
+      : 'Connect the treasury address, then send the token there and paste the transaction hash.',
+  );
   return esc(lines.join('\n'));
 }
 
 function topupActions() {
   if (!state.quote) return '';
-  const send = state.quote.treasuryAddress
-    ? `<input id="tx-hash" placeholder="0x transaction hash" style="flex:1" />
-       <button class="primary" type="button" data-action="confirm-topup">I sent it</button>`
-    : '';
-  const simulate = state.config.simulatedTopups
-    ? '<button class="ghost" type="button" data-action="simulate-topup">Credit in the simulator</button>'
-    : '';
-  return `<div class="row" style="margin-top:10px">${send}${simulate}</div>`;
-}
-
-function purchaseHtml(blocked) {
-  if (!state.config.simulatePurchases) return '';
-  const places = [
-    ['Kissaten', 'JP'],
-    ['Lagos Grill', 'NG'],
-    ['Berlin Bäckerei', 'DE'],
-    ['São Paulo Café', 'BR'],
-    ['Marina Bay', 'SG'],
-    ['Dubai Mall', 'AE'],
-  ];
-  return `<section class="panel">
-      <h2>Try a charge</h2>
-      <p class="lede">This rehearses a merchant authorization in the card’s USD balance.${blocked ? ` Blocked merchant countries: ${esc(blocked)}.` : ' Every merchant country is open.'}</p>
-      <div class="chips">${places
-        .map(
-          ([name, country]) =>
-            `<button class="tiny" type="button" data-action="place" data-name="${esc(name)}" data-country="${country}">${esc(name)}</button>`,
-        )
-        .join('')}</div>
-      <form id="purchase-form" class="grid-2" style="margin-top:12px">
-        <label>Merchant <input name="merchantName" value="Kissaten" required /></label>
-        <label>Country <input name="merchantCountry" value="JP" maxlength="2" required /></label>
-        <label>USD <input name="amount" value="4.50" required /></label>
-        <div class="full"><button class="primary" type="submit">Charge the card</button></div>
-      </form>
-    </section>`;
+  if (!state.quote.treasuryAddress) {
+    return '<p class="muted" style="margin-top:10px">Connect the treasury address. A deposit is credited after the token arrives there.</p>';
+  }
+  return `<div class="row" style="margin-top:10px">
+      <input id="tx-hash" placeholder="0x transaction hash" style="flex:1" />
+      <button class="primary" type="button" data-action="confirm-topup">I sent it</button>
+    </div>`;
 }
 
 function render() {
@@ -433,12 +421,6 @@ document.body.addEventListener('click', (event) => {
       render();
     });
   }
-  if (action === 'place') {
-    const form = document.getElementById('purchase-form');
-    if (!form) return;
-    form.merchantName.value = button.dataset.name;
-    form.merchantCountry.value = button.dataset.country;
-  }
   if (action === 'connect-wallet') {
     run(() => connectBrowserWallet());
   }
@@ -454,17 +436,6 @@ document.body.addEventListener('click', (event) => {
         text: result.alreadyCredited ? 'That transfer is already on the card.' : `${money(result.creditedCents)} added to the card.`,
       };
       state.quote = null;
-      await refresh();
-      render();
-    });
-  }
-  if (action === 'simulate-topup') {
-    run(async () => {
-      const result = await api('/api/topups/simulate', {
-        method: 'POST',
-        body: { tokenId: state.selectedTokenId, amount: state.amount },
-      });
-      state.flash = { kind: 'ok', text: `${money(result.creditedCents)} simulator credit added.` };
       await refresh();
       render();
     });
@@ -537,10 +508,11 @@ document.body.addEventListener('submit', (event) => {
   if (form.id === 'link-form') {
     run(() => linkAddress(String(data.address), String(data.signature || '')));
   }
-  if (form.id === 'purchase-form') {
+  if (form.id === 'setup-form') {
     run(async () => {
-      const result = await api('/api/purchases/simulate', { method: 'POST', body: data });
-      state.flash = { kind: result.approved ? 'ok' : 'error', text: result.message };
+      await api('/api/setup', { method: 'POST', body: data });
+      state.config = await api('/api/config');
+      state.flash = { kind: 'ok', text: 'Live Stripe Issuing is connected. Issue the card next.' };
       await refresh();
       render();
     });

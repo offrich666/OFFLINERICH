@@ -83,11 +83,6 @@ header.top p { margin: 0; color: var(--muted); font-size: 13px; }
 .pan { font-size: 22px; letter-spacing: 0.16em; margin: 0 0 18px; }
 .plastic small { display: block; color: rgba(247, 242, 232, 0.62); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
 .plastic strong { font-weight: 600; }
-.ribbon {
-  position: absolute; top: 18px; right: -34px; transform: rotate(32deg);
-  background: var(--brass); color: var(--brass-ink); font-size: 11px; font-style: normal;
-  letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 40px;
-}
 .world { margin: 10px 2px 0; color: var(--muted); font-size: 13px; }
 
 .btn, button.primary {

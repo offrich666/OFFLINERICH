@@ -1,10 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
 import { decodeTransfers, isAddress, receiptSucceeded } from './abi.ts';
 import { CATALOG, chainById, findCatalog, findCatalogById, type CatalogToken } from './chains.ts';
-import type { Config } from './config.ts';
+import { isLiveSecret, isTestSecret, type Config } from './config.ts';
 import { readErc20, type RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
-import type { CardIssuer } from './issuer.ts';
+import { createStripeIssuer, LIVE_KEY_MESSAGE, type CardIssuer } from './issuer.ts';
 import { id, secretToken } from './ids.ts';
 import {
   decideSpend,
@@ -29,6 +29,7 @@ export type Ctx = {
   rpc: RpcClient;
   prices: PriceClient;
   issuer: CardIssuer;
+  fetchImpl: typeof fetch;
   now: () => number;
 };
 
@@ -131,7 +132,9 @@ export async function syncCard(ctx: Ctx, userId: string): Promise<{ ok: boolean;
   const existing = ctx.store.getCardByUser(userId);
   if (!existing) return { ok: true, message: 'Issue a card and the spending limit will follow the token balance.' };
   const card = refreshLocalStatus(ctx, existing);
-  if (card.issuerMode !== 'stripe') return { ok: true, message: 'Simulator card limit updated.' };
+  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) {
+    return { ok: false, message: 'Connect live Stripe Issuing so the spending limit can be updated on the card.' };
+  }
   try {
     await ctx.issuer.updateCard(card.issuerCardId, {
       status: card.status === 'active' ? 'active' : 'inactive',
@@ -292,7 +295,6 @@ export async function quoteTopup(ctx: Ctx, userId: string, input: { tokenId?: st
     netCents: money.netCents,
     feeBps: ctx.config.feeBps,
     treasuryAddress: ctx.config.treasuryAddress,
-    simulatedTopups: ctx.config.allowSimulatedTopups,
     minimumCents: ctx.config.minTopupCents,
   };
 }
@@ -318,7 +320,6 @@ function credit(ctx: Ctx, input: {
   amountRaw: bigint;
   price: number;
   netCents: number;
-  depositSource: 'chain' | 'simulated';
 }): void {
   const depositId = id('dep_');
   const card = ctx.store.getCardByUser(input.userId);
@@ -334,7 +335,7 @@ function credit(ctx: Ctx, input: {
     amountRaw: input.amountRaw.toString(),
     priceUsd: String(input.price),
     creditedCents: input.netCents,
-    depositSource: input.depositSource,
+    depositSource: 'chain',
     createdAt: ctx.now(),
   });
   ctx.store.insertLedger({
@@ -343,7 +344,7 @@ function credit(ctx: Ctx, input: {
     cardId: card?.id ?? '',
     direction: 'credit',
     amountCents: input.netCents,
-    kind: input.depositSource === 'simulated' ? 'topup_simulated' : 'topup',
+    kind: 'topup',
     ref: `deposit:${input.txHash}:${input.logIndex}`,
     memo: input.token.symbol,
     createdAt: ctx.now(),
@@ -412,7 +413,6 @@ export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: 
           amountRaw: item.amount,
           price,
           netCents: item.netCents,
-          depositSource: 'chain',
         });
       }
     });
@@ -424,37 +424,6 @@ export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: 
     alreadyCredited: fresh.length === 0,
     priceUsd: price,
     balance: ctx.store.getBalance(userId),
-    sync,
-  };
-}
-
-export async function simulateTopup(ctx: Ctx, userId: string, input: { tokenId?: string; amount?: string }) {
-  if (!ctx.config.allowSimulatedTopups) {
-    throw new HttpError(403, 'simulation_disabled', 'Simulated top-ups are off. Send the token to the treasury instead.');
-  }
-  const quoted = await quoteTopup(ctx, userId, input);
-  assertTopupSize(ctx, quoted.netCents);
-  const token = resolveToken(ctx, userId, quoted.tokenId);
-  const raw = parseDecimalToRaw(input.amount ?? '', token.decimals);
-  const txHash = `sim_${id('')}`;
-  ctx.store.transaction(() => {
-    credit(ctx, {
-      userId,
-      token,
-      txHash,
-      logIndex: 0,
-      amountRaw: raw,
-      price: quoted.priceUsd,
-      netCents: quoted.netCents,
-      depositSource: 'simulated',
-    });
-  });
-  const sync = await syncCard(ctx, userId);
-  return {
-    creditedCents: quoted.netCents,
-    priceUsd: quoted.priceUsd,
-    balance: ctx.store.getBalance(userId),
-    simulated: true,
     sync,
   };
 }
@@ -488,6 +457,103 @@ export async function linkWallet(ctx: Ctx, userId: string, input: { address?: st
   return { address };
 }
 
+function liveKeyError(secret: string): HttpError {
+  if (isTestSecret(secret)) {
+    return new HttpError(
+      400,
+      'live_key_required',
+      'A Stripe test key cannot spend at merchants or be added to Apple Pay, Google Pay, or Samsung Pay. Connect a live secret key (sk_live_...).',
+    );
+  }
+  return new HttpError(400, 'live_key_required', LIVE_KEY_MESSAGE);
+}
+
+export function requireLive(ctx: Ctx): void {
+  if (ctx.config.livemode) return;
+  throw liveKeyError(ctx.config.stripeSecretKey);
+}
+
+export async function connectLive(
+  ctx: Ctx,
+  input: {
+    stripeSecretKey?: string;
+    stripePublishableKey?: string;
+    stripeWebhookSecret?: string;
+    treasuryAddress?: string;
+  },
+) {
+  if (ctx.config.keySource === 'env') {
+    throw new HttpError(
+      409,
+      'already_connected',
+      ctx.config.livemode
+        ? 'A live Stripe key is already set in the server environment.'
+        : 'The server environment already sets STRIPE_SECRET_KEY. Put a live key (sk_live_...) there.',
+    );
+  }
+  if (ctx.config.livemode) {
+    throw new HttpError(
+      409,
+      'already_connected',
+      'A live Stripe key is already connected. Clear the saved database settings to rotate it.',
+    );
+  }
+  const secret = (input.stripeSecretKey ?? '').trim();
+  const publishable = (input.stripePublishableKey ?? '').trim();
+  const webhook = (input.stripeWebhookSecret ?? '').trim();
+  const treasuryRaw = (input.treasuryAddress ?? '').trim();
+  if (!isLiveSecret(secret)) throw liveKeyError(secret);
+  if (!publishable.startsWith('pk_live_')) {
+    throw new HttpError(400, 'live_key_required', 'Connect the live publishable key (pk_live_...) from the same Stripe account.');
+  }
+  if (!webhook.startsWith('whsec_')) {
+    throw new HttpError(400, 'invalid_webhook', 'Paste the webhook signing secret (whsec_...) for the Issuing endpoint.');
+  }
+  if (!isAddress(treasuryRaw)) {
+    throw new HttpError(400, 'invalid_address', 'Enter the treasury wallet address that will receive token deposits.');
+  }
+  let response: Response;
+  try {
+    response = await ctx.fetchImpl('https://api.stripe.com/v1/issuing/cardholders?limit=1', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'Stripe-Version': ctx.config.stripeApiVersion,
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    throw new HttpError(502, 'stripe_error', 'Could not reach Stripe to verify the Issuing key.');
+  }
+  if (!response.ok) {
+    let message = 'Stripe rejected that live key. Issuing has to be enabled on the account.';
+    try {
+      const body = (await response.json()) as { error?: { message?: string } };
+      if (body.error?.message) message = body.error.message;
+    } catch {
+      // Keep the fallback message.
+    }
+    throw new HttpError(502, 'stripe_error', message);
+  }
+  const treasury = treasuryRaw.toLowerCase();
+  ctx.store.setSetting('stripe_secret_key', secret);
+  ctx.store.setSetting('stripe_publishable_key', publishable);
+  ctx.store.setSetting('stripe_webhook_secret', webhook);
+  ctx.store.setSetting('treasury_address', treasury);
+  ctx.config.stripeSecretKey = secret;
+  ctx.config.stripePublishableKey = publishable;
+  ctx.config.stripeWebhookSecret = webhook;
+  ctx.config.treasuryAddress = treasury;
+  ctx.config.livemode = true;
+  ctx.config.keySource = 'saved';
+  ctx.issuer = createStripeIssuer({
+    secretKey: secret,
+    apiVersion: ctx.config.stripeApiVersion,
+    fetchImpl: ctx.fetchImpl,
+  });
+  return { livemode: true as const, treasuryAddress: treasury };
+}
+
 function printedName(first: string, last: string): string {
   const name = `${first} ${last}`.trim().replace(/\s+/g, ' ');
   if (!/^[A-Za-z][A-Za-z '\-]*$/.test(name)) {
@@ -516,6 +582,7 @@ export async function issueCard(
   },
   termsIp: string,
 ) {
+  requireLive(ctx);
   if (ctx.store.getCardByUser(userId)) {
     throw new HttpError(409, 'card_exists', 'This account already has a card.');
   }
@@ -687,39 +754,6 @@ function applySpend(
   return stored ? { approved: stored.approved, reason: stored.reason } : decision;
 }
 
-export function simulatePurchase(
-  ctx: Ctx,
-  userId: string,
-  input: { amount?: string; merchantName?: string; merchantCountry?: string },
-) {
-  if (!ctx.config.simulatePurchases) {
-    throw new HttpError(403, 'simulation_disabled', 'Live mode takes purchases from the card network.');
-  }
-  const card = requireCard(ctx, userId);
-  const country = (input.merchantCountry ?? '').trim().toUpperCase();
-  if (!/^[A-Z]{2}$/.test(country)) {
-    throw new HttpError(400, 'invalid_country', 'Enter the merchant country as two letters, such as JP.');
-  }
-  const dollars = input.amount ?? '';
-  if (!/^\d+(\.\d{1,2})?$/.test(dollars)) {
-    throw new HttpError(400, 'invalid_amount', 'Enter the charge in dollars, such as 12.50.');
-  }
-  const amountCents = Math.round(Number(dollars) * 100);
-  const merchantName = (input.merchantName ?? 'Card payment').trim().slice(0, 80) || 'Card payment';
-  const decision = applySpend(ctx, card, {
-    authId: id('iauth_sim_'),
-    amountCents,
-    merchantName,
-    merchantCountry: country,
-  });
-  return {
-    ...decision,
-    message: spendMessage(decision.reason),
-    balance: ctx.store.getBalance(userId),
-    card: publicCard(ctx.store.getCardByUser(userId) ?? card),
-  };
-}
-
 type StripeAuth = {
   id?: string;
   amount?: number;
@@ -794,14 +828,14 @@ export function describeWallet(
 ) {
   const card = requireCard(ctx, userId);
   const holder = ctx.store.getCardholder(userId);
-  const pushReady = card.issuerMode === 'stripe';
+  const pushReady = card.issuerMode === 'stripe' && ctx.config.livemode;
   ctx.store.addWalletEvent({
     id: id('wal_'),
     userId,
     cardId: card.id,
     wallet,
     status: 'prepare',
-    detail: pushReady ? 'stripe' : 'simulator',
+    detail: pushReady ? 'stripe' : 'live_key_required',
     createdAt: ctx.now(),
   });
   return {
@@ -820,7 +854,7 @@ export function describeWallet(
       endpoint: '/api/wallets/ephemeral-key',
       note: pushReady
         ? 'The phone app asks this server for a Stripe ephemeral key while the wallet builds the encrypted payload.'
-        : 'Connect STRIPE_SECRET_KEY and issue the card through Stripe Issuing. The wallet tokenizes that card.',
+        : 'Issue this card with live Stripe Issuing. Apple Pay, Google Pay, and Samsung Pay add that card.',
     },
   };
 }
@@ -834,12 +868,8 @@ export async function ephemeralKey(
   if (input.cardId && input.cardId !== card.id) {
     throw new HttpError(403, 'wrong_card', 'That card belongs to another account.');
   }
-  if (card.issuerMode !== 'stripe') {
-    throw new HttpError(
-      409,
-      'issuer_not_live',
-      'Apple Pay and Google Pay tokenize a Stripe Issuing card. Connect STRIPE_SECRET_KEY and issue the card again.',
-    );
+  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) {
+    throw new HttpError(409, 'issuer_not_live', LIVE_KEY_MESSAGE);
   }
   const apiVersion = (input.apiVersion ?? '').trim() || ctx.config.stripeApiVersion;
   const key = await ctx.issuer.createEphemeralKey({
@@ -867,7 +897,7 @@ export async function samsungProvision(
   const card = requireCard(ctx, userId);
   const base = describeWallet(ctx, userId, 'samsung_pay');
   const missing: string[] = [];
-  if (card.issuerMode !== 'stripe') missing.push('A Stripe Issuing card');
+  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) missing.push('A card issued by live Stripe Issuing');
   if (!card.vCardId) missing.push('A Visa vCardID on the card (operator endpoint)');
   if (!ctx.config.visaApiKey || !ctx.config.visaSharedSecret) missing.push('VISA_API_KEY and VISA_SHARED_SECRET');
   const deviceId = (input.deviceId ?? '').trim();
@@ -943,8 +973,8 @@ export function activity(ctx: Ctx, userId: string) {
   const deposits = ctx.store.listDeposits(userId).map((row) => ({
     id: row.id,
     at: row.createdAt,
-    title: row.depositSource === 'simulated' ? `Simulated ${row.symbol} top-up` : `${row.symbol} deposit`,
-    detail: row.depositSource === 'simulated' ? 'Credited in the simulator' : row.txHash,
+    title: `${row.symbol} deposit`,
+    detail: row.txHash,
     amountCents: row.creditedCents,
   }));
   const auths = ctx.store.listAuthorizations(userId).map((row) => ({

@@ -98,6 +98,10 @@ export class Store {
     this.db = db;
   }
 
+  close(): void {
+    this.db.close();
+  }
+
   transaction(fn: () => void): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
@@ -141,6 +145,19 @@ export class Store {
 
   deleteSession(token: string): void {
     this.db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+  }
+
+  getSettings(): Record<string, string> {
+    const rows = this.db.prepare('SELECT key, value FROM settings').all();
+    const out: Record<string, string> = {};
+    for (const row of rows) out[str(row, 'key')] = str(row, 'value');
+    return out;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .run(key, value);
   }
 
   saveCardholder(row: CardholderRow): void {
@@ -661,6 +678,10 @@ CREATE TABLE IF NOT EXISTS authorizations (
   approved INTEGER NOT NULL,
   reason TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS wallet_events (
   id TEXT PRIMARY KEY,
