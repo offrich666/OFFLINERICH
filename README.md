@@ -1,6 +1,6 @@
-# OfflineRich Card
+# GG Card
 
-A USD debit card you fund with ERC-20 tokens, including a contract you paste in yourself. The same card can be added to Apple Pay, Google Pay, and Samsung Pay.
+A USD debit card you fund with ERC-20 tokens, including a contract you paste in yourself. The plastic is named GG Card, with Visa and Mastercard faces. The same card can be added to Apple Pay, Google Pay, and Samsung Pay.
 
 The spend rail is live [Immersve](https://docs.immersve.com/guides/web3-wallet-card-issuing-integration/). Immersve issues the Mastercard. This server prices the token you send to their deposit contract. It does not hold a wallet private key, and it does not store the full card number. The one-time card link comes from `POST /api/cards/{id}/pan-token`.
 
@@ -15,7 +15,7 @@ npm install
 npm start
 ```
 
-Open http://localhost:8787. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
+Open GG Card from the computer that runs it. The sign-in page lists every address, and the process listens on all network interfaces so another computer on the same network can use the LAN address. Open http://127.0.0.1:8787, or the `http://192.168…:8787` line printed in the terminal. The admin desk signs in with the username `offlinerich`. Customers create an account with email. Copy `.env.example` to `.env` and fill in the keys you have. The process reads the environment; it does not load `.env` by itself.
 
 ```bash
 npm test

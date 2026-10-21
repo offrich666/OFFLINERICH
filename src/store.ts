@@ -2,7 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite';
 
-export type UserRow = { id: string; email: string; passwordHash: string; createdAt: number };
+export type UserRow = {
+  id: string;
+  email: string;
+  username: string;
+  role: string;
+  passwordHash: string;
+  createdAt: number;
+};
+export type AccountListRow = {
+  id: string;
+  email: string;
+  username: string;
+  role: string;
+  createdAt: number;
+  brand: string;
+  last4: string;
+  cardStatus: string;
+  cardType: string;
+  availableCents: number;
+};
 export type CardholderRow = {
   userId: string;
   firstName: string;
@@ -127,15 +146,58 @@ export class Store {
     }
   }
 
-  createUser(input: { id: string; email: string; passwordHash: string; createdAt: number }): void {
+  createUser(input: {
+    id: string;
+    email: string;
+    passwordHash: string;
+    createdAt: number;
+    username?: string;
+    role?: string;
+  }): void {
     this.db
-      .prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)')
-      .run(input.id, input.email, input.passwordHash, input.createdAt);
+      .prepare('INSERT INTO users (id, email, password_hash, created_at, username, role) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(input.id, input.email, input.passwordHash, input.createdAt, input.username ?? '', input.role ?? 'customer');
   }
 
   getUserByEmail(email: string): UserRow | undefined {
     const row = this.db.prepare('SELECT * FROM users WHERE email = ?').get(email);
     return row ? this.user(row) : undefined;
+  }
+
+  getUserByUsername(username: string): UserRow | undefined {
+    const row = this.db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    return row ? this.user(row) : undefined;
+  }
+
+  listAccounts(): AccountListRow[] {
+    return this.db
+      .prepare(
+        `SELECT u.id, u.email, u.username, u.role, u.created_at,
+            COALESCE(c.brand, '') AS brand,
+            COALESCE(c.last4, '') AS last4,
+            COALESCE(c.status, '') AS card_status,
+            COALESCE(c.type, '') AS card_type,
+            COALESCE((
+              SELECT SUM(CASE WHEN direction = 'credit' THEN amount_cents ELSE -amount_cents END)
+              FROM ledger WHERE user_id = u.id
+            ), 0) AS available_cents
+         FROM users u
+         LEFT JOIN cards c ON c.user_id = u.id
+         ORDER BY u.created_at ASC`,
+      )
+      .all()
+      .map((row) => ({
+        id: str(row, 'id'),
+        email: str(row, 'email'),
+        username: str(row, 'username'),
+        role: str(row, 'role') || 'customer',
+        createdAt: num(row, 'created_at'),
+        brand: str(row, 'brand'),
+        last4: str(row, 'last4'),
+        cardStatus: str(row, 'card_status'),
+        cardType: str(row, 'card_type'),
+        availableCents: num(row, 'available_cents'),
+      }));
   }
 
   getUser(id: string): UserRow | undefined {
@@ -553,6 +615,8 @@ export class Store {
     return {
       id: str(row, 'id'),
       email: str(row, 'email'),
+      username: str(row, 'username'),
+      role: str(row, 'role') || 'customer',
       passwordHash: str(row, 'password_hash'),
       createdAt: num(row, 'created_at'),
     };
@@ -629,7 +693,9 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  username TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'customer'
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
@@ -764,5 +830,9 @@ export function openStore(dbPath: string): Store {
   }
   const db = new DatabaseSync(dbPath);
   db.exec(SCHEMA);
+  const columns = new Set(db.prepare('PRAGMA table_info(users)').all().map((row) => str(row, 'name')));
+  if (!columns.has('username')) db.exec("ALTER TABLE users ADD COLUMN username TEXT NOT NULL DEFAULT ''");
+  if (!columns.has('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'customer'");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS users_username ON users(username) WHERE username <> ''");
   return new Store(db);
 }

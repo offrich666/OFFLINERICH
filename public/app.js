@@ -10,6 +10,7 @@ const state = {
   quote: null,
   amount: '',
   walletSignature: '',
+  desk: null,
 };
 
 let busy = false;
@@ -48,6 +49,7 @@ async function refresh() {
     api('/api/activity'),
   ]);
   state.me = me;
+  state.desk = me.user.role === 'admin' ? await api('/api/admin/desk') : null;
   state.tokens = tokens.tokens;
   state.activity = activity.activity;
   if (!state.selectedTokenId || !state.tokens.some((token) => token.id === state.selectedTokenId)) {
@@ -73,30 +75,49 @@ function readinessHtml() {
     .join('')}</div>`;
 }
 
+function linksHtml() {
+  const links = state.config?.links || [];
+  if (!links.length) return '';
+  return `<section class="panel">
+      <h2>Open GG Card on this PC</h2>
+      <p class="lede">Use one of these addresses in the browser on this computer. Another computer on the same network can use the address that starts with 192, 10, or 172.</p>
+      <ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul>
+    </section>`;
+}
+
 function authHtml() {
-  const login = state.authMode === 'login';
+  const admin = state.authMode === 'admin';
+  const login = state.authMode === 'login' || admin;
   return `<header class="top wrap">
-      <div class="mark">OFFLINE<span>RICH</span></div>
-      <p>USD debit · funded by the tokens you hold</p>
+      <div class="mark">GG<span>CARD</span></div>
+      <p>Private card desk</p>
     </header>
     <main class="wrap stack auth">
       ${flashHtml()}
       <section class="panel">
-        <p class="kicker">Worldwide card</p>
-        <h1>Spend the tokens you already own.</h1>
-        <p class="lede">Add a token by its contract, send it to the card's deposit contract, and spend it on the Mastercard Immersve issues. Apple Pay is added from the iPhone app. Sign in, then connect your live Immersve keys.</p>
+        <p class="kicker">GG Card</p>
+        <h1>A bank card funded by the tokens you hold.</h1>
+        <p class="lede">GG Card is the name on the plastic. Visa and Mastercard faces are both drawn here. Spending still needs a live Immersve program, which issues the Mastercard. Sign in, link a wallet, and send a token to the deposit contract.</p>
+        ${showcaseCards(null)}
+      </section>
+      <section class="panel">
+        <h2>${admin ? 'Admin desk' : 'Customer sign in'}</h2>
         <form id="auth-form" class="stack">
-          <label>Email <input name="email" type="email" autocomplete="email" required /></label>
+          ${admin
+            ? '<label>Username <input name="username" autocomplete="username" placeholder="offlinerich" required /></label>'
+            : '<label>Email <input name="email" type="email" autocomplete="email" required /></label>'}
           <label>Password <input name="password" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" minlength="8" required /></label>
           <div class="row">
-            <button class="primary" type="submit">${login ? 'Sign in' : 'Create account'}</button>
-            <button class="ghost" type="button" data-action="toggle-auth">${login ? 'Need an account?' : 'Have an account?'}</button>
+            <button class="primary" type="submit">${admin ? 'Open the desk' : login ? 'Sign in' : 'Create account'}</button>
+            <button class="ghost" type="button" data-action="toggle-auth">${login && !admin ? 'Need an account?' : 'Have an account?'}</button>
+            <button class="ghost" type="button" data-action="show-admin">${admin ? 'Customer entrance' : 'Admin desk'}</button>
           </div>
         </form>
       </section>
+      ${linksHtml()}
       <section class="panel">
         <h2>What has to be connected</h2>
-        <p class="lede">The card is a live Immersve Mastercard. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same card.</p>
+        <p class="lede">The live card is an Immersve Mastercard. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same GG Card.</p>
         ${readinessHtml()}
       </section>
     </main>`;
@@ -111,35 +132,83 @@ function tokenButton(token) {
     </button>`;
 }
 
-function cardHtml() {
-  const card = state.me.card;
-  const balance = state.me.balance.availableCents;
-  const name = state.me.cardholder ? `${state.me.cardholder.firstName} ${state.me.cardholder.lastName}` : 'Your name';
-  if (!card) {
-    return `<article class="plastic">
-      <div class="plastic-top"><span>OfflineRich</span><span>USD debit</span></div>
+function schemeMark(brand) {
+  if (brand === 'visa') return '<span class="scheme visa-word">VISA</span>';
+  return '<span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>';
+}
+
+function plasticCard({ brand, pan, holder, expiry, balance, note }) {
+  const visa = brand === 'visa';
+  return `<article class="plastic ${visa ? 'visa' : 'master'}">
+      <div class="plastic-top"><span>GG Card</span>${schemeMark(brand)}</div>
       <div class="chip"></div>
-      <p class="pan">Card not issued</p>
-      <div class="plastic-bottom"><div><small>Spendable</small><strong>${esc(money(balance))}</strong></div></div>
-    </article>`;
-  }
-  const month = String(card.expMonth).padStart(2, '0');
-  const year = String(card.expYear).slice(-2);
-  return `<article class="plastic">
-      <div class="plastic-top"><span>OfflineRich</span><span>${esc(card.brand)} · ${esc(card.type)}</span></div>
-      <div class="chip"></div>
-      <p class="pan">•••• •••• •••• ${esc(card.last4)}</p>
+      <p class="pan">${esc(pan)}</p>
       <div class="plastic-bottom">
-        <div><small>Name</small><strong>${esc(name)}</strong></div>
-        <div><small>Expires</small><strong>${esc(month)}/${esc(year)}</strong></div>
-        <div><small>Spendable</small><strong>${esc(money(balance))}</strong></div>
+        <div><small>${esc(note)}</small><strong>${esc(holder)}</strong></div>
+        <div><small>Expires</small><strong>${esc(expiry)}</strong></div>
+        <div><small>Spendable</small><strong>${esc(balance)}</strong></div>
       </div>
-    </article>
-    <p class="world">${card.status === 'active' ? 'Active' : 'Waiting for a top-up'} · USD · accepted worldwide, with network conversion at the merchant.</p>`;
+    </article>`;
+}
+
+function issuedBrand(card) {
+  return String(card?.brand || '').toLowerCase().includes('visa') ? 'visa' : 'mastercard';
+}
+
+function showcaseCards(me) {
+  const balance = money(me?.balance?.availableCents || 0);
+  const holder = me?.cardholder ? `${me.cardholder.firstName} ${me.cardholder.lastName}` : 'Your name';
+  const card = me?.card;
+  const active = card ? issuedBrand(card) : '';
+  const month = card ? String(card.expMonth).padStart(2, '0') : '••';
+  const year = card ? String(card.expYear).slice(-2) : '••';
+  const faces = ['visa', 'mastercard'].map((brand) => {
+    const on = active === brand;
+    return plasticCard({
+      brand,
+      pan: on ? `•••• •••• •••• ${card.last4}` : 'Card not issued',
+      holder: on ? holder : 'Your name',
+      expiry: on ? `${month}/${year}` : '••/••',
+      balance,
+      note: on ? (card.status === 'active' ? 'Active' : 'Issued') : 'Not issued',
+    });
+  });
+  const caption = card
+    ? `${card.status === 'active' ? 'Active' : 'Waiting for a top-up'} · GG Card · USD · the merchant converts other currencies on the network.`
+    : 'GG Card · both network faces stay on the desk until a live card is issued.';
+  return `<div class="card-pair">${faces.join('')}<p class="world">${esc(caption)}</p></div>`;
+}
+
+function cardHtml() {
+  return showcaseCards(state.me);
+}
+
+function deskHtml() {
+  if (state.me?.user?.role !== 'admin' || !state.desk) return '';
+  const rows = state.desk.accounts
+    .map((account) => {
+      const who = account.username ? `${account.username}` : account.email;
+      const card = account.card ? `${account.card.brand} ·••• ${account.card.last4}` : 'No card';
+      return `<tr>
+        <td><strong>${esc(who)}</strong><div class="muted">${esc(account.email)}</div></td>
+        <td><span class="role">${esc(account.role)}</span></td>
+        <td>${esc(card)}</td>
+        <td>${esc(money(account.availableCents))}</td>
+      </tr>`;
+    })
+    .join('');
+  return `<section class="panel">
+      <h2>Card desk</h2>
+      <p class="lede">${esc(money(state.desk.totals.availableCents))} recorded across customer balances.</p>
+      <table class="desk">
+        <thead><tr><th>Account</th><th>Role</th><th>GG Card</th><th>Balance</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
 }
 
 function setupHtml() {
-  if (state.config?.livemode) return '';
+  if (state.me?.user?.role !== 'admin' || state.config?.livemode) return '';
   return `<section class="panel">
     <h2>Connect the live card</h2>
     <p class="lede">Immersve issues the Mastercard. Paste the live API key and secret from your Immersve partner account, plus the partner account, client application, card program, and funding channel. Test keys are refused.</p>
@@ -187,13 +256,15 @@ function issueForm() {
 function dashboardHtml() {
   const wallet = state.me.wallet;
   return `<header class="top wrap">
-      <div class="mark">OFFLINE<span>RICH</span></div>
+      <div class="mark">GG<span>CARD</span></div>
       <div class="row">
-        <p>${esc(money(state.me.balance.availableCents))} spendable</p>
+        <p class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</p>
         <button class="ghost" type="button" data-action="logout">Sign out</button>
       </div>
     </header>
-    <main class="wrap layout">
+    <main class="wrap stack" style="padding-bottom:72px">
+      ${deskHtml()}
+      <div class="layout">
       <div class="stack">
         ${cardHtml()}
         <section class="panel">
@@ -277,6 +348,7 @@ function dashboardHtml() {
           ${readinessHtml()}
         </section>
       </div>
+      </div>
     </main>`;
 }
 
@@ -337,13 +409,18 @@ document.body.addEventListener('click', (event) => {
   if (!button) return;
   const action = button.dataset.action;
   if (action === 'toggle-auth') {
-    state.authMode = state.authMode === 'login' ? 'register' : 'login';
+    state.authMode = state.authMode === 'register' ? 'login' : 'register';
+    render();
+  }
+  if (action === 'show-admin') {
+    state.authMode = state.authMode === 'admin' ? 'login' : 'admin';
     render();
   }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
       state.me = null;
+      state.desk = null;
       state.flash = null;
       render();
     });
@@ -405,7 +482,7 @@ document.body.addEventListener('submit', (event) => {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
-      const path = state.authMode === 'login' ? '/api/login' : '/api/register';
+      const path = state.authMode === 'register' ? '/api/register' : '/api/login';
       await api(path, { method: 'POST', body: data });
       state.flash = null;
       await refresh();

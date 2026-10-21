@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { privateKeyToAccount } from 'viem/accounts';
+import { ADMIN_PASSWORD, ADMIN_USERNAME } from '../src/admin.ts';
 import { createApp, type CreateAppOptions } from '../src/app.ts';
 import type { RpcClient } from '../src/erc20.ts';
 
@@ -314,7 +315,23 @@ test('setup stores a live Immersve key and keeps it out of the public config', a
       email: 'ada@example.com',
       password: 'correct-horse',
     });
-    const token = String((registered.data as { token: string }).token);
+    const customer = String((registered.data as { token: string }).token);
+    const blocked = await call(first.base, '/api/setup', customer, setupBody);
+    assert.equal(blocked.status, 403);
+    const customerDesk = await call(first.base, '/api/admin/desk', customer);
+    assert.equal(customerDesk.status, 403);
+    assert.equal((blocked.data as { error: { code: string } }).error.code, 'admin_required');
+    const signedIn = await call(first.base, '/api/login', undefined, {
+      username: ADMIN_USERNAME,
+      password: ADMIN_PASSWORD,
+    });
+    const token = String((signedIn.data as { token: string }).token);
+    const desk = await call(first.base, '/api/admin/desk', token);
+    assert.equal(desk.status, 200);
+    const accounts = (desk.data as { accounts: Array<{ username: string; email: string }> }).accounts;
+    assert.equal(accounts.some((account) => account.username === ADMIN_USERNAME), true);
+    assert.equal(accounts.some((account) => account.email === 'ada@example.com'), true);
+    assert.equal(JSON.stringify(desk.data).includes(ADMIN_PASSWORD), false);
     const testKey = await call(first.base, '/api/setup', token, {
       ...setupBody,
       apiKey: 'imm-key-test-nope',
