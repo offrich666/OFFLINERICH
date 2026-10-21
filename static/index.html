@@ -322,15 +322,32 @@
     async function poll() {
       const response = await fetch("/api/status");
       const body = await response.json();
-      if (body.state === "running" || body.state === "stopped") renderProgress(body);
+      if (body.state === "running") {
+        renderProgress(body);
+        if (!timer) {
+          timer = setInterval(() => { poll().catch((err) => { error.textContent = String(err); }); }, 400);
+        }
+        return;
+      }
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
       if (body.state === "found" && body.result) {
+        const hex = body.result.address.slice(2);
+        if (!prefixInput.value) prefixInput.value = hex.slice(0, 4).toLowerCase();
+        if (!suffixInput.value) suffixInput.value = hex.slice(-4).toLowerCase();
+        refreshForm();
         renderProgress(body);
         renderResult(body);
         stop.classList.add("hidden");
         document.getElementById("bar").classList.add("hidden");
         document.getElementById("progressTitle").textContent = "Match found";
-        clearInterval(timer);
-        timer = null;
+        return;
+      }
+      if (body.state === "stopped") {
+        renderProgress(body);
+        refreshForm();
       }
     }
     document.getElementById("form").addEventListener("submit", async (event) => {

@@ -28,7 +28,7 @@ struct ReserveRequest {
     init_code: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Reservation {
     address: String,
@@ -90,7 +90,7 @@ pub fn serve() -> std::io::Result<()> {
     let state = Arc::new(Shared {
         next_id: AtomicU64::new(1),
         current: Mutex::new(None),
-        latest: Mutex::new(None),
+        latest: Mutex::new(load_latest()),
     });
     let listener = TcpListener::bind(("127.0.0.1", PORT))?;
     println!("Reserve mint address at http://127.0.0.1:{PORT}");
@@ -252,7 +252,11 @@ fn reservation_from(
 
 fn status_of(state: &Shared) -> StatusBody {
     if let Some(job) = state.current.lock().unwrap().clone() {
-        return job_status(&job);
+        let running = !job.finished.load(Ordering::Relaxed);
+        let found = job.result.lock().unwrap().is_some();
+        if running || found || state.latest.lock().unwrap().is_none() {
+            return job_status(&job);
+        }
     }
     if let Some(result) = state.latest.lock().unwrap().clone() {
         return StatusBody {
@@ -327,6 +331,11 @@ fn idle_status() -> StatusBody {
         init_code_bytes: None,
         result: None,
     }
+}
+
+fn load_latest() -> Option<Reservation> {
+    let text = fs::read_to_string("reservations/latest.json").ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 fn save_reservation(reservation: &Reservation) {
