@@ -1,13 +1,20 @@
 import { timingSafeEqual } from 'node:crypto';
 import { decodeTransfers, isAddress, receiptSucceeded } from './abi.ts';
 import { CATALOG, chainById, findCatalog, findCatalogById, type CatalogToken } from './chains.ts';
-import { isLiveSecret, isTestSecret, type Config } from './config.ts';
+import type { Config } from './config.ts';
 import { readErc20, type RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
-import { createStripeIssuer, LIVE_KEY_MESSAGE, type CardIssuer } from './issuer.ts';
+import {
+  contractAddressFrom,
+  createImmersveIssuer,
+  isLiveImmersveKey,
+  isTestImmersveKey,
+  kycUrlFrom,
+  LIVE_KEY_MESSAGE,
+  type ImmersveIssuer,
+} from './issuer.ts';
 import { id, secretToken } from './ids.ts';
 import {
-  decideSpend,
   formatUsd,
   isAtLeast18,
   normalizePhone,
@@ -20,7 +27,7 @@ import {
 import { hashPassword, verifyPassword } from './passwords.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
-import type { CardRow, Store } from './store.ts';
+import type { CardRow, ImmersveSession, Store } from './store.ts';
 import { requestSamsungCardData } from './visa.ts';
 
 export type Ctx = {
@@ -28,7 +35,7 @@ export type Ctx = {
   store: Store;
   rpc: RpcClient;
   prices: PriceClient;
-  issuer: CardIssuer;
+  issuer: ImmersveIssuer;
   fetchImpl: typeof fetch;
   now: () => number;
 };
@@ -36,9 +43,9 @@ export type Ctx = {
 type KnownToken = CatalogToken & { source: 'catalog' | 'custom' };
 
 const MANUAL_STEPS = [
-  'Open Apple Pay, Google Pay, or Samsung Wallet and choose add card.',
-  'Enter the card number shown in the Stripe card frame on this page.',
-  'Enter the 6-digit code Stripe sends to the cardholder phone or email.',
+  'On iPhone, add the card from the OfflineRich app. Apple Pay uses the PassKit payload from this server.',
+  'For Google Pay or Samsung Pay, open the one-time secure card link and type the number into the wallet.',
+  'Enter the code the wallet sends to the cardholder phone or email.',
 ];
 
 function tokenView(token: KnownToken, chainName: string, explorer: string) {
@@ -132,18 +139,18 @@ export async function syncCard(ctx: Ctx, userId: string): Promise<{ ok: boolean;
   const existing = ctx.store.getCardByUser(userId);
   if (!existing) return { ok: true, message: 'Issue a card and the spending limit will follow the token balance.' };
   const card = refreshLocalStatus(ctx, existing);
-  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) {
-    return { ok: false, message: 'Connect live Stripe Issuing so the spending limit can be updated on the card.' };
+  if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {
+    return { ok: false, message: 'Connect live Immersve so this card can be refreshed.' };
   }
   try {
-    await ctx.issuer.updateCard(card.issuerCardId, {
-      status: card.status === 'active' ? 'active' : 'inactive',
-      spendingLimitCents: card.spendingLimitCents,
-    });
-    ctx.store.updateCardRuntime(card.id, card.status, card.spendingLimitCents, '');
-    return { ok: true, message: 'Stripe spending limit updated.' };
+    const access = await refreshAccess(ctx, userId);
+    const remote = await ctx.issuer.getCard(access.token, card.issuerCardId);
+    const status = remote.status === 'active' ? 'active' : card.status;
+    ctx.store.updateCardRuntime(card.id, status, card.spendingLimitCents, '');
+    await rememberBalance(ctx, userId, access.token);
+    return { ok: true, message: 'Immersve card details refreshed.' };
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Stripe spending limit update failed.';
+    const message = error instanceof Error ? error.message : 'Immersve card refresh failed.';
     ctx.store.updateCardRuntime(card.id, card.status, card.spendingLimitCents, message);
     return { ok: false, message };
   }
@@ -192,6 +199,8 @@ export function me(ctx: Ctx, userId: string) {
   const card = ctx.store.getCardByUser(userId);
   const wallet = ctx.store.getWallet(userId);
   const balance = ctx.store.getBalance(userId);
+  const session = ctx.store.getImmersveSession(userId);
+  const availableCents = session && session.balanceCents >= 0 ? session.balanceCents : balance.available;
   return {
     user: { id: user.id, email: user.email },
     wallet: wallet ? { address: wallet.address } : null,
@@ -206,7 +215,7 @@ export function me(ctx: Ctx, userId: string) {
       : null,
     card: card ? publicCard(card) : null,
     balance: {
-      availableCents: balance.available,
+      availableCents,
       creditedCents: balance.credits,
       debitedCents: balance.debits,
       currency: 'usd',
@@ -294,7 +303,7 @@ export async function quoteTopup(ctx: Ctx, userId: string, input: { tokenId?: st
     feeCents: money.feeCents,
     netCents: money.netCents,
     feeBps: ctx.config.feeBps,
-    treasuryAddress: ctx.config.treasuryAddress,
+    treasuryAddress: depositTarget(ctx, userId),
     minimumCents: ctx.config.minTopupCents,
   };
 }
@@ -352,8 +361,9 @@ function credit(ctx: Ctx, input: {
 }
 
 export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: string; txHash?: string }) {
-  if (!ctx.config.treasuryAddress) {
-    throw new HttpError(400, 'treasury_unset', 'Set TREASURY_ADDRESS to the wallet that should receive token deposits.');
+  const depositAddress = depositTarget(ctx, userId);
+  if (!depositAddress) {
+    throw new HttpError(400, 'treasury_unset', 'Issue the card first. Immersve returns the deposit contract the token must be sent to.');
   }
   const wallet = ctx.store.getWallet(userId);
   if (!wallet) throw new HttpError(400, 'wallet_unlinked', 'Link the wallet you will send tokens from.');
@@ -376,7 +386,7 @@ export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: 
     throw new HttpError(400, 'tx_failed', 'That transaction failed on-chain.');
   }
   const transfers = decodeTransfers(record, token.address).filter(
-    (transfer) => transfer.to === ctx.config.treasuryAddress && transfer.from === wallet.address,
+    (transfer) => transfer.to === depositAddress && transfer.from === wallet.address,
   );
   if (transfers.length === 0) {
     throw new HttpError(
@@ -418,6 +428,12 @@ export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: 
     });
   }
   const sync = await syncCard(ctx, userId);
+  try {
+    const access = await refreshAccess(ctx, userId);
+    await rememberBalance(ctx, userId, access.token);
+  } catch {
+    // The on-chain credit is stored either way. The Immersve balance refreshes on the next card sync.
+  }
   const creditedCents = fresh.reduce((sum, item) => sum + item.netCents, 0);
   return {
     creditedCents,
@@ -457,12 +473,12 @@ export async function linkWallet(ctx: Ctx, userId: string, input: { address?: st
   return { address };
 }
 
-function liveKeyError(secret: string): HttpError {
-  if (isTestSecret(secret)) {
+function liveKeyError(apiKey: string, apiSecret: string): HttpError {
+  if (isTestImmersveKey(apiKey, apiSecret)) {
     return new HttpError(
       400,
       'live_key_required',
-      'A Stripe test key cannot spend at merchants or be added to Apple Pay, Google Pay, or Samsung Pay. Connect a live secret key (sk_live_...).',
+      'Immersve test keys only talk to the test network and cannot be added to Apple Pay or spent at a merchant. Connect the live key pair from your Immersve partner account.',
     );
   }
   return new HttpError(400, 'live_key_required', LIVE_KEY_MESSAGE);
@@ -470,16 +486,77 @@ function liveKeyError(secret: string): HttpError {
 
 export function requireLive(ctx: Ctx): void {
   if (ctx.config.livemode) return;
-  throw liveKeyError(ctx.config.stripeSecretKey);
+  throw liveKeyError(ctx.config.immersveApiKey, ctx.config.immersveApiSecret);
+}
+
+function blankSession(userId: string, now: number): ImmersveSession {
+  return {
+    userId,
+    accountId: '',
+    refreshToken: '',
+    loginRequestId: '',
+    fundingSourceId: '',
+    depositAddress: '',
+    balanceCents: -1,
+    updatedAt: now,
+  };
+}
+
+function depositTarget(ctx: Ctx, userId: string): string | null {
+  const session = ctx.store.getImmersveSession(userId);
+  if (session?.depositAddress && isAddress(session.depositAddress)) return session.depositAddress;
+  return ctx.config.treasuryAddress;
+}
+
+function saveSession(ctx: Ctx, session: ImmersveSession): void {
+  ctx.store.saveImmersveSession({ ...session, updatedAt: ctx.now() });
+}
+
+async function refreshAccess(ctx: Ctx, userId: string): Promise<{ token: string; session: ImmersveSession }> {
+  const session = ctx.store.getImmersveSession(userId);
+  if (!session?.refreshToken || !session.accountId) {
+    throw new HttpError(409, 'wallet_login_required', 'Sign the Immersve login from the linked wallet before this step.');
+  }
+  const refreshed = await ctx.issuer.refresh(session.refreshToken);
+  session.refreshToken = refreshed.refreshToken;
+  saveSession(ctx, session);
+  return { token: refreshed.accessToken, session };
+}
+
+async function rememberBalance(ctx: Ctx, userId: string, accessToken: string): Promise<void> {
+  const session = ctx.store.getImmersveSession(userId);
+  if (!session?.accountId || !session.fundingSourceId) return;
+  const cents = await ctx.issuer.fundingBalanceCents(accessToken, session.accountId, session.fundingSourceId);
+  if (cents == null) return;
+  session.balanceCents = cents;
+  saveSession(ctx, session);
+}
+
+function issuerFrom(ctx: Ctx) {
+  return createImmersveIssuer({
+    apiKey: ctx.config.immersveApiKey,
+    apiSecret: ctx.config.immersveApiSecret,
+    clientApplicationId: ctx.config.immersveClientApplicationId,
+    partnerAccountId: ctx.config.immersvePartnerAccountId,
+    cardProgramId: ctx.config.immersveCardProgramId,
+    fundingChannelId: ctx.config.immersveFundingChannelId,
+    clientOrigin: ctx.config.immersveClientOrigin,
+    network: ctx.config.immersveNetwork,
+    fetchImpl: ctx.fetchImpl,
+  });
 }
 
 export async function connectLive(
   ctx: Ctx,
   input: {
-    stripeSecretKey?: string;
-    stripePublishableKey?: string;
-    stripeWebhookSecret?: string;
-    treasuryAddress?: string;
+    apiKey?: string;
+    apiSecret?: string;
+    clientApplicationId?: string;
+    partnerAccountId?: string;
+    cardProgramId?: string;
+    fundingChannelId?: string;
+    clientOrigin?: string;
+    network?: string;
   },
 ) {
   if (ctx.config.keySource === 'env') {
@@ -487,71 +564,55 @@ export async function connectLive(
       409,
       'already_connected',
       ctx.config.livemode
-        ? 'A live Stripe key is already set in the server environment.'
-        : 'The server environment already sets STRIPE_SECRET_KEY. Put a live key (sk_live_...) there.',
+        ? 'Live Immersve keys are already set in the server environment.'
+        : 'The server environment already sets IMMERSVE_API_KEY. Put the live key pair there.',
     );
   }
   if (ctx.config.livemode) {
-    throw new HttpError(
-      409,
-      'already_connected',
-      'A live Stripe key is already connected. Clear the saved database settings to rotate it.',
-    );
+    throw new HttpError(409, 'already_connected', 'Live Immersve keys are already connected. Clear the saved database settings to rotate them.');
   }
-  const secret = (input.stripeSecretKey ?? '').trim();
-  const publishable = (input.stripePublishableKey ?? '').trim();
-  const webhook = (input.stripeWebhookSecret ?? '').trim();
-  const treasuryRaw = (input.treasuryAddress ?? '').trim();
-  if (!isLiveSecret(secret)) throw liveKeyError(secret);
-  if (!publishable.startsWith('pk_live_')) {
-    throw new HttpError(400, 'live_key_required', 'Connect the live publishable key (pk_live_...) from the same Stripe account.');
-  }
-  if (!webhook.startsWith('whsec_')) {
-    throw new HttpError(400, 'invalid_webhook', 'Paste the webhook signing secret (whsec_...) for the Issuing endpoint.');
-  }
-  if (!isAddress(treasuryRaw)) {
-    throw new HttpError(400, 'invalid_address', 'Enter the treasury wallet address that will receive token deposits.');
-  }
-  let response: Response;
-  try {
-    response = await ctx.fetchImpl('https://api.stripe.com/v1/issuing/cardholders?limit=1', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        'Stripe-Version': ctx.config.stripeApiVersion,
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch {
-    throw new HttpError(502, 'stripe_error', 'Could not reach Stripe to verify the Issuing key.');
-  }
-  if (!response.ok) {
-    let message = 'Stripe rejected that live key. Issuing has to be enabled on the account.';
-    try {
-      const body = (await response.json()) as { error?: { message?: string } };
-      if (body.error?.message) message = body.error.message;
-    } catch {
-      // Keep the fallback message.
+  const apiKey = (input.apiKey ?? '').trim();
+  const apiSecret = (input.apiSecret ?? '').trim();
+  const clientApplicationId = (input.clientApplicationId ?? '').trim();
+  const partnerAccountId = (input.partnerAccountId ?? '').trim();
+  const cardProgramId = (input.cardProgramId ?? '').trim();
+  const fundingChannelId = (input.fundingChannelId ?? '').trim();
+  const clientOrigin = (input.clientOrigin ?? '').trim().replace(/\/$/, '');
+  const network = (input.network ?? '').trim() || 'ethereum-mainnet';
+  if (!isLiveImmersveKey(apiKey, apiSecret)) throw liveKeyError(apiKey, apiSecret);
+  for (const value of [clientApplicationId, partnerAccountId, cardProgramId, fundingChannelId]) {
+    if (!/^[A-Za-z0-9_-]{8,80}$/.test(value)) {
+      throw new HttpError(400, 'invalid_program', 'Paste the Immersve partner account, client application, card program, and funding channel ids.');
     }
-    throw new HttpError(502, 'stripe_error', message);
   }
-  const treasury = treasuryRaw.toLowerCase();
-  ctx.store.setSetting('stripe_secret_key', secret);
-  ctx.store.setSetting('stripe_publishable_key', publishable);
-  ctx.store.setSetting('stripe_webhook_secret', webhook);
-  ctx.store.setSetting('treasury_address', treasury);
-  ctx.config.stripeSecretKey = secret;
-  ctx.config.stripePublishableKey = publishable;
-  ctx.config.stripeWebhookSecret = webhook;
-  ctx.config.treasuryAddress = treasury;
+  if (!/^https:\/\/[^\s]+$/.test(clientOrigin)) {
+    throw new HttpError(400, 'invalid_origin', 'Enter the https origin Immersve allowed for this client application.');
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(network)) {
+    throw new HttpError(400, 'invalid_network', 'Enter an Immersve network such as ethereum-mainnet.');
+  }
+  ctx.config.immersveApiKey = apiKey;
+  ctx.config.immersveApiSecret = apiSecret;
+  ctx.config.immersveClientApplicationId = clientApplicationId;
+  ctx.config.immersvePartnerAccountId = partnerAccountId;
+  ctx.config.immersveCardProgramId = cardProgramId;
+  ctx.config.immersveFundingChannelId = fundingChannelId;
+  ctx.config.immersveClientOrigin = clientOrigin;
+  ctx.config.immersveNetwork = network;
+  const issuer = issuerFrom(ctx);
+  await issuer.probePartner();
+  ctx.store.setSetting('immersve_api_key', apiKey);
+  ctx.store.setSetting('immersve_api_secret', apiSecret);
+  ctx.store.setSetting('immersve_client_application_id', clientApplicationId);
+  ctx.store.setSetting('immersve_partner_account_id', partnerAccountId);
+  ctx.store.setSetting('immersve_card_program_id', cardProgramId);
+  ctx.store.setSetting('immersve_funding_channel_id', fundingChannelId);
+  ctx.store.setSetting('immersve_client_origin', clientOrigin);
+  ctx.store.setSetting('immersve_network', network);
   ctx.config.livemode = true;
   ctx.config.keySource = 'saved';
-  ctx.issuer = createStripeIssuer({
-    secretKey: secret,
-    apiVersion: ctx.config.stripeApiVersion,
-    fetchImpl: ctx.fetchImpl,
-  });
-  return { livemode: true as const, treasuryAddress: treasury };
+  ctx.issuer = issuer;
+  return { livemode: true as const, network };
 }
 
 function printedName(first: string, last: string): string {
@@ -579,6 +640,7 @@ export async function issueCard(
     country?: string;
     type?: string;
     acceptedTerms?: boolean;
+    walletSignature?: string;
   },
   termsIp: string,
 ) {
@@ -616,29 +678,44 @@ export async function issueCard(
   }
   if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country', 'Enter the country as two letters, such as US.');
   const type = input.type === 'physical' ? 'physical' : 'virtual';
-  const existing = ctx.store.getCardholder(userId);
-  let issuerCardholderId = existing && existing.issuerMode === ctx.issuer.mode ? existing.issuerCardholderId : '';
-  const termsAcceptedAt = ctx.now();
-  if (!issuerCardholderId) {
-    const created = await ctx.issuer.createCardholder({
-      name,
-      email,
-      phone,
-      firstName,
-      lastName,
-      dobDay,
-      dobMonth,
-      dobYear,
-      line1,
-      city,
-      state,
-      postalCode,
-      country,
-      termsAcceptedAt,
-      termsIp: termsIp || '127.0.0.1',
-    });
-    issuerCardholderId = created.id;
+  const wallet = ctx.store.getWallet(userId);
+  if (!wallet) throw new HttpError(400, 'wallet_unlinked', 'Link the wallet that will fund the card.');
+  let session = ctx.store.getImmersveSession(userId) ?? blankSession(userId, ctx.now());
+  if (!session.refreshToken) {
+    const signature = (input.walletSignature ?? '').trim();
+    if (!signature) {
+      const started = await ctx.issuer.loginInit({ address: wallet.address });
+      session.loginRequestId = started.loginRequestId;
+      saveSession(ctx, session);
+      return { status: 'signature_required' as const, message: started.message };
+    }
+    if (!session.loginRequestId) {
+      throw new HttpError(400, 'signature_required', 'Request the Immersve login message, sign it, and submit it again.');
+    }
+    const done = await ctx.issuer.loginComplete({ loginRequestId: session.loginRequestId, signature });
+    session.accountId = done.cardholderAccountId;
+    session.refreshToken = done.refreshToken;
+    session.loginRequestId = '';
+    saveSession(ctx, session);
   }
+  const access = await refreshAccess(ctx, userId);
+  session = access.session;
+  await ctx.issuer.updateContact(access.token, session.accountId, email, phone);
+  if (!session.fundingSourceId) {
+    const funding = await ctx.issuer.createFundingSource(access.token, session.accountId, wallet.address);
+    session.fundingSourceId = funding.id;
+    saveSession(ctx, session);
+  }
+  const prerequisites = await ctx.issuer.spendingPrerequisites(access.token, session.fundingSourceId, 100);
+  const contract = contractAddressFrom(prerequisites);
+  if (contract) session.depositAddress = contract;
+  saveSession(ctx, session);
+  const kycUrl = kycUrlFrom(prerequisites);
+  if (kycUrl) return { status: 'kyc_required' as const, kycUrl };
+  const created = await ctx.issuer.createCard(access.token, session.fundingSourceId);
+  const issued = await ctx.issuer.getCard(access.token, created.cardId);
+  const termsAcceptedAt = ctx.now();
+  const existing = ctx.store.getCardholder(userId);
   ctx.store.saveCardholder({
     userId,
     firstName,
@@ -655,164 +732,30 @@ export async function issueCard(
     country,
     termsAcceptedAt,
     termsIp: termsIp || '127.0.0.1',
-    issuerCardholderId,
-    issuerMode: ctx.issuer.mode,
+    issuerCardholderId: session.accountId,
+    issuerMode: 'immersve',
     createdAt: existing?.createdAt ?? termsAcceptedAt,
   });
-  const balance = ctx.store.getBalance(userId);
-  const issued = await ctx.issuer.createCard({
-    cardholderId: issuerCardholderId,
-    type,
-    currency: 'usd',
-    status: 'inactive',
-    spendingLimitCents: Math.max(balance.credits, 1),
-    shipping:
-      type === 'physical'
-        ? { name, line1, city, state, postalCode, country }
-        : undefined,
-  });
-  const cardId = id('card_');
   ctx.store.insertCard({
-    id: cardId,
+    id: id('card_'),
     userId,
     issuerCardId: issued.id,
-    issuerMode: ctx.issuer.mode,
+    issuerMode: 'immersve',
     type,
     currency: 'usd',
-    status: 'inactive',
+    status: issued.status === 'active' ? 'active' : 'inactive',
     brand: issued.brand,
     last4: issued.last4,
     expMonth: issued.expMonth,
     expYear: issued.expYear,
-    vCardId: '',
-    spendingLimitCents: Math.max(balance.credits, 1),
+    vCardId: issued.seriesId,
+    spendingLimitCents: 1,
     syncError: '',
     createdAt: ctx.now(),
   });
-  const sync = await syncCard(ctx, userId);
+  await rememberBalance(ctx, userId, access.token);
   const card = ctx.store.getCardByUser(userId);
-  return { card: card ? publicCard(card) : null, sync };
-}
-
-function applySpend(
-  ctx: Ctx,
-  card: CardRow,
-  input: { authId: string; amountCents: number; merchantName: string; merchantCountry: string },
-): { approved: boolean; reason: string } {
-  const existing = ctx.store.getAuthorization(input.authId);
-  if (existing) return { approved: existing.approved, reason: existing.reason };
-  let decision = { approved: false, reason: 'invalid_amount' };
-  try {
-    ctx.store.transaction(() => {
-    const prior = ctx.store.getAuthorization(input.authId);
-    if (prior) {
-      decision = { approved: prior.approved, reason: prior.reason };
-      return;
-    }
-    const current = ctx.store.getCard(card.id) ?? card;
-    const available = ctx.store.getBalance(card.userId).available;
-    decision = decideSpend({
-      cardStatus: current.status,
-      amountCents: input.amountCents,
-      availableCents: available,
-      merchantCountry: input.merchantCountry,
-      blockedCountries: ctx.config.blockedCountries,
-    });
-    ctx.store.insertAuthorization({
-      id: input.authId,
-      userId: card.userId,
-      cardId: card.id,
-      amountCents: input.amountCents,
-      merchantName: input.merchantName,
-      merchantCountry: input.merchantCountry.toUpperCase(),
-      approved: decision.approved,
-      reason: decision.reason,
-      createdAt: ctx.now(),
-    });
-    if (decision.approved) {
-      ctx.store.insertLedger({
-        id: id('led_'),
-        userId: card.userId,
-        cardId: card.id,
-        direction: 'debit',
-        amountCents: input.amountCents,
-        kind: 'purchase',
-        ref: `auth:${input.authId}`,
-        memo: input.merchantName,
-        createdAt: ctx.now(),
-      });
-    }
-  });
-  } catch (error) {
-    const storedAfterRace = ctx.store.getAuthorization(input.authId);
-    if (storedAfterRace) return { approved: storedAfterRace.approved, reason: storedAfterRace.reason };
-    throw error;
-  }
-  const updated = ctx.store.getCard(card.id);
-  if (updated) refreshLocalStatus(ctx, updated);
-  const stored = ctx.store.getAuthorization(input.authId);
-  return stored ? { approved: stored.approved, reason: stored.reason } : decision;
-}
-
-type StripeAuth = {
-  id?: string;
-  amount?: number;
-  currency?: string;
-  status?: string;
-  card?: string | { id?: string };
-  merchant_data?: { name?: string; country?: string };
-  pending_request?: { amount?: number; currency?: string };
-};
-
-function issuerCardIdOf(card: StripeAuth['card']): string {
-  if (!card) return '';
-  return typeof card === 'string' ? card : card.id ?? '';
-}
-
-export function handleStripeEvent(ctx: Ctx, event: { type?: string; data?: { object?: StripeAuth } }) {
-  const object = event.data?.object;
-  if (!object?.id) return { received: true };
-  const card = ctx.store.getCardByIssuerId(issuerCardIdOf(object.card));
-  if (event.type === 'issuing_authorization.request' || event.type === 'issuing_authorization.created') {
-    if (!card) return { approved: false };
-    const amount = object.pending_request?.amount ?? object.amount ?? 0;
-    const currency = (object.pending_request?.currency ?? object.currency ?? 'usd').toLowerCase();
-    if (currency !== card.currency) {
-      return { approved: false, reason: 'currency_mismatch' };
-    }
-    if (event.type === 'issuing_authorization.created' && ctx.store.getAuthorization(object.id)) {
-      return { received: true };
-    }
-    const decision = applySpend(ctx, card, {
-      authId: object.id,
-      amountCents: amount,
-      merchantName: object.merchant_data?.name || 'Card payment',
-      merchantCountry: object.merchant_data?.country || '',
-    });
-    if (event.type === 'issuing_authorization.request') return { approved: decision.approved };
-    return { received: true };
-  }
-  if (event.type === 'issuing_authorization.updated' && object.status === 'reversed' && card) {
-    const ref = `reversal:${object.id}`;
-    if (ctx.store.findLedgerByRef(`auth:${object.id}`) && !ctx.store.findLedgerByRef(ref)) {
-      const amount = object.amount ?? 0;
-      if (amount > 0) {
-        ctx.store.insertLedger({
-          id: id('led_'),
-          userId: card.userId,
-          cardId: card.id,
-          direction: 'credit',
-          amountCents: amount,
-          kind: 'reversal',
-          ref,
-          memo: 'authorization reversed',
-          createdAt: ctx.now(),
-        });
-        refreshLocalStatus(ctx, card);
-      }
-    }
-  }
-  return { received: true };
+  return { status: 'issued' as const, card: card ? publicCard(card) : null, depositAddress: session.depositAddress };
 }
 
 function cardholderName(ctx: Ctx, userId: string): string {
@@ -828,14 +771,14 @@ export function describeWallet(
 ) {
   const card = requireCard(ctx, userId);
   const holder = ctx.store.getCardholder(userId);
-  const pushReady = card.issuerMode === 'stripe' && ctx.config.livemode;
+  const pushReady = card.issuerMode === 'immersve' && ctx.config.livemode;
   ctx.store.addWalletEvent({
     id: id('wal_'),
     userId,
     cardId: card.id,
     wallet,
     status: 'prepare',
-    detail: pushReady ? 'stripe' : 'live_key_required',
+    detail: pushReady ? 'immersve' : 'live_key_required',
     createdAt: ctx.now(),
   });
   return {
@@ -853,30 +796,43 @@ export function describeWallet(
       available: pushReady,
       endpoint: '/api/wallets/ephemeral-key',
       note: pushReady
-        ? 'The phone app asks this server for a Stripe ephemeral key while the wallet builds the encrypted payload.'
-        : 'Issue this card with live Stripe Issuing. Apple Pay, Google Pay, and Samsung Pay add that card.',
+        ? wallet === 'apple_pay'
+          ? 'The iPhone app sends the PassKit certificate chain to POST /api/wallets/apple. Immersve returns the Apple Pay payload.'
+          : 'Open the one-time secure card link and type the card into the wallet.'
+        : 'Issue this card with live Immersve. Apple Pay, Google Pay, and Samsung Pay add that card.',
     },
   };
+}
+
+export async function secureCardLink(ctx: Ctx, userId: string) {
+  const card = requireCard(ctx, userId);
+  if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {
+    throw new HttpError(409, 'issuer_not_live', LIVE_KEY_MESSAGE);
+  }
+  const access = await refreshAccess(ctx, userId);
+  return ctx.issuer.panToken(access.token, card.issuerCardId);
 }
 
 export async function ephemeralKey(
   ctx: Ctx,
   userId: string,
-  input: { cardId?: string; apiVersion?: string; nonce?: string },
+  input: { cardId?: string; nonce?: string; nonceSignature?: string; certChain?: string[] },
 ) {
   const card = requireCard(ctx, userId);
   if (input.cardId && input.cardId !== card.id) {
     throw new HttpError(403, 'wrong_card', 'That card belongs to another account.');
   }
-  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) {
+  if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {
     throw new HttpError(409, 'issuer_not_live', LIVE_KEY_MESSAGE);
   }
-  const apiVersion = (input.apiVersion ?? '').trim() || ctx.config.stripeApiVersion;
-  const key = await ctx.issuer.createEphemeralKey({
-    cardId: card.issuerCardId,
-    apiVersion,
-    nonce: input.nonce?.trim() || undefined,
-  });
+  const certChain = Array.isArray(input.certChain) ? input.certChain.map((item) => String(item)) : [];
+  const nonce = (input.nonce ?? '').trim();
+  const nonceSignature = (input.nonceSignature ?? '').trim();
+  if (certChain.length === 0 || !nonce || !nonceSignature) {
+    throw new HttpError(400, 'apple_payload_required', 'Send the PassKit certificate chain, nonce, and nonce signature.');
+  }
+  const access = await refreshAccess(ctx, userId);
+  const key = await ctx.issuer.provisionApplePay(access.token, card.issuerCardId, { certChain, nonce, nonceSignature });
   ctx.store.addWalletEvent({
     id: id('wal_'),
     userId,
@@ -897,7 +853,7 @@ export async function samsungProvision(
   const card = requireCard(ctx, userId);
   const base = describeWallet(ctx, userId, 'samsung_pay');
   const missing: string[] = [];
-  if (card.issuerMode !== 'stripe' || !ctx.config.livemode) missing.push('A card issued by live Stripe Issuing');
+  if (card.issuerMode !== 'immersve' || !ctx.config.livemode) missing.push('A card issued by live Immersve');
   if (!card.vCardId) missing.push('A Visa vCardID on the card (operator endpoint)');
   if (!ctx.config.visaApiKey || !ctx.config.visaSharedSecret) missing.push('VISA_API_KEY and VISA_SHARED_SECRET');
   const deviceId = (input.deviceId ?? '').trim();
@@ -1002,7 +958,7 @@ export function obligations(ctx: Ctx) {
     creditedCents: totals.credits,
     availableCents: totals.available,
     treasuryAddress: ctx.config.treasuryAddress,
-    note: 'Keep the Stripe Issuing balance funded for the credited USD. Token deposits sit on the treasury address.',
+    note: 'Token deposits fund the Immersve card contract. The spendable balance is the amount Immersve reports for that contract.',
   };
 }
 

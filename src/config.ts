@@ -1,5 +1,6 @@
 import { isAddress } from './abi.ts';
 import { CHAINS } from './chains.ts';
+import { isLiveImmersveKey, isTestImmersveKey } from './issuer.ts';
 
 export type ReadinessItem = {
   id: string;
@@ -11,10 +12,14 @@ export type ReadinessItem = {
 export type Config = {
   port: number;
   databasePath: string;
-  stripeSecretKey: string;
-  stripePublishableKey: string;
-  stripeWebhookSecret: string;
-  stripeApiVersion: string;
+  immersveApiKey: string;
+  immersveApiSecret: string;
+  immersveClientApplicationId: string;
+  immersvePartnerAccountId: string;
+  immersveCardProgramId: string;
+  immersveFundingChannelId: string;
+  immersveClientOrigin: string;
+  immersveNetwork: string;
   livemode: boolean;
   treasuryAddress: string | null;
   feeBps: number;
@@ -42,20 +47,9 @@ function integer(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function isLiveSecret(secret: string): boolean {
-  return secret.startsWith('sk_live_') || secret.startsWith('rk_live_');
-}
-
-export function isTestSecret(secret: string): boolean {
-  return secret.startsWith('sk_test') || secret.startsWith('rk_test');
-}
-
-export function isLivePublishable(key: string): boolean {
-  return key.startsWith('pk_live_');
-}
-
 export function loadConfig(env: Env): Config {
-  const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() ?? '';
+  const immersveApiKey = env.IMMERSVE_API_KEY?.trim() ?? '';
+  const immersveApiSecret = env.IMMERSVE_API_SECRET?.trim() ?? '';
   const treasuryRaw = env.TREASURY_ADDRESS?.trim() ?? '';
   if (treasuryRaw && !isAddress(treasuryRaw)) {
     throw new Error('TREASURY_ADDRESS must be a 0x wallet address.');
@@ -71,11 +65,15 @@ export function loadConfig(env: Env): Config {
   return {
     port: integer(env.PORT, 8787),
     databasePath: env.DATABASE_PATH?.trim() || './data/offlinerich.sqlite',
-    stripeSecretKey,
-    stripePublishableKey: env.STRIPE_PUBLISHABLE_KEY?.trim() ?? '',
-    stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET?.trim() ?? '',
-    stripeApiVersion: env.STRIPE_API_VERSION?.trim() || '2026-09-30.endive',
-    livemode: isLiveSecret(stripeSecretKey),
+    immersveApiKey,
+    immersveApiSecret,
+    immersveClientApplicationId: env.IMMERSVE_CLIENT_APPLICATION_ID?.trim() ?? '',
+    immersvePartnerAccountId: env.IMMERSVE_PARTNER_ACCOUNT_ID?.trim() ?? '',
+    immersveCardProgramId: env.IMMERSVE_CARD_PROGRAM_ID?.trim() ?? '',
+    immersveFundingChannelId: env.IMMERSVE_FUNDING_CHANNEL_ID?.trim() ?? '',
+    immersveClientOrigin: (env.IMMERSVE_CLIENT_ORIGIN?.trim() || 'https://localhost').replace(/\/$/, ''),
+    immersveNetwork: env.IMMERSVE_NETWORK?.trim() || 'ethereum-mainnet',
+    livemode: isLiveImmersveKey(immersveApiKey, immersveApiSecret),
     treasuryAddress,
     feeBps,
     minTopupCents: Math.max(1, integer(env.MIN_TOPUP_CENTS, 100)),
@@ -84,7 +82,7 @@ export function loadConfig(env: Env): Config {
       .split(',')
       .map((country) => country.trim().toUpperCase())
       .filter((country) => /^[A-Z]{2}$/.test(country)),
-    keySource: stripeSecretKey ? 'env' : 'none',
+    keySource: immersveApiKey ? 'env' : 'none',
     visaApiKey: env.VISA_API_KEY?.trim() ?? '',
     visaSharedSecret: env.VISA_SHARED_SECRET?.trim() ?? '',
     visaApiBase: (env.VISA_API_BASE?.trim() || 'https://sandbox.api.visa.com').replace(/\/$/, ''),
@@ -98,55 +96,65 @@ export function loadConfig(env: Env): Config {
   };
 }
 
+function fillSaved(envValue: string | undefined, savedValue: string | undefined, apply: (value: string) => void): void {
+  if (envValue?.trim()) return;
+  if (savedValue?.trim()) apply(savedValue.trim());
+}
+
 export function overlaySaved(config: Config, saved: Record<string, string>, env: Env): void {
-  const envSecret = Boolean(env.STRIPE_SECRET_KEY?.trim());
-  if (!envSecret && saved.stripe_secret_key) {
-    config.stripeSecretKey = saved.stripe_secret_key;
+  fillSaved(env.IMMERSVE_API_KEY, saved.immersve_api_key, (value) => {
+    config.immersveApiKey = value;
     config.keySource = 'saved';
-  }
-  if (!env.STRIPE_PUBLISHABLE_KEY?.trim() && saved.stripe_publishable_key) {
-    config.stripePublishableKey = saved.stripe_publishable_key;
-  }
-  if (!env.STRIPE_WEBHOOK_SECRET?.trim() && saved.stripe_webhook_secret) {
-    config.stripeWebhookSecret = saved.stripe_webhook_secret;
-  }
+  });
+  fillSaved(env.IMMERSVE_API_SECRET, saved.immersve_api_secret, (value) => {
+    config.immersveApiSecret = value;
+  });
+  fillSaved(env.IMMERSVE_CLIENT_APPLICATION_ID, saved.immersve_client_application_id, (value) => {
+    config.immersveClientApplicationId = value;
+  });
+  fillSaved(env.IMMERSVE_PARTNER_ACCOUNT_ID, saved.immersve_partner_account_id, (value) => {
+    config.immersvePartnerAccountId = value;
+  });
+  fillSaved(env.IMMERSVE_CARD_PROGRAM_ID, saved.immersve_card_program_id, (value) => {
+    config.immersveCardProgramId = value;
+  });
+  fillSaved(env.IMMERSVE_FUNDING_CHANNEL_ID, saved.immersve_funding_channel_id, (value) => {
+    config.immersveFundingChannelId = value;
+  });
+  fillSaved(env.IMMERSVE_CLIENT_ORIGIN, saved.immersve_client_origin, (value) => {
+    config.immersveClientOrigin = value.replace(/\/$/, '');
+  });
+  fillSaved(env.IMMERSVE_NETWORK, saved.immersve_network, (value) => {
+    config.immersveNetwork = value;
+  });
   if (!env.TREASURY_ADDRESS?.trim() && saved.treasury_address && isAddress(saved.treasury_address)) {
     config.treasuryAddress = saved.treasury_address.toLowerCase();
   }
-  config.livemode = isLiveSecret(config.stripeSecretKey);
+  config.livemode = isLiveImmersveKey(config.immersveApiKey, config.immersveApiSecret);
 }
 
 export function readiness(config: Config): ReadinessItem[] {
   const live = config.livemode;
-  const publishable = live && isLivePublishable(config.stripePublishableKey);
   const visa = Boolean(config.visaApiKey && config.visaSharedSecret);
-  const stripeDetail = live
-    ? 'Live secret key connected. Stripe Issuing creates the cardholder, the card, and the spending limit you can use at a merchant.'
-    : isTestSecret(config.stripeSecretKey)
-      ? 'A test key is present. Replace it with a live secret key (sk_live_) from an Issuing-enabled Stripe account. That is the key a merchant and a phone wallet accept.'
-      : 'Connect a live secret key (sk_live_) from an Issuing-enabled Stripe account. That key creates the card you can spend and add to a phone wallet.';
+  const issuerDetail = live
+    ? 'Live Immersve keys are connected. Immersve issues the Mastercard and checks the on-chain deposit before a merchant charge.'
+    : isTestImmersveKey(config.immersveApiKey, config.immersveApiSecret)
+      ? 'A test key is present. Replace it with the live Immersve key pair. Test keys cannot be spent at a merchant or added to Apple Pay.'
+      : 'Connect the live Immersve API key, API secret, partner account, card program, and funding channel. That account issues the card.';
   return [
     {
-      id: 'stripe_issuing',
+      id: 'card_issuer',
       ready: live,
-      title: 'Stripe Issuing',
-      detail: stripeDetail,
-    },
-    {
-      id: 'stripe_elements',
-      ready: publishable,
-      title: 'Card number and wallet buttons',
-      detail: publishable
-        ? 'Stripe.js can show the card number in a Stripe frame and mount Add to Apple Pay and Add to Google Pay.'
-        : 'Connect the live publishable key (pk_live_...) from the same Stripe account. The browser uses Stripe.js Issuing Elements.',
+      title: 'Immersve card issuing',
+      detail: issuerDetail,
     },
     {
       id: 'treasury',
-      ready: Boolean(config.treasuryAddress),
-      title: 'Token treasury',
-      detail: config.treasuryAddress
-        ? `Send ERC-20 top-ups to ${config.treasuryAddress}. Fund the Stripe Issuing balance with the USD value that lands.`
-        : 'Set TREASURY_ADDRESS to the wallet that receives token top-ups. The server stores the address and never the key.',
+      ready: live,
+      title: 'On-chain card funding',
+      detail: live
+        ? 'After the card is issued, send the token to the Immersve deposit contract shown on the quote. The spendable balance follows that deposit.'
+        : 'The deposit contract appears after the live card is issued. This server never holds the wallet key.',
     },
     {
       id: 'prices',
@@ -157,34 +165,33 @@ export function readiness(config: Config): ReadinessItem[] {
     },
     {
       id: 'apple_pay',
-      ready: publishable,
+      ready: live,
       title: 'Apple Pay',
       detail:
-        'Web: Stripe element issuingAddToWalletButton with wallet apple. iPhone app: PassKit PKAddPaymentPassViewController and STPPushProvisioningContext, which calls POST /api/wallets/ephemeral-key. Apple approves the wallet from the Stripe Issuing settings.',
+        'The iPhone app uses PassKit and POST /api/wallets/apple. Immersve returns encryptedPassData, ephemeralPublicKey, and activationData. Apple Pay is added in the app, and only with live keys.',
     },
     {
       id: 'google_pay',
-      ready: publishable,
+      ready: live,
       title: 'Google Pay',
       detail:
-        'Web: issuingAddToWalletButton with wallet google. Android: stripe-android-issuing-push-provisioning 1.3.0 and TapAndPay 18.8.0. In Google Issuer Console, link to Stripe aggregator BCR2DN7TWDCZDZJC.',
+        'Open the one-time secure card link from this page and type the card into Google Wallet. Immersve push provisioning for Google Pay is not available yet.',
     },
     {
       id: 'samsung_pay',
       ready: live,
       title: 'Samsung Pay',
       detail: visa
-        ? 'Manual add uses the code Stripe sends to the cardholder phone or email. Push calls Visa POST /inapp/provisioning/cardData/samsungPay and returns opaquePaymentCard for Samsung CardManager.addCard.'
-        : 'Manual add uses the code Stripe sends to the cardholder phone or email. Push also needs VISA_API_KEY, VISA_SHARED_SECRET, and a vCardID attached with the operator endpoint. Stripe’s mobile SDK does not push to Samsung Pay.',
+        ? 'Type the card from the secure link into Samsung Wallet, or push with Visa when a vCardID is attached.'
+        : 'Open the one-time secure card link and type the card into Samsung Wallet. Immersve does not push to Samsung Pay.',
     },
     {
-      id: 'webhook',
-      ready: live && Boolean(config.stripeWebhookSecret),
-      title: 'Real-time authorizations',
-      detail:
-        live && config.stripeWebhookSecret
-          ? 'Stripe can call POST /api/webhooks/stripe. A charge is approved when the token balance covers the USD amount.'
-          : 'Set the live webhook signing secret and point Issuing real-time authorizations at POST /api/webhooks/stripe.',
+      id: 'identity',
+      ready: live,
+      title: 'Cardholder checks',
+      detail: live
+        ? 'Immersve runs identity checks before the card is created. The page opens their secure check when it is still required.'
+        : 'Identity checks run at Immersve after the live keys are connected.',
     },
   ];
 }

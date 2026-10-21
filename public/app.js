@@ -9,6 +9,7 @@ const state = {
   walletNote: '',
   quote: null,
   amount: '',
+  walletSignature: '',
 };
 
 let busy = false;
@@ -83,7 +84,7 @@ function authHtml() {
       <section class="panel">
         <p class="kicker">Worldwide card</p>
         <h1>Spend the tokens you already own.</h1>
-        <p class="lede">Add a token by its contract, send it to your treasury, and the USD value becomes spendable anywhere the card network is accepted. Apple Pay, Google Pay, and Samsung Pay use the same live Stripe Issuing card. Sign in, then connect your live keys.</p>
+        <p class="lede">Add a token by its contract, send it to the card's deposit contract, and spend it on the Mastercard Immersve issues. Apple Pay is added from the iPhone app. Sign in, then connect your live Immersve keys.</p>
         <form id="auth-form" class="stack">
           <label>Email <input name="email" type="email" autocomplete="email" required /></label>
           <label>Password <input name="password" type="password" autocomplete="${login ? 'current-password' : 'new-password'}" minlength="8" required /></label>
@@ -95,7 +96,7 @@ function authHtml() {
       </section>
       <section class="panel">
         <h2>What has to be connected</h2>
-        <p class="lede">The card spends through live Stripe Issuing. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same card.</p>
+        <p class="lede">The card is a live Immersve Mastercard. Token value comes from the chain and DefiLlama. Apple Pay, Google Pay, and Samsung Pay add that same card.</p>
         ${readinessHtml()}
       </section>
     </main>`;
@@ -141,13 +142,17 @@ function setupHtml() {
   if (state.config?.livemode) return '';
   return `<section class="panel">
     <h2>Connect the live card</h2>
-    <p class="lede">A merchant charge, Apple Pay, Google Pay, and Samsung Pay all use the card Stripe Issuing creates with your live keys. Paste the live secret key, the live publishable key, the webhook signing secret, and the wallet that receives token deposits.</p>
+    <p class="lede">Immersve issues the Mastercard. Paste the live API key and secret from your Immersve partner account, plus the partner account, client application, card program, and funding channel. Test keys are refused.</p>
     <form id="setup-form" class="stack">
-      <label>Live secret key <input name="stripeSecretKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" required /></label>
-      <label>Live publishable key <input name="stripePublishableKey" autocomplete="off" spellcheck="false" placeholder="pk_live_…" required /></label>
-      <label>Webhook secret <input name="stripeWebhookSecret" type="password" autocomplete="off" spellcheck="false" placeholder="whsec_…" required /></label>
-      <label>Treasury address <input name="treasuryAddress" autocomplete="off" spellcheck="false" placeholder="0x…" required /></label>
-      <button class="primary" type="submit">Connect Stripe Issuing</button>
+      <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
+      <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
+      <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" placeholder="https://your.domain" required /></label>
+      <label>Network <input name="network" autocomplete="off" spellcheck="false" value="ethereum-mainnet" required /></label>
+      <button class="primary" type="submit">Connect Immersve</button>
     </form>
   </section>`;
 }
@@ -156,7 +161,7 @@ function issueForm() {
   if (state.me.card || !state.config?.livemode) return '';
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">Stripe Issuing creates this card. The name, phone, and email are what Apple Pay, Google Pay, and Samsung Pay use to verify it.</p>
+    <p class="lede">Immersve creates this Mastercard. Link your wallet first. The page asks that wallet to sign in, then opens identity checks when Immersve asks for them.</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -233,7 +238,7 @@ function dashboardHtml() {
         </section>
         <section class="panel">
           <h2>Wallets</h2>
-          <p class="lede">Add the same card to Apple Pay, Google Pay, or Samsung Pay. The wallet buttons appear after Stripe Issuing creates the card.</p>
+          <p class="lede">Apple Pay is added from the iPhone app. Google Pay and Samsung Pay use the one-time secure card link.</p>
           <div id="secure-card" class="secure"></div>
           <div class="row" style="margin-top:12px">
             <button class="primary" type="button" data-action="wallet" data-wallet="apple">Add to Apple Pay</button>
@@ -304,8 +309,8 @@ function topupActions() {
 function render() {
   const root = document.getElementById('app');
   root.innerHTML = state.me ? dashboardHtml() : authHtml();
-  const generation = ++mountGeneration;
-  mountLiveCard(generation);
+  mountGeneration += 1;
+  mountLiveCard();
 }
 
 async function run(fn) {
@@ -321,73 +326,10 @@ async function run(fn) {
   }
 }
 
-async function loadStripeJs() {
-  if (window.Stripe) return;
-  await new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://js.stripe.com/v3/';
-    script.onload = resolve;
-    script.onerror = () => reject(new Error('Stripe.js did not load.'));
-    document.head.appendChild(script);
-  });
-}
-
-async function mountLiveCard(generation) {
-  const card = state.me?.card;
-  const publishable = state.config?.stripePublishableKey;
-  if (!card || card.issuerMode !== 'stripe' || !publishable) return;
+async function mountLiveCard() {
   const host = document.getElementById('secure-card');
-  if (!host) return;
-  host.innerHTML = '<p class="muted">Opening the secure card frame…</p><div id="card-number" class="line"></div><div id="card-expiry" class="line"></div><div id="card-cvc" class="line"></div>';
-  try {
-    await loadStripeJs();
-    if (generation !== mountGeneration) return;
-    const stripe = window.Stripe(publishable, {
-      betas: ['issuing_add_to_wallet_button_element_1', 'issuing_elements_2'],
-    });
-    const elements = stripe.elements();
-    const nonceResult = await stripe.createEphemeralKeyNonce({ issuingCard: card.issuerCardId });
-    const key = await api('/api/wallets/ephemeral-key', {
-      method: 'POST',
-      body: { cardId: card.id, nonce: nonceResult.nonce },
-    });
-    if (generation !== mountGeneration) return;
-    await stripe.retrieveIssuingCard(card.issuerCardId, {
-      ephemeralKeySecret: key.ephemeralKeySecret || key.secret,
-      nonce: nonceResult.nonce,
-    });
-    const style = { base: { color: '#f4f0e6', fontSize: '16px' } };
-    const shared = {
-      issuingCard: card.issuerCardId,
-      nonce: nonceResult.nonce,
-      ephemeralKeySecret: key.ephemeralKeySecret || key.secret,
-      style,
-    };
-    for (const [type, elementId] of [
-      ['issuingCardNumberDisplay', 'card-number'],
-      ['issuingCardExpiryDisplay', 'card-expiry'],
-      ['issuingCardCvcDisplay', 'card-cvc'],
-    ]) {
-      const element = elements.create(type, shared);
-      element.mount(`#${elementId}`);
-    }
-    for (const [wallet, elementId] of [
-      ['apple', 'apple-wallet'],
-      ['google', 'google-wallet'],
-    ]) {
-      const button = elements.create('issuingAddToWalletButton', { ...shared, wallet, buttonHeight: 44 });
-      button.on('success', () => {
-        api('/api/wallets/events', { method: 'POST', body: { wallet: wallet === 'apple' ? 'apple_pay' : 'google_pay', status: 'added' } })
-          .then(refresh)
-          .then(render)
-          .catch(() => {});
-      });
-      button.mount(`#${elementId}`);
-    }
-  } catch (error) {
-    if (generation !== mountGeneration) return;
-    host.innerHTML = `<p class="muted">${esc(error.message || 'The secure card frame is unavailable.')}</p>`;
-  }
+  if (!host || !state.me?.card) return;
+  host.innerHTML = '<p class="muted">The full card number stays at Immersve. Use “Show card number” when you add it to Google Pay or Samsung Pay.</p>';
 }
 
 document.body.addEventListener('click', (event) => {
@@ -414,9 +356,15 @@ document.body.addEventListener('click', (event) => {
   if (action === 'wallet') {
     run(async () => {
       const wallet = button.dataset.wallet;
-      const path = wallet === 'apple' ? '/api/wallets/apple' : wallet === 'google' ? '/api/wallets/google' : '/api/wallets/samsung';
-      const result = await api(path, { method: 'POST', body: {} });
-      state.walletNote = walletCopy(wallet, result);
+      if (wallet === 'google' || wallet === 'samsung') {
+        const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+        state.walletNote = `Open this one-time link to read the card number, then add it in ${wallet === 'google' ? 'Google Pay' : 'Samsung Pay'}:\n${secure.callbackUrl}`;
+        state.flash = null;
+        render();
+        return;
+      }
+      const result = await api('/api/wallets/apple', { method: 'POST', body: {} });
+      state.walletNote = walletCopy('apple', result);
       state.flash = null;
       render();
     });
@@ -468,16 +416,42 @@ document.body.addEventListener('submit', (event) => {
     run(async () => {
       const month = String(data.dobMonth || '').padStart(2, '0');
       const day = String(data.dobDay || '').padStart(2, '0');
-      await api('/api/card', {
+      const result = await api('/api/card', {
         method: 'POST',
         body: {
           ...data,
           dob: `${data.dobYear}-${month}-${day}`,
           acceptedTerms: form.acceptedTerms.checked,
           country: String(data.country || '').toUpperCase(),
+          walletSignature: state.walletSignature || undefined,
         },
       });
-      state.flash = { kind: 'ok', text: 'Card issued.' };
+      state.walletSignature = '';
+      if (result.status === 'signature_required') {
+        state.walletSignature = await signImmersve(result.message);
+        const issued = await api('/api/card', {
+          method: 'POST',
+          body: {
+            ...data,
+            dob: `${data.dobYear}-${month}-${day}`,
+            acceptedTerms: true,
+            country: String(data.country || '').toUpperCase(),
+            walletSignature: state.walletSignature,
+          },
+        });
+        state.walletSignature = '';
+        if (issued.status === 'kyc_required') {
+          state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
+          state.walletNote = issued.kycUrl;
+        } else {
+          state.flash = { kind: 'ok', text: 'Card issued.' };
+        }
+      } else if (result.status === 'kyc_required') {
+        state.flash = { kind: 'ok', text: 'Finish the identity check, then issue the card again.' };
+        state.walletNote = result.kycUrl;
+      } else {
+        state.flash = { kind: 'ok', text: 'Card issued.' };
+      }
       await refresh();
       render();
     });
@@ -512,7 +486,7 @@ document.body.addEventListener('submit', (event) => {
     run(async () => {
       await api('/api/setup', { method: 'POST', body: data });
       state.config = await api('/api/config');
-      state.flash = { kind: 'ok', text: 'Live Stripe Issuing is connected. Issue the card next.' };
+      state.flash = { kind: 'ok', text: 'Live Immersve is connected. Link your wallet, then issue the card.' };
       await refresh();
       render();
     });
@@ -537,6 +511,16 @@ async function linkAddress(address, signature) {
   state.flash = { kind: 'ok', text: 'Wallet linked.' };
   await refresh();
   render();
+}
+
+async function signImmersve(message) {
+  if (window.ethereum) {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    return window.ethereum.request({ method: 'personal_sign', params: [message, accounts[0]] });
+  }
+  const entered = window.prompt(`Sign this Immersve login in your wallet, then paste the signature:\n\n${message}`);
+  if (!entered) throw new Error('The wallet signature is required before Immersve can issue the card.');
+  return entered.trim();
 }
 
 async function connectBrowserWallet() {

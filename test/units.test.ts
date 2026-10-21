@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { decodeAbiString, decodeTransfers } from '../src/abi.ts';
-import { createStripeIssuer } from '../src/issuer.ts';
+import { centsFromFundingBalance, createImmersveIssuer } from '../src/issuer.ts';
 import { decideSpend, normalizePhone, settlePrice, usdCents } from '../src/money.ts';
 import { visaXPayToken } from '../src/visa.ts';
 
@@ -51,24 +51,35 @@ test('builds the Visa x-pay-token used by Samsung Pay', () => {
   );
 });
 
-test('asks Stripe for an issuing-card ephemeral key', async () => {
-  const calls: Array<{ url: string; version: string | null; body: string }> = [];
+test('asks Immersve for an Apple Pay payload and reads a USDC balance', async () => {
+  const calls: string[] = [];
   const fetchImpl: typeof fetch = async (url, init) => {
-    const headers = new Headers(init?.headers);
-    calls.push({ url: String(url), version: headers.get('stripe-version'), body: String(init?.body ?? '') });
+    calls.push(`${init?.method ?? 'GET'} ${url}`);
     return new Response(
-      JSON.stringify({ id: 'ephkey_123', object: 'ephemeral_key', secret: 'ek_test_secret', expires: 2 }),
+      JSON.stringify({ encryptedPassData: 'enc', ephemeralPublicKey: 'key', activationData: 'act' }),
       { status: 200 },
     );
   };
-  const issuer = createStripeIssuer({ secretKey: 'sk_test_x', apiVersion: '2026-09-30.endive', fetchImpl });
-  const key = await issuer.createEphemeralKey({ cardId: 'ic_123', apiVersion: '2024-06-20', nonce: 'nonce_abc' });
-  assert.equal(calls[0]?.url, 'https://api.stripe.com/v1/ephemeral_keys');
-  assert.equal(calls[0]?.version, '2024-06-20');
-  assert.match(calls[0]?.body ?? '', /issuing_card=ic_123/);
-  assert.match(calls[0]?.body ?? '', /nonce=nonce_abc/);
-  assert.equal(key.ephemeralKeySecret, 'ek_test_secret');
-  assert.equal(key.api_version, '2024-06-20');
+  const issuer = createImmersveIssuer({
+    apiKey: 'imm-key-liveexample',
+    apiSecret: 'imm-secret-liveexample',
+    clientApplicationId: 'clientapp1',
+    partnerAccountId: 'partneracc1',
+    cardProgramId: 'cardprogram1',
+    fundingChannelId: 'fundingchan1',
+    clientOrigin: 'https://card.example.com',
+    network: 'ethereum-mainnet',
+    fetchImpl,
+  });
+  const payload = await issuer.provisionApplePay('access-token', 'card_123', {
+    certChain: ['Y2VydA=='],
+    nonce: 'bm9uY2U=',
+    nonceSignature: 'c2ln',
+  });
+  assert.equal(calls[0], 'POST https://api.immersve.com/api/cards/card_123/provision/apple-pay');
+  assert.equal(payload.encryptedPassData, 'enc');
+  assert.equal(centsFromFundingBalance('1000000', 'USDC'), 100);
+  assert.equal(centsFromFundingBalance('250', 'USD'), 250);
 });
 
 test('reads a transfer log for the treasury', () => {

@@ -2,9 +2,11 @@
 
 A USD debit card you fund with ERC-20 tokens, including a contract you paste in yourself. The same card can be added to Apple Pay, Google Pay, and Samsung Pay.
 
-The spend rail is live [Stripe Issuing](https://docs.stripe.com/issuing). Phone wallets tokenize that card. This server prices deposits and approves a charge when the token balance covers it. It does not hold a treasury private key, and it does not display a full card number outside Stripe’s card frame.
+The spend rail is live [Immersve](https://docs.immersve.com/guides/web3-wallet-card-issuing-integration/). Immersve issues the Mastercard. This server prices the token you send to their deposit contract. It does not hold a wallet private key, and it does not store the full card number. The one-time card link comes from `POST /api/cards/{id}/pan-token`.
 
-A card you can spend at a merchant needs your own Issuing-enabled Stripe account: a live secret key (`sk_live_`), the matching live publishable key (`pk_live_`), a webhook signing secret (`whsec_`), and a treasury address you control. Paste those on the dashboard after you sign in, or set them in the environment before start. The server checks the secret against `GET /v1/issuing/cardholders` before it saves it. Test-mode keys are refused, because those cards cannot be added to a phone wallet or used at a merchant. Saved keys live in the gitignored SQLite file. The environment wins when both are set. Fund the Stripe Issuing balance for the USD you credit. Apple still has to approve the wallet (US and Canada often take one to two weeks; EU and UK programs need Stripe’s partnership). Google Pay needs the Issuer Console linked to aggregator `BCR2DN7TWDCZDZJC` and TapAndPay `18.8.0` allowlisting. Samsung manual add works once Stripe wallets are enabled; push needs Visa credentials and a vCardID.
+A card you can spend at a merchant needs a live Immersve partner account: API key (`imm-key-…`), API secret (`imm-secret-…`), partner account id, client application id, card program id, and funding channel id. Paste those after you sign in, or set `IMMERSVE_*` before start. The server checks the key with `GET /api/partner-profiles/{accountId}` on `https://api.immersve.com` before it saves it. Keys that contain `-test-` are refused, because the Immersve test environment cannot be added to Apple Pay or used at a merchant. Saved keys live in the gitignored SQLite file. The environment wins when both are set.
+
+You still request those live values from Immersve. No card network hands out a live program without that account. After the card exists, link the funding wallet, sign the Immersve login, finish their identity check, and send the token to the deposit contract they return. Apple Pay is added in the iPhone app through PassKit and `POST /api/wallets/apple`. Google Pay and Samsung Pay use the one-time secure card link.
 
 ## Run
 
@@ -24,29 +26,23 @@ npm test
 1. Link the sending wallet. The page can use a browser wallet, or you can sign the message elsewhere and paste the signature.
 2. Pick a catalog token (USDC, USDT, DAI, WETH, WBNB on Ethereum, Base, Polygon, Arbitrum, Optimism, and BNB Chain) or add any other ERC-20. Adding a contract calls `symbol()`, `name()`, and `decimals()` on that chain.
 3. Quote an amount. The price comes from `https://coins.llama.fi/prices/current/{chain}:{address}`. Catalog stablecoins use $1 when the published price is within a cent of the peg. A contract with no reliable price cannot fund the card.
-4. Send that token from the linked wallet to `TREASURY_ADDRESS` and paste the transaction hash. The server credits the USD value of the `Transfer` log, minus `TOPUP_FEE_BPS` (default 1%).
+4. Send that token from the linked wallet to the Immersve deposit contract (the quote shows it as the funding address) and paste the transaction hash. The server credits the USD value of the `Transfer` log, minus `TOPUP_FEE_BPS` (default 1%).
 
-The treasury key stays with you. Swap or redeem what arrives and keep the Stripe Issuing balance funded for the same USD amount. `GET /api/operator/obligations` (header `Authorization: Bearer $OPERATOR_TOKEN`) shows the credited total.
+The wallet key stays with you. Immersve spends against the deposit contract. `GET /api/operator/obligations` (header `Authorization: Bearer $OPERATOR_TOKEN`) shows the credited total recorded here.
 
 ## Spend it worldwide
 
-The card currency is USD. A merchant who charges in another currency is converted by the card network. No merchant country is blocked unless you set `BLOCKED_MERCHANT_COUNTRIES`.
-
-Stripe must send real-time authorizations to `POST /api/webhooks/stripe`. The handler approves the request only when the remaining token balance covers `pending_request.amount`. Set that endpoint and `STRIPE_WEBHOOK_SECRET` in the Issuing dashboard.
-
-The card stays inactive until the balance is above zero. The Stripe spending limit is the lifetime amount credited.
+The card currency is USD. A merchant who charges in another currency is converted by the card network. Immersve authorizes the charge against the on-chain deposit.
 
 ## Apple Pay, Google Pay, Samsung Pay
 
-Manual add works once Stripe has enabled digital wallets: the wallet sends a 6-digit code to the cardholder phone or email. Both are collected when the card is issued. In the US and Canada, Google Pay and Samsung Pay need no extra Stripe step; Apple Pay needs Apple’s approval. EU and UK programs need Stripe’s partnership team as well. Wallet tokens are issued only with live keys.
+Apple Pay is provisioned in the iPhone app. Google Pay and Samsung Pay are typed in from the one-time secure card link. Wallet tokens require the live Immersve program.
 
 | Wallet | On this site | In the phone app |
 | --- | --- | --- |
-| Apple Pay | Stripe.js element `issuingAddToWalletButton` (`wallet: apple`) when both Stripe keys are set | `clients/ios/AddToApplePay.swift` uses PassKit and `STPPushProvisioningContext`. The key provider calls `POST /api/wallets/ephemeral-key`. |
-| Google Pay | The same element with `wallet: google` | `clients/android/AddToGooglePay.kt` uses `stripe-android-issuing-push-provisioning:1.3.0` and TapAndPay `18.8.0`. In Google Issuer Console, link the program to Stripe’s aggregator `BCR2DN7TWDCZDZJC`. |
-| Samsung Pay | Manual steps, plus a push payload when Visa credentials and a vCardID exist | `clients/android/AddToSamsungPay.kt` reads `DEVICE_ID` and `WALLET_USER_ID`, then calls `CardManager.addCard` with Visa’s `opaquePaymentCard`. Stripe’s SDK does not push to Samsung Pay. |
-
-`POST /api/wallets/ephemeral-key` accepts `{ cardId, apiVersion, nonce }`. The nonce is the one from `stripe.createEphemeralKeyNonce`. The response is the Stripe ephemeral key plus `api_version` and `ephemeralKeySecret`. The key is scoped to that user’s card.
+| Apple Pay | The iPhone app collects the PassKit certificate chain | `clients/ios/AddToApplePay.swift` posts it to `POST /api/wallets/apple`. Immersve returns `encryptedPassData`, `ephemeralPublicKey`, and `activationData`. |
+| Google Pay | One-time secure card link | `clients/android/AddToGooglePay.kt` opens `POST /api/wallets/secure-details`. |
+| Samsung Pay | The same secure link, or Visa push when a vCardID is attached | `clients/android/AddToSamsungPay.kt` reads `DEVICE_ID` and `WALLET_USER_ID` for the Visa push path. |
 
 Samsung push calls Visa `POST /inapp/provisioning/cardData/samsungPay` with an `x-pay-token`. It sends the card’s `vCardID`, not the PAN. Attach that id with:
 
@@ -63,9 +59,9 @@ Set `VISA_API_KEY`, `VISA_SHARED_SECRET`, and, when the Visa sandbox requires it
 
 | Piece | API |
 | --- | --- |
-| Cardholder, card, spending limit | `POST /v1/issuing/cardholders`, `POST /v1/issuing/cards` |
-| Apple Pay and Google Pay push, and the card frame | `POST /v1/ephemeral_keys` with `issuing_card` and optional `nonce`; Stripe.js Issuing Elements |
-| Charge approval | Issuing webhook `issuing_authorization.request` |
+| Cardholder login, card, funding | Immersve `POST /auth/login-init`, `POST /api/funding-sources`, `POST /api/cards` on `https://api.immersve.com` |
+| Apple Pay | Immersve `POST /api/cards/{cardId}/provision/apple-pay` |
+| Card number | Immersve `POST /api/cards/{cardId}/pan-token` |
 | Samsung Pay push | Visa `POST /inapp/provisioning/cardData/samsungPay` |
 | Token metadata | Chain `eth_call` for `symbol`, `name`, `decimals` |
 | USD value | DefiLlama `GET https://coins.llama.fi/prices/current/{chain}:{address}` |

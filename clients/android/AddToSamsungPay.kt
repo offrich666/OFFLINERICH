@@ -17,7 +17,7 @@ import org.json.JSONObject
  * Samsung Pay push provisioning.
  *
  * Manual add does not need this file: the wallet sends a one-time code to the
- * cardholder phone or email stored on the Stripe cardholder.
+ * cardholder phone or email. The card number comes from the one-time Immersve secure link.
  *
  * Push provisioning:
  * 1. SamsungPay.getWalletInfo returns DEVICE_ID and WALLET_USER_ID.

@@ -1,12 +1,11 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chainById, CHAINS } from './chains.ts';
-import { isLivePublishable, loadConfig, overlaySaved, readiness, type Config, type Env } from './config.ts';
+import { loadConfig, overlaySaved, readiness, type Config, type Env } from './config.ts';
 import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
-import { createStripeIssuer, createUnavailableIssuer } from './issuer.ts';
+import { createImmersveIssuer, createUnavailableIssuer } from './issuer.ts';
 import { createPriceClient, type PriceClient } from './prices.ts';
 import * as service from './service.ts';
 import { openStore, type Store } from './store.ts';
@@ -71,21 +70,6 @@ function asyncRoute(fn: (req: Request, res: Response) => Promise<void> | void) {
   };
 }
 
-function stripeSignatureValid(raw: Buffer, header: string, secret: string): boolean {
-  const parts = header.split(',').map((part) => part.trim());
-  const timestamp = parts.find((part) => part.startsWith('t='))?.slice(2);
-  const signatures = parts.filter((part) => part.startsWith('v1=')).map((part) => part.slice(3));
-  if (!timestamp || signatures.length === 0) return false;
-  const age = Math.abs(Date.now() / 1000 - Number(timestamp));
-  if (!Number.isFinite(age) || age > 300) return false;
-  const expected = createHmac('sha256', secret).update(`${timestamp}.${raw.toString('utf8')}`).digest('hex');
-  const expectedBuffer = Buffer.from(expected);
-  return signatures.some((signature) => {
-    const actual = Buffer.from(signature);
-    return actual.length === expectedBuffer.length && timingSafeEqual(actual, expectedBuffer);
-  });
-}
-
 export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
   const config = loadConfig(env);
@@ -99,7 +83,17 @@ export function createApp(options: CreateAppOptions = {}) {
     prices: options.prices ?? createPriceClient(fetchImpl),
     fetchImpl,
     issuer: config.livemode
-      ? createStripeIssuer({ secretKey: config.stripeSecretKey, apiVersion: config.stripeApiVersion, fetchImpl })
+      ? createImmersveIssuer({
+          apiKey: config.immersveApiKey,
+          apiSecret: config.immersveApiSecret,
+          clientApplicationId: config.immersveClientApplicationId,
+          partnerAccountId: config.immersvePartnerAccountId,
+          cardProgramId: config.immersveCardProgramId,
+          fundingChannelId: config.immersveFundingChannelId,
+          clientOrigin: config.immersveClientOrigin,
+          network: config.immersveNetwork,
+          fetchImpl,
+        })
       : createUnavailableIssuer(),
     now: options.now ?? (() => Date.now()),
   };
@@ -113,29 +107,7 @@ export function createApp(options: CreateAppOptions = {}) {
     next();
   });
 
-  app.post(
-    '/api/webhooks/stripe',
-    express.raw({ type: 'application/json', limit: '256kb' }),
-    asyncRoute((req, res) => {
-      if (!config.stripeWebhookSecret) {
-        throw new HttpError(503, 'webhook_unconfigured', 'Set STRIPE_WEBHOOK_SECRET before receiving Issuing events.');
-      }
-      const header = req.header('stripe-signature') ?? '';
-      const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
-      if (!stripeSignatureValid(raw, header, config.stripeWebhookSecret)) {
-        throw new HttpError(400, 'bad_signature', 'Stripe signature did not match.');
-      }
-      let event: { type?: string; data?: { object?: never } };
-      try {
-        event = JSON.parse(raw.toString('utf8')) as { type?: string; data?: { object?: never } };
-      } catch {
-        throw new HttpError(400, 'invalid_body', 'Stripe event was not JSON.');
-      }
-      res.json(service.handleStripeEvent(ctx, event));
-    }),
-  );
-
-  app.use(express.json({ limit: '32kb' }));
+  app.use(express.json({ limit: '64kb' }));
 
   function setSession(res: Response, token: string): void {
     const secure = config.secureCookies ? '; Secure' : '';
@@ -163,23 +135,16 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/config', (_req, res) => {
     res.json({
-      issuer: config.livemode ? 'stripe' : 'unconfigured',
+      issuer: config.livemode ? 'immersve' : 'unconfigured',
       livemode: config.livemode,
       currency: 'usd',
       feeBps: config.feeBps,
       treasuryAddress: config.treasuryAddress,
-      stripePublishableKey: config.livemode && isLivePublishable(config.stripePublishableKey) ? config.stripePublishableKey : '',
-      stripeApiVersion: config.stripeApiVersion,
+      network: config.immersveNetwork,
       blockedCountries: config.blockedCountries,
       wallets: {
         applePay: { manual: true, push: true },
-        googlePay: {
-          manual: true,
-          push: true,
-          aggregatorMerchantId: 'BCR2DN7TWDCZDZJC',
-          tapAndPay: '18.8.0',
-          sdk: 'com.stripe:stripe-android-issuing-push-provisioning:1.3.0',
-        },
+        googlePay: { manual: true, push: false },
         samsungPay: { manual: true, push: Boolean(config.visaApiKey && config.visaSharedSecret) },
       },
       chains: CHAINS.map((chain) => ({ id: chain.id, name: chain.name })),
@@ -240,14 +205,20 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/card', asyncRoute(async (req, res) => {
     const ip = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^::ffff:/, '');
-    res.status(201).json(await service.issueCard(ctx, requireUser(req), req.body ?? {}, ip));
+    const result = await service.issueCard(ctx, requireUser(req), req.body ?? {}, ip);
+    res.status(result.status === 'issued' ? 201 : 200).json(result);
   }));
 
   app.post('/api/card/sync', asyncRoute(async (req, res) => {
     res.json(await service.syncCard(ctx, requireUser(req)));
   }));
 
-  app.post('/api/wallets/apple', asyncRoute((req, res) => {
+  app.post('/api/wallets/apple', asyncRoute(async (req, res) => {
+    const body = req.body ?? {};
+    if (Array.isArray(body.certChain) && body.certChain.length > 0) {
+      res.json(await service.ephemeralKey(ctx, requireUser(req), body));
+      return;
+    }
     res.json(service.describeWallet(ctx, requireUser(req), 'apple_pay'));
   }));
 
@@ -261,6 +232,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post('/api/wallets/ephemeral-key', asyncRoute(async (req, res) => {
     res.json(await service.ephemeralKey(ctx, requireUser(req), req.body ?? {}));
+  }));
+
+  app.post('/api/wallets/secure-details', asyncRoute(async (req, res) => {
+    res.json(await service.secureCardLink(ctx, requireUser(req)));
   }));
 
   app.post('/api/wallets/events', asyncRoute((req, res) => {

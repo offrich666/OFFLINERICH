@@ -65,6 +65,16 @@ export type DepositRow = {
   depositSource: string;
   createdAt: number;
 };
+export type ImmersveSession = {
+  userId: string;
+  accountId: string;
+  refreshToken: string;
+  loginRequestId: string;
+  fundingSourceId: string;
+  depositAddress: string;
+  balanceCents: number;
+  updatedAt: number;
+};
 export type AuthRow = {
   id: string;
   userId: string;
@@ -158,6 +168,48 @@ export class Store {
     this.db
       .prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
       .run(key, value);
+  }
+
+  getImmersveSession(userId: string): ImmersveSession | undefined {
+    const row = this.db.prepare('SELECT * FROM immersve_sessions WHERE user_id = ?').get(userId);
+    if (!row) return undefined;
+    return {
+      userId: str(row, 'user_id'),
+      accountId: str(row, 'account_id'),
+      refreshToken: str(row, 'refresh_token'),
+      loginRequestId: str(row, 'login_request_id'),
+      fundingSourceId: str(row, 'funding_source_id'),
+      depositAddress: str(row, 'deposit_address'),
+      balanceCents: num(row, 'balance_cents'),
+      updatedAt: num(row, 'updated_at'),
+    };
+  }
+
+  saveImmersveSession(row: ImmersveSession): void {
+    this.db
+      .prepare(
+        `INSERT INTO immersve_sessions (
+          user_id, account_id, refresh_token, login_request_id, funding_source_id, deposit_address, balance_cents, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          account_id = excluded.account_id,
+          refresh_token = excluded.refresh_token,
+          login_request_id = excluded.login_request_id,
+          funding_source_id = excluded.funding_source_id,
+          deposit_address = excluded.deposit_address,
+          balance_cents = excluded.balance_cents,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        row.userId,
+        row.accountId,
+        row.refreshToken,
+        row.loginRequestId,
+        row.fundingSourceId,
+        row.depositAddress,
+        row.balanceCents,
+        row.updatedAt,
+      );
   }
 
   saveCardholder(row: CardholderRow): void {
@@ -678,6 +730,16 @@ CREATE TABLE IF NOT EXISTS authorizations (
   approved INTEGER NOT NULL,
   reason TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS immersve_sessions (
+  user_id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL DEFAULT '',
+  refresh_token TEXT NOT NULL DEFAULT '',
+  login_request_id TEXT NOT NULL DEFAULT '',
+  funding_source_id TEXT NOT NULL DEFAULT '',
+  deposit_address TEXT NOT NULL DEFAULT '',
+  balance_cents INTEGER NOT NULL DEFAULT -1,
+  updated_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
