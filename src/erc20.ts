@@ -8,6 +8,25 @@ export type RpcClient = {
 const SYMBOL = '0x95d89b41';
 const DECIMALS = '0x313ce567';
 const NAME = '0x06fdde03';
+const BALANCE_OF = '0x70a08231';
+
+export function balanceOfData(holder: string): string {
+  return `${BALANCE_OF}${holder.trim().slice(2).toLowerCase().padStart(64, '0')}`;
+}
+
+export function formatTokenAmount(raw: bigint, decimals: number): string {
+  if (raw <= 0n) return '0';
+  const scale = 10n ** BigInt(decimals);
+  const whole = raw / scale;
+  const fraction = (raw % scale).toString().padStart(decimals, '0').slice(0, 6).replace(/0+$/, '');
+  return fraction ? `${whole.toString()}.${fraction}` : whole.toString();
+}
+
+export async function readBalance(rpc: RpcClient, chainId: number, token: string, holder: string): Promise<bigint> {
+  const hex = await rpc.call(chainId, 'eth_call', [{ to: token, data: balanceOfData(holder) }, 'latest']);
+  if (typeof hex !== 'string' || hex === '0x') return 0n;
+  return BigInt(hex);
+}
 
 export async function readErc20(
   rpc: RpcClient,

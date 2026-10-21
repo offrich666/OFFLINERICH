@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { decodeAbiString, decodeTransfers } from '../src/abi.ts';
 import { centsFromFundingBalance, createImmersveIssuer } from '../src/issuer.ts';
 import { findCatalog } from '../src/chains.ts';
+import { formatTokenAmount } from '../src/erc20.ts';
 import { decideSpend, normalizePhone, settlePrice, usdCents } from '../src/money.ts';
 import { visaXPayToken } from '../src/visa.ts';
 
@@ -30,6 +31,8 @@ test('prices one LFUSD at one dollar, the same rule as USDT', () => {
   assert.equal(token.decimals, 18);
   assert.equal(token.pegged, true);
   assert.equal(usdCents(10n ** 18n, token.decimals, settlePrice(true, null) ?? 0, 100).netCents, 99);
+  assert.equal(formatTokenAmount(2n * 10n ** 18n, 18), '2');
+  assert.equal(formatTokenAmount(10n ** 15n, 18), '0.001');
 });
 
 test('accepts a phone number with spaces, dashes, or a missing plus', () => {

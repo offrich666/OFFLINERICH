@@ -1,8 +1,9 @@
 import { timingSafeEqual } from 'node:crypto';
 import { decodeTransfers, isAddress, receiptSucceeded } from './abi.ts';
-import { CATALOG, chainById, findCatalog, findCatalogById, type CatalogToken } from './chains.ts';
+import { CATALOG, CHAINS, chainById, findCatalog, findCatalogById, type CatalogToken } from './chains.ts';
 import type { Config } from './config.ts';
-import { readErc20, type RpcClient } from './erc20.ts';
+import { formatTokenAmount, readBalance, readErc20, type RpcClient } from './erc20.ts';
+import { qrSvg } from './qr.ts';
 import { HttpError } from './errors.ts';
 import {
   contractAddressFrom,
@@ -508,6 +509,111 @@ export async function linkWallet(ctx: Ctx, userId: string, input: { address?: st
   ctx.store.saveWallet(userId, address, ctx.now());
   ctx.store.setNonce(userId, secretToken());
   return { address };
+}
+
+const NATIVE: Record<number, string> = { 56: 'BNB' };
+
+export async function walletHoldings(ctx: Ctx, userId: string) {
+  const wallet = ctx.store.getWallet(userId);
+  const depositAddress = wallet ? depositTarget(ctx, userId) : null;
+  if (!wallet) {
+    return { address: null, depositAddress: null, qrFor: null, qrText: '', qr: '', holdings: [], networks: [] };
+  }
+  const custom = ctx.store.listCustomTokens(userId).map((row) => ({
+    id: row.id,
+    chainId: row.chainId,
+    address: row.address,
+    symbol: row.symbol,
+    decimals: row.decimals,
+  }));
+  const tokens = [
+    ...CATALOG.map((token) => ({
+      id: token.id,
+      chainId: token.chainId,
+      address: token.address,
+      symbol: token.symbol,
+      decimals: token.decimals,
+    })),
+    ...custom,
+  ];
+  const checked = await Promise.all(
+    tokens.map(async (token) => {
+      try {
+        const raw = await readBalance(ctx.rpc, token.chainId, token.address, wallet.address);
+        if (raw <= 0n) return null;
+        const chain = chainById(token.chainId);
+        return {
+          tokenId: token.id,
+          symbol: token.symbol,
+          chainId: token.chainId,
+          chainName: chain?.name ?? '',
+          address: token.address,
+          decimals: token.decimals,
+          balance: formatTokenAmount(raw, token.decimals),
+          balanceRaw: raw.toString(),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const natives = await Promise.all(
+    CHAINS.map(async (chain) => {
+      try {
+        const hex = await ctx.rpc.call(chain.id, 'eth_getBalance', [wallet.address, 'latest']);
+        if (typeof hex !== 'string' || hex === '0x') return null;
+        const raw = BigInt(hex);
+        if (raw <= 0n) return null;
+        return {
+          chainId: chain.id,
+          chainName: chain.name,
+          symbol: NATIVE[chain.id] ?? 'ETH',
+          balance: formatTokenAmount(raw, 18),
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const holdings = checked.filter((row) => row != null);
+  const qrText = depositAddress ?? wallet.address;
+  return {
+    address: wallet.address,
+    depositAddress,
+    qrFor: depositAddress ? 'deposit' : 'wallet',
+    qrText,
+    qr: await qrSvg(qrText),
+    holdings,
+    networks: natives.filter((row) => row != null),
+  };
+}
+
+export async function depositQr(ctx: Ctx, userId: string, input: { tokenId?: string; amount?: string }) {
+  const wallet = ctx.store.getWallet(userId);
+  if (!wallet) throw new HttpError(400, 'wallet_unlinked', 'Link the wallet before showing a deposit code.');
+  const depositAddress = depositTarget(ctx, userId);
+  const token = input.tokenId ? resolveToken(ctx, userId, input.tokenId) : null;
+  let text = depositAddress ?? wallet.address;
+  let qrFor: 'deposit' | 'wallet' | 'transfer' = depositAddress ? 'deposit' : 'wallet';
+  if (token && depositAddress && input.amount) {
+    let raw: bigint;
+    try {
+      raw = parseDecimalToRaw(input.amount, token.decimals);
+    } catch (error) {
+      throw new HttpError(400, 'invalid_amount', error instanceof Error ? error.message : 'Enter a token amount.');
+    }
+    text = `ethereum:${token.address}@${token.chainId}/transfer?address=${depositAddress}&uint256=${raw.toString()}`;
+    qrFor = 'transfer';
+  }
+  const chain = token ? chainById(token.chainId) : undefined;
+  return {
+    qrFor,
+    address: depositAddress ?? wallet.address,
+    text,
+    symbol: token?.symbol ?? '',
+    chainName: chain?.name ?? '',
+    qr: await qrSvg(text),
+  };
 }
 
 function liveKeyError(apiKey: string, apiSecret: string): HttpError {

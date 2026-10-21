@@ -212,6 +212,17 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json(await service.linkWallet(ctx, requireUser(req), req.body ?? {}));
   }));
 
+  app.get('/api/wallet/holdings', asyncRoute(async (req, res) => {
+    res.json(await service.walletHoldings(ctx, requireUser(req)));
+  }));
+
+  app.get('/api/wallet/qr', asyncRoute(async (req, res) => {
+    res.json(await service.depositQr(ctx, requireUser(req), {
+      tokenId: String(req.query.tokenId ?? ''),
+      amount: String(req.query.amount ?? ''),
+    }));
+  }));
+
   app.post('/api/card', asyncRoute(async (req, res) => {
     const ip = (req.ip || req.socket.remoteAddress || '127.0.0.1').replace(/^::ffff:/, '');
     const result = await service.issueCard(ctx, requireUser(req), req.body ?? {}, ip);
