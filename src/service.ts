@@ -25,6 +25,7 @@ import {
   validDate,
 } from './money.ts';
 import { hashPassword, verifyPassword } from './passwords.ts';
+import { ADMIN_EMAIL } from './admin.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
 import type { CardRow, ImmersveSession, Store } from './store.ts';
@@ -165,27 +166,63 @@ export async function register(ctx: Ctx, input: { email?: string; password?: str
   if (password.length < 8 || password.length > 200) {
     throw new HttpError(400, 'invalid_password', 'Use a password of at least 8 characters.');
   }
+  if (email === ADMIN_EMAIL) {
+    throw new HttpError(409, 'email_taken', 'That email belongs to the card desk. Sign in as admin.');
+  }
   if (ctx.store.getUserByEmail(email)) {
     throw new HttpError(409, 'email_taken', 'An account with that email already exists. Sign in instead.');
   }
   const userId = id('usr_');
   const createdAt = ctx.now();
-  ctx.store.createUser({ id: userId, email, passwordHash: await hashPassword(password), createdAt });
+  ctx.store.createUser({ id: userId, email, passwordHash: await hashPassword(password), createdAt, role: 'customer' });
   const token = secretToken();
   ctx.store.createSession(token, userId, createdAt);
-  return { token, user: { id: userId, email } };
+  return { token, user: { id: userId, email, username: '', role: 'customer' } };
 }
 
-export async function login(ctx: Ctx, input: { email?: string; password?: string }) {
+export async function login(ctx: Ctx, input: { email?: string; username?: string; password?: string }) {
+  const username = (input.username ?? '').trim().toLowerCase();
   const email = (input.email ?? '').trim().toLowerCase();
   const password = input.password ?? '';
-  const user = ctx.store.getUserByEmail(email);
+  const handle = username || email;
+  const user = handle.includes('@') ? ctx.store.getUserByEmail(handle) : ctx.store.getUserByUsername(handle);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    throw new HttpError(401, 'invalid_login', 'Email or password is incorrect.');
+    throw new HttpError(401, 'invalid_login', 'Those sign-in details are incorrect.');
   }
   const token = secretToken();
   ctx.store.createSession(token, user.id, ctx.now());
-  return { token, user: { id: user.id, email: user.email } };
+  return { token, user: publicUser(user) };
+}
+
+function publicUser(user: { id: string; email: string; username: string; role: string }) {
+  return { id: user.id, email: user.email, username: user.username, role: user.role || 'customer' };
+}
+
+export function requireAdmin(ctx: Ctx, userId: string) {
+  const user = ctx.store.getUser(userId);
+  if (!user || user.role !== 'admin') {
+    throw new HttpError(403, 'admin_required', 'The card desk is limited to the admin account.');
+  }
+  return user;
+}
+
+export function adminDesk(ctx: Ctx, userId: string) {
+  requireAdmin(ctx, userId);
+  const totals = ctx.store.totals();
+  return {
+    accounts: ctx.store.listAccounts().map((account) => ({
+      id: account.id,
+      email: account.email,
+      username: account.username,
+      role: account.role,
+      createdAt: account.createdAt,
+      availableCents: account.availableCents,
+      card: account.last4
+        ? { brand: account.brand, last4: account.last4, status: account.cardStatus, type: account.cardType }
+        : null,
+    })),
+    totals: { creditedCents: totals.credits, availableCents: totals.available, currency: 'usd' },
+  };
 }
 
 export function logout(ctx: Ctx, token: string): void {
@@ -202,7 +239,7 @@ export function me(ctx: Ctx, userId: string) {
   const session = ctx.store.getImmersveSession(userId);
   const availableCents = session && session.balanceCents >= 0 ? session.balanceCents : balance.available;
   return {
-    user: { id: user.id, email: user.email },
+    user: publicUser(user),
     wallet: wallet ? { address: wallet.address } : null,
     cardholder: cardholder
       ? {

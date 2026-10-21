@@ -1,7 +1,9 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureAdmin } from './admin.ts';
 import { chainById, CHAINS } from './chains.ts';
+import { accessLinks } from './links.ts';
 import { loadConfig, overlaySaved, readiness, type Config, type Env } from './config.ts';
 import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
@@ -75,6 +77,7 @@ export function createApp(options: CreateAppOptions = {}) {
   const config = loadConfig(env);
   const fetchImpl = options.fetchImpl ?? fetch;
   const store: Store = openStore(options.dbPath ?? config.databasePath);
+  ensureAdmin(store, options.now ? options.now() : Date.now());
   overlaySaved(config, store.getSettings(), env);
   const ctx: service.Ctx = {
     config,
@@ -149,6 +152,8 @@ export function createApp(options: CreateAppOptions = {}) {
       },
       chains: CHAINS.map((chain) => ({ id: chain.id, name: chain.name })),
       readiness: readiness(config),
+      product: 'GG Card',
+      links: accessLinks(config.port),
     });
   });
 
@@ -191,8 +196,12 @@ export function createApp(options: CreateAppOptions = {}) {
   }));
 
   app.post('/api/setup', asyncRoute(async (req, res) => {
-    requireUser(req);
+    service.requireAdmin(ctx, requireUser(req));
     res.json(await service.connectLive(ctx, req.body ?? {}));
+  }));
+
+  app.get('/api/admin/desk', asyncRoute((req, res) => {
+    res.json(service.adminDesk(ctx, requireUser(req)));
   }));
 
   app.get('/api/wallet/message', asyncRoute((req, res) => {
@@ -269,6 +278,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.locals.port = config.port;
+  app.locals.links = accessLinks(config.port);
   app.locals.closeStore = () => store.close();
   return app;
 }
