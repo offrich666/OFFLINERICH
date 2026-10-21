@@ -19,8 +19,17 @@ export type ImmersveCard = {
 export type SpendingPrerequisite = {
   stage?: string;
   status?: string;
+  type?: string;
   actionType?: string;
-  params?: { kycUrl?: string; contractAddress?: string; status?: string };
+  params?: {
+    kycUrl?: string;
+    contractAddress?: string;
+    status?: string;
+    abi?: unknown;
+    method?: string;
+    params?: Record<string, unknown>;
+    to?: string;
+  };
 };
 
 export type ImmersveIssuer = {
@@ -317,8 +326,10 @@ export function kycUrlFrom(prerequisites: SpendingPrerequisite[]): string {
 
 export function contractAddressFrom(prerequisites: SpendingPrerequisite[]): string {
   for (const item of prerequisites) {
-    const address = item.params?.contractAddress;
-    if (address && /^0x[0-9a-fA-F]{40}$/.test(address)) return address.toLowerCase();
+    const candidates = [item.params?.contractAddress, item.params?.to];
+    for (const address of candidates) {
+      if (address && /^0x[0-9a-fA-F]{40}$/.test(address)) return address.toLowerCase();
+    }
   }
   return '';
 }

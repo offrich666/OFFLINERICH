@@ -18,6 +18,8 @@ export type Config = {
   immersvePartnerAccountId: string;
   immersveCardProgramId: string;
   immersveFundingChannelId: string;
+  immersveFundsStorageAddress: string | null;
+  immersveFundingTypeName: string;
   immersveClientOrigin: string;
   immersveNetwork: string;
   livemode: boolean;
@@ -72,8 +74,13 @@ export function loadConfig(env: Env): Config {
     immersvePartnerAccountId: env.IMMERSVE_PARTNER_ACCOUNT_ID?.trim() ?? '',
     immersveCardProgramId: env.IMMERSVE_CARD_PROGRAM_ID?.trim() ?? '',
     immersveFundingChannelId: env.IMMERSVE_FUNDING_CHANNEL_ID?.trim() ?? '',
+    immersveFundsStorageAddress: (() => {
+      const raw = env.IMMERSVE_FUNDS_STORAGE_ADDRESS?.trim() ?? '';
+      return raw && isAddress(raw) ? raw.toLowerCase() : null;
+    })(),
+    immersveFundingTypeName: env.IMMERSVE_FUNDING_TYPE_NAME?.trim() ?? '',
     immersveClientOrigin: (env.IMMERSVE_CLIENT_ORIGIN?.trim() || 'https://localhost').replace(/\/$/, ''),
-    immersveNetwork: env.IMMERSVE_NETWORK?.trim() || 'ethereum-mainnet',
+    immersveNetwork: env.IMMERSVE_NETWORK?.trim() || 'base-mainnet',
     livemode: isLiveImmersveKey(immersveApiKey, immersveApiSecret),
     treasuryAddress,
     feeBps,
@@ -123,6 +130,12 @@ export function overlaySaved(config: Config, saved: Record<string, string>, env:
   fillSaved(env.IMMERSVE_FUNDING_CHANNEL_ID, saved.immersve_funding_channel_id, (value) => {
     config.immersveFundingChannelId = value;
   });
+  fillSaved(env.IMMERSVE_FUNDS_STORAGE_ADDRESS, saved.immersve_funds_storage_address, (value) => {
+    if (isAddress(value)) config.immersveFundsStorageAddress = value.toLowerCase();
+  });
+  fillSaved(env.IMMERSVE_FUNDING_TYPE_NAME, saved.immersve_funding_type_name, (value) => {
+    config.immersveFundingTypeName = value;
+  });
   fillSaved(env.IMMERSVE_CLIENT_ORIGIN, saved.immersve_client_origin, (value) => {
     config.immersveClientOrigin = value.replace(/\/$/, '');
   });
@@ -131,6 +144,9 @@ export function overlaySaved(config: Config, saved: Record<string, string>, env:
   });
   if (!env.TREASURY_ADDRESS?.trim() && saved.treasury_address && isAddress(saved.treasury_address)) {
     config.treasuryAddress = saved.treasury_address.toLowerCase();
+  }
+  if (!config.treasuryAddress && config.immersveFundsStorageAddress) {
+    config.treasuryAddress = config.immersveFundsStorageAddress;
   }
   config.livemode = isLiveImmersveKey(config.immersveApiKey, config.immersveApiSecret);
 }
@@ -155,8 +171,10 @@ export function readiness(config: Config): ReadinessItem[] {
       ready: live,
       title: 'On-chain card funding',
       detail: live
-        ? 'After the card is issued, send the token to the Immersve deposit contract shown on the quote. The spendable balance follows that deposit.'
-        : 'The deposit contract appears after the live card is issued. This server never holds the wallet key.',
+        ? config.immersveFundsStorageAddress
+          ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
+          : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
+        : 'Paste the Universal EVM Funds Storage address with the live Immersve keys. Deposits are plain ERC-20 transfers to that contract.',
     },
     {
       id: 'prices',

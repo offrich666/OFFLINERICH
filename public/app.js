@@ -240,7 +240,7 @@ function consoleHtml() {
         </section>
         <div class="stack">
           ${live
-            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is connected on ${esc(state.config.network)}. Issue a card from any client.</p><span class="pill good">Live</span></section>`
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
             : setupHtml()}
           ${links.length
             ? `<section class="panel"><h2>Open on another computer</h2><p class="lede">Use the address that starts with 192, 10, or 172 on the same network.</p><ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul></section>`
@@ -256,15 +256,15 @@ function setupHtml() {
   const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
   return `<section class="panel partner">
     <h2>Get a real Mastercard</h2>
-    <p class="lede">GG Card issues real network cards through Immersve. No key can be invented here. You need your own Immersve live partner account.</p>
+    <p class="lede">GG Card uses Immersve’s <b>Universal EVM</b> funding protocol. Cards are funded by a plain ERC-20 transfer to your partner Funds Storage contract. Immersve must give you the live keys and channel first — nothing inventable here.</p>
     <ol class="steps">
-      <li>Apply at <a href="https://immersve.com/partner/" target="_blank" rel="noopener">immersve.com/partner</a> or contact them at <a href="https://immersve.com/contact/" target="_blank" rel="noopener">immersve.com/contact</a>.</li>
-      <li>Ask for the <b>live</b> API key, API secret, partner account id, client application id, card program id, and a funding channel for the chain and token you will deposit.</li>
-      <li>In Immersve, allow this origin on the client application: <code>${esc(origin)}</code></li>
-      <li>Paste the values below. The server checks them against Immersve before it saves them. Test keys are refused because they cannot spend at merchants or go into Apple Wallet.</li>
-      <li>Open a client, link their wallet, issue the card, finish Immersve identity check, show the number, add it to Apple Wallet.</li>
+      <li>Apply at <a href="https://immersve.com/partner/" target="_blank" rel="noopener">immersve.com/partner</a> or <a href="https://immersve.com/contact/" target="_blank" rel="noopener">immersve.com/contact</a>. Ask for live (not test) credentials and Universal EVM.</li>
+      <li>Deploy a Funds Storage per token with <code>createFundsStorage</code> on Immersve’s master contract (<a href="https://docs.immersve.com/guides/universal-evm-funding-protocol/" target="_blank" rel="noopener">docs</a>, <a href="https://github.com/immersve/funding-contract-universal-evm" target="_blank" rel="noopener">contract</a>), then register it as a Funding Channel with Immersve.</li>
+      <li>Allow this origin on the client application: <code>${esc(origin)}</code></li>
+      <li>Paste everything Immersve sends below. The server checks the live key against Immersve before it saves. Test keys are refused.</li>
+      <li>Open a client → link wallet (that address becomes the Funding Source) → issue card → KYC → send the funded token to Funds Storage → show number → Apple Wallet.</li>
     </ol>
-    <p class="muted">Docs: <a href="https://docs.immersve.com/guides/web3-wallet-card-issuing-integration/" target="_blank" rel="noopener">Web3 wallet card issuing</a>. Support: <a href="https://help.immersve.com/hc/en-us/requests/new" target="_blank" rel="noopener">open a request</a>.</p>
+    <p class="muted">Live funding types Immersve lists today include <code>base-mainnet-usdc-universal-evm</code>, <code>polygon-usdc-universal-evm-live</code>, <code>arbitrum-mainnet-usdc-universal-evm</code>, <code>bsc-usdt-universal-evm</code>. Custom tokens such as LFUSD need Immersve to add a funding type.</p>
     <form id="setup-form" class="stack">
       <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
       <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
@@ -272,8 +272,10 @@ function setupHtml() {
       <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
       <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
       <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Funds Storage address (Universal EVM) <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x… from FundsStorageCreated" /></label>
+      <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
       <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
-      <label>Network <input name="network" autocomplete="off" spellcheck="false" value="ethereum-mainnet" required /></label>
+      <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" required /></label>
       <button class="primary" type="submit">Connect live Immersve</button>
     </form>
   </section>`;
@@ -448,7 +450,7 @@ function depositHtml() {
   if (!wallet) {
     return `<section class="panel" id="deposit-panel">
       <h2>Deposit</h2>
-      <p class="lede">Connect the wallet with a private key. The networks that account holds will show here, with a QR code and an address.</p>
+      <p class="lede">Connect the wallet with a private key. After Immersve creates the Funding Source for that address, send the funded ERC-20 to the Universal EVM Funds Storage shown here.</p>
     </section>`;
   }
   const info = state.holdings;
@@ -476,7 +478,7 @@ function depositHtml() {
       : 'Scan the code or copy the address to send tokens into this wallet. The card deposit address appears after the live card is issued.';
   return `<section class="panel" id="deposit-panel">
     <h2>Deposit</h2>
-    <p class="lede">Pick a network this wallet holds, then scan the code or copy the address.</p>
+    <p class="lede">Universal EVM: send the funded ERC-20 from the linked wallet to this Funds Storage address. Immersve credits that Funding Source after the transfer confirms.</p>
     ${rows}
     ${gas}
     <div class="qr-row">
@@ -836,7 +838,7 @@ document.body.addEventListener('submit', (event) => {
   if (form.id === 'setup-form') {
     run(async () => {
       await api('/api/setup', { method: 'POST', body: data, noClient: true });
-      state.flash = { kind: 'ok', text: 'Live Immersve is connected. Open a client to issue the card.' };
+      state.flash = { kind: 'ok', text: 'Live Immersve is connected (Universal EVM). Open a client, link the wallet, issue the card, then deposit to Funds Storage.' };
       await loadDesk();
       render();
     });

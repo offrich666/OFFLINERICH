@@ -424,7 +424,11 @@ function credit(ctx: Ctx, input: {
 export async function confirmTopup(ctx: Ctx, userId: string, input: { tokenId?: string; txHash?: string }) {
   const depositAddress = depositTarget(ctx, userId);
   if (!depositAddress) {
-    throw new HttpError(400, 'treasury_unset', 'Issue the card first. Immersve returns the deposit contract the token must be sent to.');
+    throw new HttpError(
+      400,
+      'treasury_unset',
+      'Connect Immersve with the Universal EVM Funds Storage address, or issue the card so Immersve can return the deposit contract.',
+    );
   }
   const wallet = ctx.store.getWallet(userId);
   if (!wallet) throw new HttpError(400, 'wallet_unlinked', 'Link the wallet you will send tokens from.');
@@ -671,6 +675,7 @@ function blankSession(userId: string, now: number): ImmersveSession {
 function depositTarget(ctx: Ctx, userId: string): string | null {
   const session = ctx.store.getImmersveSession(userId);
   if (session?.depositAddress && isAddress(session.depositAddress)) return session.depositAddress;
+  if (ctx.config.immersveFundsStorageAddress) return ctx.config.immersveFundsStorageAddress;
   return ctx.config.treasuryAddress;
 }
 
@@ -721,6 +726,8 @@ export async function connectLive(
     partnerAccountId?: string;
     cardProgramId?: string;
     fundingChannelId?: string;
+    fundsStorageAddress?: string;
+    fundingTypeName?: string;
     clientOrigin?: string;
     network?: string;
   },
@@ -743,19 +750,27 @@ export async function connectLive(
   const partnerAccountId = (input.partnerAccountId ?? '').trim();
   const cardProgramId = (input.cardProgramId ?? '').trim();
   const fundingChannelId = (input.fundingChannelId ?? '').trim();
+  const fundsStorageAddress = (input.fundsStorageAddress ?? '').trim();
+  const fundingTypeName = (input.fundingTypeName ?? '').trim();
   const clientOrigin = (input.clientOrigin ?? '').trim().replace(/\/$/, '');
-  const network = (input.network ?? '').trim() || 'ethereum-mainnet';
+  const network = (input.network ?? '').trim() || 'base-mainnet';
   if (!isLiveImmersveKey(apiKey, apiSecret)) throw liveKeyError(apiKey, apiSecret);
   for (const value of [clientApplicationId, partnerAccountId, cardProgramId, fundingChannelId]) {
     if (!/^[A-Za-z0-9_-]{8,80}$/.test(value)) {
       throw new HttpError(400, 'invalid_program', 'Paste the Immersve partner account, client application, card program, and funding channel ids.');
     }
   }
+  if (fundsStorageAddress && !isAddress(fundsStorageAddress)) {
+    throw new HttpError(400, 'invalid_storage', 'Paste the Universal EVM Funds Storage contract address (0x…).');
+  }
+  if (fundingTypeName && !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(fundingTypeName)) {
+    throw new HttpError(400, 'invalid_funding_type', 'Enter the Immersve funding type name, such as base-mainnet-usdc-universal-evm.');
+  }
   if (!/^https?:\/\/[^\s]+$/.test(clientOrigin)) {
     throw new HttpError(400, 'invalid_origin', 'Enter the origin Immersve allowed for this client application, such as https://your.domain or http://127.0.0.1:8787.');
   }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(network)) {
-    throw new HttpError(400, 'invalid_network', 'Enter an Immersve network such as ethereum-mainnet.');
+    throw new HttpError(400, 'invalid_network', 'Enter an Immersve network such as base-mainnet.');
   }
   ctx.config.immersveApiKey = apiKey;
   ctx.config.immersveApiSecret = apiSecret;
@@ -763,8 +778,13 @@ export async function connectLive(
   ctx.config.immersvePartnerAccountId = partnerAccountId;
   ctx.config.immersveCardProgramId = cardProgramId;
   ctx.config.immersveFundingChannelId = fundingChannelId;
+  ctx.config.immersveFundsStorageAddress = fundsStorageAddress ? fundsStorageAddress.toLowerCase() : null;
+  ctx.config.immersveFundingTypeName = fundingTypeName;
   ctx.config.immersveClientOrigin = clientOrigin;
   ctx.config.immersveNetwork = network;
+  if (ctx.config.immersveFundsStorageAddress) {
+    ctx.config.treasuryAddress = ctx.config.immersveFundsStorageAddress;
+  }
   const issuer = issuerFrom(ctx);
   await issuer.probePartner();
   ctx.store.setSetting('immersve_api_key', apiKey);
@@ -773,12 +793,22 @@ export async function connectLive(
   ctx.store.setSetting('immersve_partner_account_id', partnerAccountId);
   ctx.store.setSetting('immersve_card_program_id', cardProgramId);
   ctx.store.setSetting('immersve_funding_channel_id', fundingChannelId);
+  if (ctx.config.immersveFundsStorageAddress) {
+    ctx.store.setSetting('immersve_funds_storage_address', ctx.config.immersveFundsStorageAddress);
+    ctx.store.setSetting('treasury_address', ctx.config.immersveFundsStorageAddress);
+  }
+  if (fundingTypeName) ctx.store.setSetting('immersve_funding_type_name', fundingTypeName);
   ctx.store.setSetting('immersve_client_origin', clientOrigin);
   ctx.store.setSetting('immersve_network', network);
   ctx.config.livemode = true;
   ctx.config.keySource = 'saved';
   ctx.issuer = issuer;
-  return { livemode: true as const, network };
+  return {
+    livemode: true as const,
+    network,
+    fundingTypeName: fundingTypeName || null,
+    fundsStorageAddress: ctx.config.immersveFundsStorageAddress,
+  };
 }
 
 function printedName(first: string, last: string): string {
