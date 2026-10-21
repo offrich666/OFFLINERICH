@@ -23,7 +23,7 @@ npm test
 
 ## Top up with a token you own
 
-1. Link the sending wallet. The page can use a browser wallet, or you can sign the message elsewhere and paste the signature.
+1. Link the sending wallet. The page can use a browser wallet, a private key typed into the page, or a signature you paste. The private key stays in that browser tab. It is not sent to the server and it is not saved. LFUSD (`0x0f1b825a734Bd1b885EC82780189F4534b291A28` on Ethereum) is priced at one dollar, the same peg rule as USDT. The chain feed has no LFUSD pool, so the desk uses that published dollar price. One LFUSD quotes as one dollar before the fee.
 2. Pick a catalog token (USDC, USDT, DAI, WETH, WBNB on Ethereum, Base, Polygon, Arbitrum, Optimism, and BNB Chain) or add any other ERC-20. Adding a contract calls `symbol()`, `name()`, and `decimals()` on that chain.
 3. Quote an amount. The price comes from `https://coins.llama.fi/prices/current/{chain}:{address}`. Catalog stablecoins use $1 when the published price is within a cent of the peg. A contract with no reliable price cannot fund the card.
 4. Send that token from the linked wallet to the Immersve deposit contract (the quote shows it as the funding address) and paste the transaction hash. The server credits the USD value of the `Transfer` log, minus `TOPUP_FEE_BPS` (default 1%).
