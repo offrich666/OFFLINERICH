@@ -1,0 +1,353 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import os from 'node:os';
+import path from 'node:path';
+import { test } from 'node:test';
+import { privateKeyToAccount } from 'viem/accounts';
+import { createApp, type CreateAppOptions } from '../src/app.ts';
+import type { RpcClient } from '../src/erc20.ts';
+
+const treasury = '0x1111111111111111111111111111111111111111';
+const dead = '0x000000000000000000000000000000000000dead';
+const account = privateKeyToAccount('0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d');
+
+function encodeAbiString(value: string): string {
+  const data = Buffer.from(value, 'utf8').toString('hex').padEnd(64, '0');
+  return `0x${'20'.padStart(64, '0')}${value.length.toString(16).padStart(64, '0')}${data}`;
+}
+
+function listen(options: CreateAppOptions) {
+  const app = createApp(options);
+  return new Promise<{ base: string; close: () => Promise<void> }>((resolve) => {
+    const server: Server = app.listen(0, '127.0.0.1', () => {
+      const address = server.address() as AddressInfo;
+      resolve({
+        base: `http://127.0.0.1:${address.port}`,
+        close: () =>
+          new Promise((done) => {
+            server.close(() => {
+              const closeStore = app.locals.closeStore as (() => void) | undefined;
+              closeStore?.();
+              done();
+            });
+          }),
+      });
+    });
+  });
+}
+
+async function call(base: string, path: string, token?: string, body?: unknown, extraHeaders?: Record<string, string>) {
+  const response = await fetch(`${base}${path}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...extraHeaders,
+    },
+    body: body === undefined ? undefined : typeof body === 'string' ? body : JSON.stringify(body),
+  });
+  const data = (await response.json()) as Record<string, unknown>;
+  return { status: response.status, data };
+}
+
+function chainRpc(receipt: { current: unknown }): RpcClient {
+  return {
+    async call(_chainId, method, params) {
+      if (method === 'eth_getTransactionReceipt') return receipt.current;
+      if (method === 'eth_call') {
+        const request = params[0] as { to?: string; data?: string };
+        if (request.to !== dead) return '0x';
+        if (request.data === '0x95d89b41') return encodeAbiString('TEST');
+        if (request.data === '0x06fdde03') return encodeAbiString('Test Token');
+        if (request.data === '0x313ce567') return `0x${(18).toString(16).padStart(64, '0')}`;
+      }
+      throw new Error(`unexpected ${method}`);
+    },
+  };
+}
+
+const prices = {
+  async getMany(ids: string[]) {
+    const out: Record<string, { price: number; confidence: number } | null> = {};
+    for (const id of ids) out[id] = id.endsWith('dead') ? { price: 2.5, confidence: 0.99 } : null;
+    return out;
+  },
+};
+
+
+const liveKey = 'imm-key-livefixture';
+const liveSecret = 'imm-secret-livefixture';
+const partnerAccountId = 'partneracc1';
+
+const liveEnv = {
+  IMMERSVE_API_KEY: liveKey,
+  IMMERSVE_API_SECRET: liveSecret,
+  IMMERSVE_PARTNER_ACCOUNT_ID: partnerAccountId,
+  IMMERSVE_CLIENT_APPLICATION_ID: 'clientapp01',
+  IMMERSVE_CARD_PROGRAM_ID: 'cardprog01',
+  IMMERSVE_FUNDING_CHANNEL_ID: 'fundchan01',
+  IMMERSVE_CLIENT_ORIGIN: 'https://card.example.com',
+  IMMERSVE_NETWORK: 'ethereum-mainnet',
+  TOPUP_FEE_BPS: '0',
+  MIN_TOPUP_CENTS: '1',
+  OPERATOR_TOKEN: 'operator-token-1',
+};
+
+function immersveFetch() {
+  const calls: Array<{ url: string; method: string }> = [];
+  const fetchImpl: typeof fetch = async (url, init) => {
+    const target = String(url);
+    const method = init?.method ?? 'GET';
+    calls.push({ url: target, method });
+    const pathname = new URL(target).pathname;
+    if (pathname === `/api/partner-profiles/${partnerAccountId}`) {
+      return new Response(JSON.stringify({ accountId: partnerAccountId }), { status: 200 });
+    }
+    if (pathname === '/auth/login-init') {
+      return new Response(JSON.stringify({ loginRequestId: 'login1', message: 'Sign in to Immersve' }), { status: 200 });
+    }
+    if (pathname === '/auth/login-complete') {
+      return new Response(
+        JSON.stringify({ accessToken: 'access-1', refreshToken: 'refresh-1', cardholderAccountId: 'acct1' }),
+        { status: 200 },
+      );
+    }
+    if (pathname === '/auth/token') {
+      return new Response(JSON.stringify({ accessToken: 'access-2', refreshToken: 'refresh-2' }), { status: 200 });
+    }
+    if (pathname === '/api/accounts/acct1/contact-details') {
+      return new Response(JSON.stringify({}), { status: 200 });
+    }
+    if (pathname === '/api/funding-sources' && method === 'POST') {
+      return new Response(JSON.stringify({ id: 'fund1' }), { status: 200 });
+    }
+    if (pathname === '/api/spending-prerequisites') {
+      return new Response(
+        JSON.stringify({ prerequisites: [{ stage: 'funding', status: 'ok', params: { contractAddress: treasury } }] }),
+        { status: 200 },
+      );
+    }
+    if (pathname === '/api/cards' && method === 'POST') {
+      return new Response(JSON.stringify({ cardId: 'card_live_1' }), { status: 200 });
+    }
+    if (pathname === '/api/cards/card_live_1' && method === 'GET') {
+      return new Response(
+        JSON.stringify({
+          panLast4: '4242',
+          expiry: '203012',
+          status: 'active',
+          network: 'mastercard',
+          seriesId: 'series1',
+          cardholderName: 'Ada Lovelace',
+        }),
+        { status: 200 },
+      );
+    }
+    if (pathname === '/api/accounts/acct1/funding-sources') {
+      return new Response(JSON.stringify({ items: [{ id: 'fund1', balance: '2500000', balanceCurrency: 'USDC' }] }), {
+        status: 200,
+      });
+    }
+    if (pathname === '/api/cards/card_live_1/pan-token') {
+      return new Response(JSON.stringify({ callbackUrl: 'https://api-sec.immersve.com/api/cards/secure?tokenId=once' }), {
+        status: 200,
+      });
+    }
+    if (pathname.endsWith('/provision/apple-pay')) {
+      return new Response(
+        JSON.stringify({ encryptedPassData: 'enc', ephemeralPublicKey: 'eph', activationData: 'act' }),
+        { status: 200 },
+      );
+    }
+    return new Response(JSON.stringify({ message: `unexpected ${method} ${pathname}` }), { status: 500 });
+  };
+  return { fetchImpl, calls };
+}
+
+const cardBody = {
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  email: 'ada@example.com',
+  phone: '+18005550100',
+  dob: '1990-01-02',
+  line1: '1 Market Street',
+  city: 'San Francisco',
+  state: 'CA',
+  postalCode: '94105',
+  country: 'US',
+  type: 'virtual',
+  acceptedTerms: true,
+};
+
+async function link(base: string, token: string) {
+  const message = await call(base, `/api/wallet/message?address=${account.address}`, token);
+  const signature = await account.signMessage({ message: String((message.data as { message: string }).message) });
+  const linked = await call(base, '/api/wallet/link', token, { address: account.address, signature });
+  assert.equal(linked.status, 200);
+}
+
+test('issues a live Immersve card and credits an on-chain deposit', async () => {
+  const receipt = { current: null as unknown };
+  const immersve = immersveFetch();
+  const started = await listen({
+    dbPath: ':memory:',
+    rpc: chainRpc(receipt),
+    prices,
+    fetchImpl: immersve.fetchImpl,
+    env: liveEnv,
+  });
+  try {
+    const registered = await call(started.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    assert.equal(registered.status, 201);
+    const token = String((registered.data as { token: string }).token);
+    await link(started.base, token);
+
+    const needsSignature = await call(started.base, '/api/card', token, cardBody);
+    assert.equal(needsSignature.status, 200);
+    assert.equal((needsSignature.data as { status: string }).status, 'signature_required');
+    const walletSignature = await account.signMessage({
+      message: String((needsSignature.data as { message: string }).message),
+    });
+    const issued = await call(started.base, '/api/card', token, { ...cardBody, walletSignature });
+    assert.equal(issued.status, 201);
+    const card = (issued.data as { card: { last4: string; brand: string; issuerCardId: string; id: string } }).card;
+    assert.equal(card.last4, '4242');
+    assert.equal(card.brand, 'mastercard');
+    assert.equal(card.issuerCardId, 'card_live_1');
+
+    const custom = await call(started.base, '/api/tokens', token, { chainId: 1, address: dead });
+    assert.equal(custom.status, 201);
+    const tokenId = (custom.data as { token: { id: string } }).token.id;
+    const tx = `0x${'ab'.repeat(32)}`;
+    receipt.current = {
+      status: '0x1',
+      logs: [
+        {
+          address: dead,
+          topics: [
+            '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+            `0x${account.address.slice(2).toLowerCase().padStart(64, '0')}`,
+            `0x${treasury.slice(2).padStart(64, '0')}`,
+          ],
+          data: `0x${(10n ** 18n).toString(16).padStart(64, '0')}`,
+          logIndex: '0x0',
+        },
+      ],
+    };
+    const confirmed = await call(started.base, '/api/topups/confirm', token, { tokenId, txHash: tx });
+    assert.equal(confirmed.status, 200);
+    assert.equal((confirmed.data as { creditedCents: number }).creditedCents, 250);
+
+    const apple = await call(started.base, '/api/wallets/apple', token, {
+      cardId: card.id,
+      certChain: ['Y2VydA=='],
+      nonce: 'bm9uY2U=',
+      nonceSignature: 'c2ln',
+    });
+    assert.equal(apple.status, 200);
+    assert.equal((apple.data as { encryptedPassData: string }).encryptedPassData, 'enc');
+
+    const secure = await call(started.base, '/api/wallets/secure-details', token, {});
+    assert.equal(secure.status, 200);
+    assert.match(String((secure.data as { callbackUrl: string }).callbackUrl), /^https:\/\/api-sec\.immersve\.com\//);
+
+    const configResponse = await fetch(`${started.base}/api/config`);
+    const configText = await configResponse.text();
+    assert.equal(configText.includes(liveSecret), false);
+    assert.equal(configText.includes(liveKey), false);
+    const me = await call(started.base, '/api/me', token);
+    assert.equal((me.data as { balance: { availableCents: number } }).balance.availableCents, 250);
+    assert.equal((me.data as { card: { last4: string } }).card.last4, '4242');
+  } finally {
+    await started.close();
+  }
+});
+
+test('public config hides Immersve secrets and refuses a test key', async () => {
+  const started = await listen({
+    dbPath: ':memory:',
+    env: { IMMERSVE_API_KEY: 'imm-key-test-publicsandbox', IMMERSVE_API_SECRET: 'imm-secret-test-publicsandbox' },
+  });
+  try {
+    const response = await fetch(`${started.base}/api/config`);
+    const text = await response.text();
+    assert.equal(text.includes('imm-secret-test-publicsandbox'), false);
+    const body = JSON.parse(text) as { livemode: boolean; issuer: string; readiness: Array<{ id: string; ready: boolean }> };
+    assert.equal(body.livemode, false);
+    assert.equal(body.issuer, 'unconfigured');
+    assert.equal(body.readiness.find((item) => item.id === 'card_issuer')?.ready, false);
+    const registered = await call(started.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    const token = String((registered.data as { token: string }).token);
+    const issued = await call(started.base, '/api/card', token, cardBody);
+    assert.equal(issued.status, 400);
+    assert.equal((issued.data as { error: { code: string } }).error.code, 'live_key_required');
+  } finally {
+    await started.close();
+  }
+});
+
+test('setup stores a live Immersve key and keeps it out of the public config', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'offlinerich-'));
+  const dbPath = path.join(dir, 'card.sqlite');
+  const immersve = immersveFetch();
+  const first = await listen({ dbPath, fetchImpl: immersve.fetchImpl, env: {} });
+  const setupBody = {
+    apiKey: liveKey,
+    apiSecret: liveSecret,
+    partnerAccountId,
+    clientApplicationId: 'clientapp01',
+    cardProgramId: 'cardprog01',
+    fundingChannelId: 'fundchan01',
+    clientOrigin: 'https://card.example.com',
+    network: 'ethereum-mainnet',
+  };
+  try {
+    const registered = await call(first.base, '/api/register', undefined, {
+      email: 'ada@example.com',
+      password: 'correct-horse',
+    });
+    const token = String((registered.data as { token: string }).token);
+    const testKey = await call(first.base, '/api/setup', token, {
+      ...setupBody,
+      apiKey: 'imm-key-test-nope',
+      apiSecret: 'imm-secret-test-nope',
+    });
+    assert.equal(testKey.status, 400);
+    assert.equal((testKey.data as { error: { code: string } }).error.code, 'live_key_required');
+    assert.equal(immersve.calls.length, 0);
+
+    const connected = await call(first.base, '/api/setup', token, setupBody);
+    assert.equal(connected.status, 200);
+    assert.equal((connected.data as { livemode: boolean }).livemode, true);
+    assert.equal(JSON.stringify(connected.data).includes(liveSecret), false);
+    assert.ok(immersve.calls.some((entry) => entry.url.includes(`/api/partner-profiles/${partnerAccountId}`)));
+
+    const again = await call(first.base, '/api/setup', token, { ...setupBody, apiKey: 'imm-key-liveother' });
+    assert.equal(again.status, 409);
+  } finally {
+    await first.close();
+  }
+
+  const second = await listen({ dbPath, fetchImpl: immersve.fetchImpl, env: {} });
+  try {
+    const response = await fetch(`${second.base}/api/config`);
+    const text = await response.text();
+    const body = JSON.parse(text) as { livemode: boolean; issuer: string; network: string };
+    assert.equal(body.livemode, true);
+    assert.equal(body.issuer, 'immersve');
+    assert.equal(body.network, 'ethereum-mainnet');
+    assert.equal(text.includes(liveSecret), false);
+    assert.equal(text.includes(liveKey), false);
+  } finally {
+    await second.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
