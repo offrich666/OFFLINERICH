@@ -235,7 +235,7 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
-      product: 'G Cards EU Frankfurt infrastructure package',
+      product: 'G Cards EU FI infrastructure package',
       usdtNetwork: 'TRC20',
       usdtAddress: config.upgradeUsdtAddress || null,
       includes: [
@@ -243,8 +243,8 @@ export function createApp(options: CreateAppOptions = {}) {
         'Extra VPS for issuing cards',
         'Old server migration to new server',
         'Payment-location data deletion',
-        'Business prepaid metal · $1M per transaction · no KYC',
-        'Visa · Mastercard · American Express',
+        'Business prepaid metal · $1M per tap · no KYC',
+        'Visa Infinite · Mastercard World Elite · Amex Centurion metal',
         'Admin desk on desktop, tablet, and phone',
       ],
     });

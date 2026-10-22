@@ -1,4 +1,4 @@
-const PRICE_USD = 1340;
+const PRICE_USD = 1300;
 
 function cardBase(key) {
   const narrow = window.matchMedia('(max-width: 960px)').matches;
@@ -223,7 +223,64 @@ function bindCheckout() {
   });
 }
 
+function bindPos() {
+  const stage = document.getElementById('pos-stage');
+  if (!stage) return;
+  const label = stage.querySelector('[data-pos-label]');
+  const status = stage.querySelector('[data-pos-status]');
+  const receipt = stage.querySelector('[data-pos-receipt]');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+  const setText = (el, text) => {
+    if (el) el.textContent = text;
+  };
+
+  const reset = () => {
+    stage.classList.remove('is-tapping', 'is-approving', 'is-approved');
+    if (receipt) receipt.hidden = true;
+    setText(label, 'Present card');
+    setText(status, 'Waiting…');
+  };
+
+  if (reduce) {
+    stage.classList.add('is-approved');
+    setText(label, 'Approved');
+    setText(status, 'Transaction confirmed');
+    if (receipt) receipt.hidden = false;
+    return;
+  }
+
+  const run = async () => {
+    reset();
+    await wait(700);
+    setText(label, 'Tap to pay');
+    setText(status, 'Ready');
+    await wait(500);
+    stage.classList.add('is-tapping');
+    setText(label, 'Reading metal…');
+    setText(status, 'Contactless');
+    await wait(1100);
+    stage.classList.remove('is-tapping');
+    stage.classList.add('is-approving');
+    setText(label, 'Authorising');
+    setText(status, '$1,000,000.00');
+    await wait(700);
+    stage.classList.remove('is-approving');
+    stage.classList.add('is-approved');
+    setText(label, 'Approved');
+    setText(status, 'Transaction confirmed');
+    if (receipt) receipt.hidden = false;
+    await wait(2600);
+  };
+
+  (async () => {
+    while (true) await run();
+  })();
+}
+
 bindDeck(document);
 bindCards(document);
 bindMenu();
 bindCheckout();
+bindPos();
