@@ -27,6 +27,7 @@ import {
 } from './money.ts';
 import { hashPassword, verifyPassword } from './passwords.ts';
 import { ADMIN_EMAIL } from './admin.ts';
+import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
 import type { CardRow, ImmersveSession, Store } from './store.ts';
@@ -38,6 +39,7 @@ export type Ctx = {
   rpc: RpcClient;
   prices: PriceClient;
   issuer: ImmersveIssuer;
+  pay2: Pay2Client | null;
   fetchImpl: typeof fetch;
   now: () => number;
 };
@@ -141,8 +143,23 @@ export async function syncCard(ctx: Ctx, userId: string): Promise<{ ok: boolean;
   const existing = ctx.store.getCardByUser(userId);
   if (!existing) return { ok: true, message: 'Issue a card and the spending limit will follow the token balance.' };
   const card = refreshLocalStatus(ctx, existing);
+  if (card.issuerMode === 'pay2') {
+    if (!ctx.pay2 || !ctx.config.pay2Ready) {
+      return { ok: false, message: 'Connect Pay2.House so this card can be refreshed.' };
+    }
+    try {
+      const details = await ctx.pay2.cardDetails(card.issuerCardId);
+      const status = details.cardStatus === 'active' ? 'active' : card.status;
+      ctx.store.updateCardRuntime(card.id, status, card.spendingLimitCents, '');
+      return { ok: true, message: 'Pay2.House card details refreshed.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Pay2 card refresh failed.';
+      ctx.store.updateCardRuntime(card.id, card.status, card.spendingLimitCents, message);
+      return { ok: false, message };
+    }
+  }
   if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {
-    return { ok: false, message: 'Connect live Immersve so this card can be refreshed.' };
+    return { ok: false, message: 'Connect Pay2.House or live Immersve so this card can be refreshed.' };
   }
   try {
     const access = await refreshAccess(ctx, userId);
@@ -659,6 +676,17 @@ export function requireLive(ctx: Ctx): void {
   throw liveKeyError(ctx.config.immersveApiKey, ctx.config.immersveApiSecret);
 }
 
+export function requireIssuer(ctx: Ctx): void {
+  if (ctx.config.pay2Ready && ctx.pay2) return;
+  requireLive(ctx);
+}
+
+export function activeIssuer(ctx: Ctx): 'pay2' | 'immersve' | 'none' {
+  if (ctx.config.pay2Ready && ctx.pay2) return 'pay2';
+  if (ctx.config.livemode) return 'immersve';
+  return 'none';
+}
+
 function blankSession(userId: string, now: number): ImmersveSession {
   return {
     userId,
@@ -811,6 +839,73 @@ export async function connectLive(
   };
 }
 
+export async function connectPay2(
+  ctx: Ctx,
+  input: {
+    apiKey?: string;
+    keyId?: string;
+    privateKeyPem?: string;
+    accountNumber?: string;
+    binNumber?: string;
+  },
+) {
+  if (ctx.config.pay2ApiKey && ctx.config.keySource === 'env' && process.env.PAY2_API_KEY?.trim()) {
+    throw new HttpError(409, 'already_connected', 'Pay2.House keys are already set in the server environment.');
+  }
+  const apiKey = (input.apiKey ?? '').trim();
+  const keyId = (input.keyId ?? '').trim();
+  const privateKeyPem = (input.privateKeyPem ?? '').replace(/\\n/g, '\n').trim();
+  const accountNumber = (input.accountNumber ?? '').trim();
+  const binNumber = (input.binNumber ?? '').trim();
+  if (!apiKey || !keyId || !privateKeyPem.includes('PRIVATE KEY')) {
+    throw new HttpError(
+      400,
+      'pay2_credentials_required',
+      'Paste the Pay2.House API key, key id, and full private key PEM from https://pay2.house/keys/prepare.',
+    );
+  }
+  if (!/^P2U\d+$/i.test(accountNumber)) {
+    throw new HttpError(400, 'invalid_account', 'Paste the Pay2.House account number (starts with P2U).');
+  }
+  if (binNumber && !/^\d{6,19}$/.test(binNumber)) {
+    throw new HttpError(400, 'invalid_bin', 'Paste a Pay2.House BIN from cards/bins or support.');
+  }
+  const client = createPay2Client({
+    apiKey,
+    keyId,
+    privateKeyPem,
+    fetchImpl: ctx.fetchImpl,
+  });
+  const probed = await client.probe();
+  const match = probed.wallets.find((wallet) => wallet.accountNumber.toLowerCase() === accountNumber.toLowerCase());
+  if (!match && probed.wallets.length) {
+    throw new HttpError(
+      400,
+      'account_not_found',
+      `That account was not on the Pay2 wallet list. Available: ${probed.wallets.map((wallet) => wallet.accountNumber).join(', ') || 'none'}.`,
+    );
+  }
+  ctx.config.pay2ApiKey = apiKey;
+  ctx.config.pay2KeyId = keyId;
+  ctx.config.pay2PrivateKeyPem = privateKeyPem;
+  ctx.config.pay2AccountNumber = accountNumber;
+  ctx.config.pay2BinNumber = binNumber;
+  ctx.config.pay2Ready = true;
+  ctx.pay2 = client;
+  ctx.store.setSetting('pay2_api_key', apiKey);
+  ctx.store.setSetting('pay2_key_id', keyId);
+  ctx.store.setSetting('pay2_private_key_pem', privateKeyPem);
+  ctx.store.setSetting('pay2_account_number', accountNumber);
+  if (binNumber) ctx.store.setSetting('pay2_bin_number', binNumber);
+  return {
+    issuer: 'pay2' as const,
+    accountNumber,
+    balance: match?.balance ?? probed.wallets[0]?.balance ?? 0,
+    trc20Address: match?.trc20Address || probed.wallets[0]?.trc20Address || '',
+    binNumber: binNumber || null,
+  };
+}
+
 function printedName(first: string, last: string): string {
   const name = `${first} ${last}`.trim().replace(/\s+/g, ' ');
   if (!/^[A-Za-z][A-Za-z '\-]*$/.test(name)) {
@@ -818,6 +913,117 @@ function printedName(first: string, last: string): string {
   }
   if (name.length > 24) throw new HttpError(400, 'invalid_name', 'The printed name must be 24 characters or fewer.');
   return name;
+}
+
+async function issuePay2Card(
+  ctx: Ctx,
+  userId: string,
+  input: {
+    firstName: string;
+    lastName: string;
+    name: string;
+    email: string;
+    phone: string;
+    dobYear: number;
+    dobMonth: number;
+    dobDay: number;
+    line1: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    type: string;
+    termsIp: string;
+    binNumber: string;
+  },
+) {
+  if (!ctx.pay2 || !ctx.config.pay2Ready) {
+    throw new HttpError(400, 'pay2_required', 'Connect Pay2.House on the desk first.');
+  }
+  if (!input.binNumber) {
+    throw new HttpError(400, 'bin_required', 'Paste a Pay2.House BIN on the desk (from cards/bins or support).');
+  }
+  const issued = await ctx.pay2.issueCard({
+    accountNumber: ctx.config.pay2AccountNumber,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    surName: input.lastName,
+    dateBirth: `${String(input.dobDay).padStart(2, '0')}.${String(input.dobMonth).padStart(2, '0')}.${input.dobYear}`,
+    phoneNumber: input.phone.startsWith('+') ? input.phone : `+${input.phone}`,
+    address: input.line1,
+    city: input.city,
+    region: input.state,
+    postCode: input.postalCode,
+    email: input.email,
+    countryCode: input.country,
+    binNumber: input.binNumber,
+  });
+  let details = null as Awaited<ReturnType<Pay2Client['cardDetails']>> | null;
+  try {
+    details = await ctx.pay2.cardDetails(issued.cardId);
+  } catch {
+    details = null;
+  }
+  const expiry = parseExpiry(details?.expirationDate || '');
+  const pan = (details?.cardNumber || issued.cardNumber).replace(/\D/g, '');
+  const last4 = pan.slice(-4);
+  const brand = 'mastercard';
+  const termsAcceptedAt = ctx.now();
+  const existing = ctx.store.getCardholder(userId);
+  ctx.store.saveCardholder({
+    userId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    phone: input.phone,
+    dobDay: input.dobDay,
+    dobMonth: input.dobMonth,
+    dobYear: input.dobYear,
+    line1: input.line1,
+    city: input.city,
+    state: input.state,
+    postalCode: input.postalCode,
+    country: input.country,
+    termsAcceptedAt,
+    termsIp: input.termsIp || '127.0.0.1',
+    issuerCardholderId: ctx.config.pay2AccountNumber,
+    issuerMode: 'pay2',
+    createdAt: existing?.createdAt ?? termsAcceptedAt,
+  });
+  const cardId = id('card_');
+  ctx.store.insertCard({
+    id: cardId,
+    userId,
+    issuerCardId: issued.cardId,
+    issuerMode: 'pay2',
+    type: input.type,
+    currency: 'usd',
+    status: details?.cardStatus === 'active' || !details ? 'active' : 'inactive',
+    brand,
+    last4,
+    expMonth: expiry.month,
+    expYear: expiry.year,
+    vCardId: '',
+    spendingLimitCents: 0,
+    syncError: '',
+    createdAt: ctx.now(),
+  });
+  ctx.store.addWalletEvent({
+    id: id('wal_'),
+    userId,
+    cardId,
+    wallet: 'pay2_issue',
+    status: 'issued',
+    detail: `Pay2 ${issued.cardId}`,
+    createdAt: ctx.now(),
+  });
+  const card = ctx.store.getCardByUser(userId);
+  return {
+    status: 'issued' as const,
+    card: card ? publicCard(card) : null,
+    depositAddress: null,
+    panHint: last4,
+  };
 }
 
 export async function issueCard(
@@ -837,10 +1043,11 @@ export async function issueCard(
     type?: string;
     acceptedTerms?: boolean;
     walletSignature?: string;
+    binNumber?: string;
   },
   termsIp: string,
 ) {
-  requireLive(ctx);
+  requireIssuer(ctx);
   if (ctx.store.getCardByUser(userId)) {
     throw new HttpError(409, 'card_exists', 'This account already has a card.');
   }
@@ -874,6 +1081,26 @@ export async function issueCard(
   }
   if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country', 'Enter the country as two letters, such as US.');
   const type = input.type === 'physical' ? 'physical' : 'virtual';
+  if (activeIssuer(ctx) === 'pay2') {
+    return issuePay2Card(ctx, userId, {
+      firstName,
+      lastName,
+      name,
+      email,
+      phone,
+      dobYear,
+      dobMonth,
+      dobDay,
+      line1,
+      city,
+      state,
+      postalCode,
+      country,
+      type,
+      termsIp,
+      binNumber: (input.binNumber ?? '').trim() || ctx.config.pay2BinNumber,
+    });
+  }
   const wallet = ctx.store.getWallet(userId);
   if (!wallet) throw new HttpError(400, 'wallet_unlinked', 'Link the wallet that will fund the card.');
   let session = ctx.store.getImmersveSession(userId) ?? blankSession(userId, ctx.now());
@@ -967,7 +1194,8 @@ export function describeWallet(
 ) {
   const card = requireCard(ctx, userId);
   const holder = ctx.store.getCardholder(userId);
-  const pushReady = card.issuerMode === 'immersve' && ctx.config.livemode;
+  const pushReady =
+    (card.issuerMode === 'immersve' && ctx.config.livemode) || (card.issuerMode === 'pay2' && ctx.config.pay2Ready);
   ctx.store.addWalletEvent({
     id: id('wal_'),
     userId,
@@ -1002,11 +1230,58 @@ export function describeWallet(
 
 export async function secureCardLink(ctx: Ctx, userId: string) {
   const card = requireCard(ctx, userId);
+  if (card.issuerMode === 'pay2') {
+    if (!ctx.pay2 || !ctx.config.pay2Ready) {
+      throw new HttpError(409, 'pay2_required', 'Connect Pay2.House on the desk to read this card number.');
+    }
+    const details = await ctx.pay2.cardDetails(card.issuerCardId);
+    const pan = details.cardNumber.replace(/\D/g, '');
+    const grouped = pan.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+    return {
+      mode: 'pay2' as const,
+      cardId: details.cardId,
+      pan: grouped,
+      cvv: details.cvv,
+      expirationDate: details.expirationDate,
+      password3ds: details.password,
+      balance: details.balance,
+      currencyCode: details.currencyCode,
+      html: `<div style="font:20px/1.4 ui-monospace,monospace;padding:16px">${grouped}<br>${details.expirationDate} · CVV ${details.cvv}${
+        details.password ? `<br>3DS ${details.password}` : ''
+      }</div>`,
+    };
+  }
   if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {
     throw new HttpError(409, 'issuer_not_live', LIVE_KEY_MESSAGE);
   }
   const access = await refreshAccess(ctx, userId);
   return ctx.issuer.panToken(access.token, card.issuerCardId);
+}
+
+export async function topUpPay2Card(ctx: Ctx, userId: string, input: { amount?: number | string }) {
+  const card = requireCard(ctx, userId);
+  if (card.issuerMode !== 'pay2' || !ctx.pay2 || !ctx.config.pay2Ready) {
+    throw new HttpError(409, 'pay2_required', 'This card was not issued by Pay2.House.');
+  }
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new HttpError(400, 'invalid_amount', 'Enter a top-up amount in USD.');
+  }
+  const result = await ctx.pay2.topUp(card.issuerCardId, ctx.config.pay2AccountNumber, amount);
+  const details = await ctx.pay2.cardDetails(card.issuerCardId).catch(() => null);
+  const cents = details ? Math.round(details.balance * 100) : Math.round(amount * 100);
+  ctx.store.insertLedger({
+    id: id('led_'),
+    userId,
+    cardId: card.id,
+    direction: 'credit',
+    amountCents: Math.round(amount * 100),
+    kind: 'pay2_topup',
+    ref: `pay2:${result.transactionNumber}`,
+    memo: 'Pay2.House top-up',
+    createdAt: ctx.now(),
+  });
+  return { transactionNumber: result.transactionNumber, balance: details?.balance ?? null, creditedCents: Math.round(amount * 100), availableCents: cents };
 }
 
 export async function ephemeralKey(

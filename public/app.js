@@ -19,6 +19,7 @@ const state = {
   payQr: null,
   secureUrl: '',
   kycUrl: '',
+  pay2Secrets: null,
 };
 
 let busy = false;
@@ -203,7 +204,7 @@ function clientRowHtml(account) {
 function consoleHtml() {
   const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
   const issued = accounts.filter((account) => account.card).length;
-  const live = Boolean(state.config?.livemode);
+  const live = Boolean(state.config?.livemode || state.config?.pay2Ready);
   const rows = clientRows();
   const links = state.config?.links || [];
   return `<header class="bar">
@@ -221,7 +222,7 @@ function consoleHtml() {
         <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
         <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
         <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
-        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${live ? 'Live' : 'Not connected'}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${state.config?.pay2Ready ? 'Pay2' : state.config?.livemode ? 'Immersve' : 'Not connected'}</strong></article>
       </section>
       <div class="console-grid">
         <section class="panel">
@@ -239,7 +240,9 @@ function consoleHtml() {
           <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
         </section>
         <div class="stack">
-          ${live
+          ${state.config?.pay2Ready
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Pay2.House is connected on ${esc(state.config.pay2AccountNumber)}. Open a client and issue a card. Fund the Pay2 USD wallet (USDT TRC20), then top up the card.</p><span class="pill good">Pay2 live</span></section>`
+            : live
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
             : setupHtml()}
           ${links.length
@@ -252,42 +255,53 @@ function consoleHtml() {
 }
 
 function setupHtml() {
-  if (state.config?.livemode) return '';
+  if (state.config?.pay2Ready || state.config?.livemode) return '';
   const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
   return `<section class="panel partner">
-    <h2>Get a real Mastercard</h2>
-    <p class="lede">GG Card uses Immersve’s <b>Universal EVM</b> funding protocol. Cards are funded by a plain ERC-20 transfer to your partner Funds Storage contract. Immersve must give you the live keys and channel first — nothing inventable here.</p>
+    <h2>Issue cards today — Pay2.House</h2>
+    <p class="lede">Immersve partner approval takes time. Pay2.House already has BINs. Sign up, fund USDT TRC20, paste the API credentials, and this desk can issue a real virtual card for a client today.</p>
     <ol class="steps">
-      <li>Apply at <a href="https://immersve.com/partner/" target="_blank" rel="noopener">immersve.com/partner</a> or <a href="https://immersve.com/contact/" target="_blank" rel="noopener">immersve.com/contact</a>. Ask for live (not test) credentials and Universal EVM.</li>
-      <li>Deploy a Funds Storage per token with <code>createFundsStorage</code> on Immersve’s master contract (<a href="https://docs.immersve.com/guides/universal-evm-funding-protocol/" target="_blank" rel="noopener">docs</a>, <a href="https://github.com/immersve/funding-contract-universal-evm" target="_blank" rel="noopener">contract</a>), then register it as a Funding Channel with Immersve.</li>
-      <li>Allow this origin on the client application: <code>${esc(origin)}</code></li>
-      <li>Paste everything Immersve sends below. The server checks the live key against Immersve before it saves. Test keys are refused.</li>
-      <li>Open a client → link wallet (that address becomes the Funding Source) → issue card → KYC → send the funded token to Funds Storage → show number → Apple Wallet.</li>
+      <li>Create an account at <a href="https://pay2.house/" target="_blank" rel="noopener">pay2.house</a>.</li>
+      <li>Open <a href="https://pay2.house/keys/prepare" target="_blank" rel="noopener">keys/prepare</a>, create an API key, and save the <b>API key</b>, <b>key id</b>, and <b>private key PEM</b>.</li>
+      <li>Fund a USD wallet (USDT TRC20 address is on the wallet). Note the account number that starts with <code>P2U</code>.</li>
+      <li>Ask Pay2 support for a BIN, or list BINs from their API. Paste it below.</li>
+      <li>Connect here, open a client, press <b>Issue real card</b>, then <b>Show card number</b>.</li>
     </ol>
-    <p class="muted">Live funding types Immersve lists today include <code>base-mainnet-usdc-universal-evm</code>, <code>polygon-usdc-universal-evm-live</code>, <code>arbitrum-mainnet-usdc-universal-evm</code>, <code>bsc-usdt-universal-evm</code>. Custom tokens such as LFUSD need Immersve to add a funding type.</p>
-    <form id="setup-form" class="stack">
-      <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
-      <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
-      <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Funds Storage address (Universal EVM) <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x… from FundsStorageCreated" /></label>
-      <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
-      <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
-      <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" required /></label>
-      <button class="primary" type="submit">Connect live Immersve</button>
+    <form id="pay2-form" class="stack">
+      <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required /></label>
+      <label>Key id <input name="keyId" autocomplete="off" spellcheck="false" required /></label>
+      <label>Private key PEM <textarea name="privateKeyPem" rows="6" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----" required></textarea></label>
+      <label>Account number <input name="accountNumber" autocomplete="off" spellcheck="false" placeholder="P2U…" required /></label>
+      <label>BIN number <input name="binNumber" autocomplete="off" spellcheck="false" placeholder="From Pay2 BINs / support" required /></label>
+      <button class="primary" type="submit">Connect Pay2.House</button>
     </form>
+    <details style="margin-top:16px">
+      <summary>Later: Immersve Universal EVM (own program)</summary>
+      <p class="lede" style="margin-top:10px">Use this when Immersve sends live partner keys. Not required to issue today.</p>
+      <form id="setup-form" class="stack">
+        <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
+        <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
+        <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" required /></label>
+        <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
+        <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
+        <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
+        <label>Funds Storage address <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x…" /></label>
+        <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
+        <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
+        <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" required /></label>
+        <button class="ghost" type="submit">Connect Immersve</button>
+      </form>
+    </details>
   </section>`;
 }
 
 function issueForm() {
   if (state.me.card) return '';
-  if (!state.config?.livemode) {
+  if (!state.config?.livemode && !state.config?.pay2Ready) {
     return `<section class="panel">
       <h2>Issue the card</h2>
-      <p class="lede gate">A real Mastercard is created only after Immersve is connected on the desk with your live partner keys. Go back, finish “Get a real Mastercard”, then return here.</p>
-      <button class="primary" type="button" data-action="back-to-desk">Connect Immersve on the desk</button>
+      <p class="lede gate">Connect Pay2.House on the desk to issue a card today, or Immersve when you have partner keys.</p>
+      <button class="primary" type="button" data-action="back-to-desk">Connect on the desk</button>
     </section>`;
   }
   if (state.kycUrl) {
@@ -302,7 +316,9 @@ function issueForm() {
   }
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.</p>
+    <p class="lede">${state.config?.pay2Ready
+      ? 'Pay2.House creates a real virtual card for this client from your funded Pay2 account. Wallet link is optional for Pay2.'
+      : 'Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.'}</p>
     <form id="card-form" class="grid-2">
       <label>First name <input name="firstName" autocomplete="given-name" required /></label>
       <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
@@ -364,6 +380,14 @@ function dashboardHtml() {
       </div>
       <div class="stack">
         ${issueForm()}
+        ${state.me.card?.issuerMode === 'pay2' || (state.config?.pay2Ready && state.me.card) ? `<section class="panel">
+          <h2>Pay2 top-up</h2>
+          <p class="lede">Move USD from your Pay2 account onto this card after the Pay2 wallet is funded.</p>
+          <form id="pay2-topup-form" class="row">
+            <label style="flex:1">Amount (USD) <input name="amount" inputmode="decimal" placeholder="25" required /></label>
+            <button class="primary" type="submit">Top up card</button>
+          </form>
+        </section>` : ''}
         <section class="panel">
           <h2>Tokens</h2>
           <p class="lede">LFUSD on Ethereum is listed with USDT. Both use a one-dollar price when the chain feed is within a cent of that peg. Pick a token you hold, or add any other ERC-20 by contract. The contract’s name, symbol, and decimals are read on-chain.</p>
@@ -438,10 +462,14 @@ function dashboardHtml() {
 }
 
 function walletsGate() {
-  if (state.me.card) return '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
-  const why = state.config?.livemode
+  if (state.me.card) {
+    return state.config?.pay2Ready || state.me.card.issuerMode === 'pay2'
+      ? '<p class="lede">Press Show card number to read the Pay2.House PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>'
+      : '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
+  }
+  const why = state.config?.pay2Ready || state.config?.livemode
     ? 'Issue this client’s card first. The number appears here right after.'
-    : 'No card exists yet, so there is no number to show. Card numbers only come from a live card program. Connect the live Immersve key on the desk, then issue this client’s card.';
+    : 'No card exists yet. Connect Pay2.House on the desk to issue today, then show the number here.';
   return `<p class="lede gate">${esc(why)}</p>`;
 }
 
@@ -602,8 +630,13 @@ async function run(fn) {
 function mountLiveCard() {
   const host = document.getElementById('secure-card');
   if (!host || !state.me?.card) return;
+  if (state.pay2Secrets) {
+    host.innerHTML = `<div class="secure-frame pay2-pan">${state.pay2Secrets.html || ''}</div>
+      <p class="muted">Number from Pay2.House. Add it manually in Apple Wallet / Google Wallet / Samsung Wallet.</p>`;
+    return;
+  }
   if (!state.secureUrl) {
-    host.innerHTML = '<p class="muted">Press “Show card number” to see the full number, expiry, and security code on this page. Immersve serves them over a one-time secure link, and this server never stores them.</p>';
+    host.innerHTML = '<p class="muted">Press “Show card number” to see the full number, expiry, and security code on this page.</p>';
     return;
   }
   host.innerHTML = `<iframe class="secure-frame" title="Card number" src="${esc(state.secureUrl)}" referrerpolicy="no-referrer"></iframe>
@@ -616,6 +649,7 @@ document.body.addEventListener('click', (event) => {
   const action = button.dataset.action;
   if (action === 'clear-kyc') {
     state.kycUrl = '';
+  state.pay2Secrets = null;
     render();
   }
   if (action === 'toggle-new-client') {
@@ -835,11 +869,30 @@ document.body.addEventListener('submit', (event) => {
   if (form.id === 'link-form') {
     run(() => linkAddress(String(data.address), String(data.signature || '')));
   }
+  if (form.id === 'pay2-form') {
+    run(async () => {
+      const result = await api('/api/setup/pay2', { method: 'POST', body: data, noClient: true });
+      state.flash = {
+        kind: 'ok',
+        text: `Pay2.House connected${result.trc20Address ? `. Fund USDT TRC20 to ${result.trc20Address}` : ''}. Open a client and issue a card.`,
+      };
+      await loadDesk();
+      render();
+    });
+  }
   if (form.id === 'setup-form') {
     run(async () => {
       await api('/api/setup', { method: 'POST', body: data, noClient: true });
       state.flash = { kind: 'ok', text: 'Live Immersve is connected (Universal EVM). Open a client, link the wallet, issue the card, then deposit to Funds Storage.' };
       await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'pay2-topup-form') {
+    run(async () => {
+      const result = await api('/api/card/topup-pay2', { method: 'POST', body: { amount: data.amount } });
+      state.flash = { kind: 'ok', text: `Topped up ${esc(money(result.creditedCents))} on the Pay2 card.` };
+      await refresh();
       render();
     });
   }

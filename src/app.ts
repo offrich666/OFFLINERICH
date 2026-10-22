@@ -8,6 +8,7 @@ import { loadConfig, overlaySaved, readiness, type Config, type Env } from './co
 import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
 import { createImmersveIssuer, createUnavailableIssuer } from './issuer.ts';
+import { createPay2Client } from './pay2.ts';
 import { createPriceClient, type PriceClient } from './prices.ts';
 import * as service from './service.ts';
 import { openStore, type Store } from './store.ts';
@@ -98,6 +99,14 @@ export function createApp(options: CreateAppOptions = {}) {
           fetchImpl,
         })
       : createUnavailableIssuer(),
+    pay2: config.pay2Ready
+      ? createPay2Client({
+          apiKey: config.pay2ApiKey,
+          keyId: config.pay2KeyId,
+          privateKeyPem: config.pay2PrivateKeyPem,
+          fetchImpl,
+        })
+      : null,
     now: options.now ?? (() => Date.now()),
   };
   const app = express();
@@ -110,7 +119,7 @@ export function createApp(options: CreateAppOptions = {}) {
     next();
   });
 
-  app.use(express.json({ limit: '64kb' }));
+  app.use(express.json({ limit: '256kb' }));
 
   function setSession(res: Response, token: string): void {
     const secure = config.secureCookies ? '; Secure' : '';
@@ -147,9 +156,13 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/api/config', (_req, res) => {
+    const issuer = config.pay2Ready ? 'pay2' : config.livemode ? 'immersve' : 'unconfigured';
     res.json({
-      issuer: config.livemode ? 'immersve' : 'unconfigured',
+      issuer,
       livemode: config.livemode,
+      pay2Ready: config.pay2Ready,
+      pay2AccountNumber: config.pay2Ready ? config.pay2AccountNumber : '',
+      pay2BinNumber: config.pay2Ready ? config.pay2BinNumber : '',
       currency: 'usd',
       feeBps: config.feeBps,
       treasuryAddress: config.treasuryAddress,
@@ -211,6 +224,15 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/api/setup', asyncRoute(async (req, res) => {
     service.requireAdmin(ctx, sessionUser(req));
     res.json(await service.connectLive(ctx, req.body ?? {}));
+  }));
+
+  app.post('/api/setup/pay2', asyncRoute(async (req, res) => {
+    service.requireAdmin(ctx, sessionUser(req));
+    res.json(await service.connectPay2(ctx, req.body ?? {}));
+  }));
+
+  app.post('/api/card/topup-pay2', asyncRoute(async (req, res) => {
+    res.json(await service.topUpPay2Card(ctx, actor(req), req.body ?? {}));
   }));
 
   app.post('/api/admin/clients', asyncRoute(async (req, res) => {

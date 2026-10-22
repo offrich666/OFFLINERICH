@@ -39,6 +39,12 @@ export type Config = {
   secureCookies: boolean;
   trustProxy: boolean;
   selfSignup: boolean;
+  pay2ApiKey: string;
+  pay2KeyId: string;
+  pay2PrivateKeyPem: string;
+  pay2AccountNumber: string;
+  pay2BinNumber: string;
+  pay2Ready: boolean;
   rpcUrls: Record<number, string>;
 };
 
@@ -65,6 +71,11 @@ export function loadConfig(env: Env): Config {
     const override = env[`RPC_URL_${chain.id}`];
     if (override) rpcUrls[chain.id] = override;
   }
+  const pay2ApiKey = env.PAY2_API_KEY?.trim() ?? '';
+  const pay2KeyId = env.PAY2_KEY_ID?.trim() ?? '';
+  const pay2PrivateKeyPem = (env.PAY2_PRIVATE_KEY_PEM ?? '').replace(/\\n/g, '\n').trim();
+  const pay2AccountNumber = env.PAY2_ACCOUNT_NUMBER?.trim() ?? '';
+  const pay2BinNumber = env.PAY2_BIN_NUMBER?.trim() ?? '';
   return {
     port: integer(env.PORT, 8787),
     databasePath: env.DATABASE_PATH?.trim() || './data/offlinerich.sqlite',
@@ -101,6 +112,12 @@ export function loadConfig(env: Env): Config {
     secureCookies: env.SECURE_COOKIES === 'true',
     trustProxy: env.TRUST_PROXY === 'true',
     selfSignup: env.SELF_SIGNUP === '1',
+    pay2ApiKey,
+    pay2KeyId,
+    pay2PrivateKeyPem,
+    pay2AccountNumber,
+    pay2BinNumber,
+    pay2Ready: Boolean(pay2ApiKey && pay2KeyId && pay2PrivateKeyPem && pay2AccountNumber),
     rpcUrls,
   };
 }
@@ -148,11 +165,31 @@ export function overlaySaved(config: Config, saved: Record<string, string>, env:
   if (!config.treasuryAddress && config.immersveFundsStorageAddress) {
     config.treasuryAddress = config.immersveFundsStorageAddress;
   }
+  fillSaved(env.PAY2_API_KEY, saved.pay2_api_key, (value) => {
+    config.pay2ApiKey = value;
+  });
+  fillSaved(env.PAY2_KEY_ID, saved.pay2_key_id, (value) => {
+    config.pay2KeyId = value;
+  });
+  fillSaved(env.PAY2_PRIVATE_KEY_PEM, saved.pay2_private_key_pem, (value) => {
+    config.pay2PrivateKeyPem = value.replace(/\\n/g, '\n');
+  });
+  fillSaved(env.PAY2_ACCOUNT_NUMBER, saved.pay2_account_number, (value) => {
+    config.pay2AccountNumber = value;
+  });
+  fillSaved(env.PAY2_BIN_NUMBER, saved.pay2_bin_number, (value) => {
+    config.pay2BinNumber = value;
+  });
   config.livemode = isLiveImmersveKey(config.immersveApiKey, config.immersveApiSecret);
+  config.pay2Ready = Boolean(
+    config.pay2ApiKey && config.pay2KeyId && config.pay2PrivateKeyPem && config.pay2AccountNumber,
+  );
 }
 
 export function readiness(config: Config): ReadinessItem[] {
   const live = config.livemode;
+  const pay2 = config.pay2Ready;
+  const canIssue = live || pay2;
   const visa = Boolean(config.visaApiKey && config.visaSharedSecret);
   const issuerDetail = live
     ? 'Live Immersve keys are connected. Immersve issues the Mastercard and checks the on-chain deposit before a merchant charge.'
@@ -161,6 +198,14 @@ export function readiness(config: Config): ReadinessItem[] {
       : 'Connect the live Immersve API key, API secret, partner account, card program, and funding channel. That account issues the card.';
   return [
     {
+      id: 'pay2_issuer',
+      ready: pay2,
+      title: 'Pay2.House cards (issue today)',
+      detail: pay2
+        ? `Pay2.House is connected on account ${config.pay2AccountNumber}. Issue a client card from the desk after the Pay2 wallet has balance.`
+        : 'Sign up at pay2.house, create an API key at /keys/prepare, fund a USD wallet (USDT TRC20), then paste API key, key id, private key PEM, account number, and BIN here.',
+    },
+    {
       id: 'card_issuer',
       ready: live,
       title: 'Immersve card issuing',
@@ -168,13 +213,15 @@ export function readiness(config: Config): ReadinessItem[] {
     },
     {
       id: 'treasury',
-      ready: live,
-      title: 'On-chain card funding',
-      detail: live
-        ? config.immersveFundsStorageAddress
-          ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
-          : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
-        : 'Paste the Universal EVM Funds Storage address with the live Immersve keys. Deposits are plain ERC-20 transfers to that contract.',
+      ready: canIssue,
+      title: 'Card funding',
+      detail: pay2
+        ? 'Fund the Pay2.House USD wallet (USDT TRC20 address from wallets), then top up each issued card from that account.'
+        : live
+          ? config.immersveFundsStorageAddress
+            ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
+            : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
+          : 'Connect Pay2.House to issue today, or Immersve Universal EVM for wallet-native funding.',
     },
     {
       id: 'prices',
@@ -185,29 +232,30 @@ export function readiness(config: Config): ReadinessItem[] {
     },
     {
       id: 'apple_pay',
-      ready: live,
+      ready: canIssue,
       title: 'Apple Pay',
-      detail:
-        'The iPhone app uses PassKit and POST /api/wallets/apple. Immersve returns encryptedPassData, ephemeralPublicKey, and activationData. Apple Pay is added in the app, and only with live keys.',
+      detail: pay2
+        ? 'Show the card number, then on iPhone open Wallet → + → Debit or Credit Card → Enter Card Details Manually.'
+        : 'The iPhone app uses PassKit and POST /api/wallets/apple. Immersve returns encryptedPassData, ephemeralPublicKey, and activationData. Apple Pay is added in the app, and only with live keys.',
     },
     {
       id: 'google_pay',
-      ready: live,
+      ready: canIssue,
       title: 'Google Pay',
       detail:
-        'Open the one-time secure card link from this page and type the card into Google Wallet. Immersve push provisioning for Google Pay is not available yet.',
+        'Show the card number on this page and type it into Google Wallet. Push provisioning is not required for manual add.',
     },
     {
       id: 'samsung_pay',
-      ready: live,
+      ready: canIssue,
       title: 'Samsung Pay',
       detail: visa
         ? 'Type the card from the secure link into Samsung Wallet, or push with Visa when a vCardID is attached.'
-        : 'Open the one-time secure card link and type the card into Samsung Wallet. Immersve does not push to Samsung Pay.',
+        : 'Show the card number and type it into Samsung Wallet.',
     },
     {
       id: 'identity',
-      ready: live,
+      ready: canIssue,
       title: 'Cardholder checks',
       detail: live
         ? 'Immersve runs identity checks before the card is created. The page opens their secure check when it is still required.'
