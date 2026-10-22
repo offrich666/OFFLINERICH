@@ -332,6 +332,7 @@ input, select {
   background: #121c30; border: 1px solid var(--line); border-radius: 18px;
   padding: 16px; display: grid; gap: 12px; box-shadow: var(--shadow);
 }
+.drawer[hidden] { display: none !important; }
 .drawer a { color: var(--ink); padding: 10px 8px; border-bottom: 1px solid var(--line); text-decoration: none; }
 .drawer a:last-child { border-bottom: 0; }
 

@@ -103,15 +103,15 @@ function bindCheckout() {
 }
 
 function pulsePrice() {
-  const card = document.getElementById('price-card');
-  if (!card || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  card.animate(
+  const price = document.querySelector('#price-card .price');
+  if (!price || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  price.animate(
     [
       { transform: 'translateY(0)' },
-      { transform: 'translateY(-4px)' },
+      { transform: 'translateY(-3px)' },
       { transform: 'translateY(0)' },
     ],
-    { duration: 2200, iterations: Infinity, easing: 'ease-in-out' },
+    { duration: 2400, iterations: Infinity, easing: 'ease-in-out' },
   );
 }
 
