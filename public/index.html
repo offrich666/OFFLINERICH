@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>G Cards EU · Private card programme</title>
+    <title>G Cards EU · Platform 31.2.7 · Dedicated server</title>
     <meta
       name="description"
-      content="G Cards EU private business prepaid programme. Visa, Mastercard, American Express. $1M per transaction. No KYC. Frankfurt infrastructure. Activation $1,300."
+      content="G Cards EU platform language 31.2.7 requires a dedicated server. Settle by token on-chain. Status keys: completed and waiting. Activation $1,300."
     />
     <link
       rel="icon"
@@ -26,10 +26,10 @@
     <header class="top">
       <a class="mark" href="/">G Cards <span>EU</span></a>
       <nav class="nav">
-        <a href="#programme">Programme</a>
-        <a href="#demonstration">Demonstration</a>
-        <a href="#infrastructure">Infrastructure</a>
-        <a href="#activation">Activation</a>
+        <a href="#status">Status</a>
+        <a href="#upgrade">Version 31.2.7</a>
+        <a href="#settlement">Settlement</a>
+        <a href="#activation">Activate</a>
         <a class="nav-desk" href="/desk">Admin desk</a>
       </nav>
       <button class="menu" type="button" aria-label="Open menu" data-menu>Menu</button>
@@ -38,16 +38,16 @@
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Private card programme · European Union</p>
+          <p class="eyebrow">Platform upgrade · Language 31.2.7</p>
           <h1>G Cards EU</h1>
-          <p class="headline">Business prepaid metal for high-value settlement.</p>
+          <p class="headline">New language 31.2.7 needs a dedicated server.</p>
           <p class="lede">
-            A private issuing desk for Visa, Mastercard and American Express business prepaid metal.
-            Transaction ceiling <strong>$1,000,000</strong>. No KYC. Hosted on dedicated Frankfurt infrastructure.
+            After integrating <strong>version 31.2.7</strong>, the previous host is too slow and cannot hold the stack.
+            A dedicated Frankfurt server is required for this more powerful release. Settle with your <strong>token on-chain</strong> — we read the payment on the blockchain, then activation completes.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#activation">Activate programme · $1,300</a>
-            <a class="btn ghost" href="#demonstration">View Apple Pay demonstration</a>
+            <a class="btn primary" href="#activation">Pay $1,300 · unlock dedicated server</a>
+            <a class="btn ghost" href="#status">View keys status</a>
           </div>
         </div>
 
@@ -76,7 +76,7 @@
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
                 <div class="cvv-block"><span>CVV</span><b>882</b></div>
-                <p class="sig">G Cards EU · Visa Infinite metal</p>
+                <p class="sig">G Cards EU · Platform 31.2.7</p>
               </div>
             </article>
 
@@ -103,7 +103,7 @@
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
                 <div class="cvv-block"><span>CVV</span><b>441</b></div>
-                <p class="sig">G Cards EU · Mastercard World Elite</p>
+                <p class="sig">G Cards EU · Dedicated FRA host</p>
               </div>
             </article>
 
@@ -130,7 +130,7 @@
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
                 <div class="cvv-block"><span>CID</span><b>1005</b></div>
-                <p class="sig">G Cards EU · American Express metal</p>
+                <p class="sig">G Cards EU · No KYC prepaid</p>
               </div>
             </article>
           </div>
@@ -138,40 +138,165 @@
         </div>
       </section>
 
-      <section class="specs" id="programme" aria-label="Programme specifications">
+      <section class="specs" aria-label="Platform summary">
         <div class="wrap">
           <div class="spec-row">
             <div>
-              <p class="k">Transaction ceiling</p>
-              <p class="v">$1,000,000</p>
+              <p class="k">Language version</p>
+              <p class="v">31.2.7</p>
             </div>
             <div>
-              <p class="k">Programme type</p>
-              <p class="v">Business prepaid</p>
+              <p class="k">Previous host</p>
+              <p class="v">Too slow</p>
             </div>
             <div>
-              <p class="k">KYC requirement</p>
-              <p class="v">None</p>
+              <p class="k">Required</p>
+              <p class="v">Dedicated server</p>
             </div>
             <div>
-              <p class="k">Networks</p>
-              <p class="v">Visa · Mastercard · Amex</p>
+              <p class="k">Settlement</p>
+              <p class="v">Token · blockchain</p>
             </div>
             <div>
-              <p class="k">Infrastructure</p>
-              <p class="v">Frankfurt (FRA)</p>
+              <p class="k">Activation</p>
+              <p class="v">$1,300</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="status" id="status">
+        <div class="wrap">
+          <p class="eyebrow">Keys &amp; readiness</p>
+          <h2>What is done · what we are waiting for</h2>
+          <p class="section-lede">
+            Programme keys and cut-over steps. Completed items are ticked. In-process items remain waiting until token settlement clears on-chain and the dedicated server is provisioned.
+          </p>
+          <ul class="key-list" id="key-list">
+            <li class="done">
+              <span class="badge" aria-hidden="true">✓</span>
+              <div>
+                <strong>Language package prepared · 31.2.7</strong>
+                <p>New programming language / runtime build staged for integration.</p>
+              </div>
+              <span class="state">Done</span>
+            </li>
+            <li class="done">
+              <span class="badge" aria-hidden="true">✓</span>
+              <div>
+                <strong>Issuer desk &amp; API key fields</strong>
+                <p>Admin desk ready to accept issuer keys after go-live (configured only on <a href="/desk">/desk</a>).</p>
+              </div>
+              <span class="state">Done</span>
+            </li>
+            <li class="done">
+              <span class="badge" aria-hidden="true">✓</span>
+              <div>
+                <strong>Migration plan · old → new host</strong>
+                <p>Cut-over steps documented for programme data and payment-location wipe.</p>
+              </div>
+              <span class="state">Done</span>
+            </li>
+            <li class="waiting">
+              <span class="badge pulse" aria-hidden="true">…</span>
+              <div>
+                <strong>Dedicated server · Frankfurt</strong>
+                <p>Waiting — required for 31.2.7. Previous server cannot hold the new version under load.</p>
+              </div>
+              <span class="state">In process</span>
+            </li>
+            <li class="waiting">
+              <span class="badge pulse" aria-hidden="true">…</span>
+              <div>
+                <strong>Issuing VPS capacity</strong>
+                <p>Waiting — extra compute for card issue after the language upgrade.</p>
+              </div>
+              <span class="state">In process</span>
+            </li>
+            <li class="waiting">
+              <span class="badge pulse" aria-hidden="true">…</span>
+              <div>
+                <strong>Token settlement on blockchain</strong>
+                <p>Waiting — send your token; we confirm the transfer on-chain, then payment is done.</p>
+              </div>
+              <span class="state">In process</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <section class="upgrade" id="upgrade">
+        <div class="wrap upgrade-grid">
+          <div>
+            <p class="eyebrow">Why dedicated</p>
+            <h2>Version 31.2.7 outgrew the old server</h2>
+            <p class="section-lede">
+              The programming language layer moves from the legacy build to <strong>31.2.7</strong>. After integration, the prior host is slow, unstable under issue traffic, and is not holding the stack. This release needs dedicated power.
+            </p>
+          </div>
+          <div class="compare">
+            <article>
+              <p class="compare-label">Legacy host</p>
+              <h3>Old version</h3>
+              <ul>
+                <li>Shared / previous server</li>
+                <li>Slow after 31.2.7 integration</li>
+                <li>Cannot hold issuing load</li>
+              </ul>
+            </article>
+            <article class="target">
+              <p class="compare-label">Required</p>
+              <h3>Dedicated · 31.2.7</h3>
+              <ul>
+                <li>Frankfurt dedicated server</li>
+                <li>Issuing VPS for card create</li>
+                <li>Stable for the more powerful build</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="settle" id="settlement">
+        <div class="wrap">
+          <p class="eyebrow">On-chain settlement</p>
+          <h2>Pay with your token · we confirm on the blockchain</h2>
+          <p class="section-lede">
+            Professional settlement path: you transfer the token, we observe the transaction on-chain, and activation unlocks when confirmation is final.
+          </p>
+          <ol class="chain-steps">
+            <li>
+              <span class="n">01</span>
+              <div>
+                <strong>You pay with your token</strong>
+                <p>Send the activation amount ($1,300 equivalent) using the token rail shown at checkout (USDT TRC20 by default).</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">02</span>
+              <div>
+                <strong>We receive data through the blockchain</strong>
+                <p>The transfer hash and amount are read from the chain — no manual “trust me” step for the payment proof.</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">03</span>
+              <div>
+                <strong>Payment is done · keys flip to live</strong>
+                <p>Waiting items above move to Done: dedicated server, issuing VPS, and language 31.2.7 go live on the desk.</p>
+              </div>
+            </li>
+          </ol>
         </div>
       </section>
 
       <section class="demo" id="demonstration">
         <div class="wrap demo-grid">
           <div class="demo-copy">
-            <p class="eyebrow">Demonstration</p>
-            <h2>Apple Pay settlement at the point of sale</h2>
+            <p class="eyebrow">After go-live</p>
+            <h2>Apple Pay on the powerful stack</h2>
             <p class="section-lede">
-              G Cards EU metal provisioned to Apple Wallet. The iPhone authenticates with Face ID, presents to the terminal, and settles <strong>$1,000,000.00</strong> in a single authorisation.
+              Once 31.2.7 runs on dedicated hardware, G Cards EU metal in Apple Wallet settles high-value tickets — including <strong>$1,000,000.00</strong> — at the point of sale.
             </p>
             <ol class="steps-quiet">
               <li>Open Apple Pay on the device</li>
@@ -251,95 +376,48 @@
         </div>
       </section>
 
-      <section class="band" id="infrastructure">
-        <div class="wrap">
-          <p class="eyebrow">Infrastructure package · $1,300</p>
-          <h2>What is delivered</h2>
-          <p class="section-lede">
-            One activation covers the European hosting cut-over for the G Cards EU desk.
-          </p>
-          <ol class="infra">
-            <li>
-              <span class="idx">01</span>
-              <div>
-                <h3>Dedicated server in Frankfurt</h3>
-                <p>Primary host in FRA for EU latency and continuous desk availability.</p>
-              </div>
-            </li>
-            <li>
-              <span class="idx">02</span>
-              <div>
-                <h3>Issuing VPS</h3>
-                <p>Separate capacity for card issue, secure details and top-up traffic.</p>
-              </div>
-            </li>
-            <li>
-              <span class="idx">03</span>
-              <div>
-                <h3>Migration from the previous server</h3>
-                <p>Transfer of programme data, desk configuration and client records.</p>
-              </div>
-            </li>
-            <li>
-              <span class="idx">04</span>
-              <div>
-                <h3>Payment-location data deletion</h3>
-                <p>Removal of residual payment-location data from the prior environment.</p>
-              </div>
-            </li>
-            <li>
-              <span class="idx">05</span>
-              <div>
-                <h3>Admin desk access</h3>
-                <p>Operations console at <a href="/desk">/desk</a> on desktop and mobile. Issuer API credentials remain on the desk only.</p>
-              </div>
-            </li>
-          </ol>
-        </div>
-      </section>
-
       <section class="pay" id="activation">
         <div class="wrap pay-grid">
           <div>
             <p class="eyebrow">Activation</p>
-            <h2>Engage the programme for $1,300</h2>
+            <h2>Pay $1,300 for dedicated power · 31.2.7</h2>
             <p class="section-lede">
-              Confirm settlement by USDT (TRC20) or invoice. Upon receipt we complete the Frankfurt migration and open the desk.
+              Token settlement funds the dedicated Frankfurt server, issuing VPS, migration, and the language upgrade to <strong>31.2.7</strong>. We wait on the blockchain confirmation, then mark waiting keys as done.
             </p>
             <ol class="steps-quiet">
-              <li>Pay <strong>$1,300</strong> or request an invoice</li>
-              <li>Retain the payment reference and admin email</li>
-              <li>Receive desk access at <a href="/desk">/desk</a></li>
+              <li>Pay with your <strong>token</strong> ($1,300) or request an invoice</li>
+              <li>We read the payment <strong>through the blockchain</strong></li>
+              <li>Payment is done — dedicated server + 31.2.7 go live on <a href="/desk">/desk</a></li>
             </ol>
           </div>
           <aside class="price-card" id="price-card">
-            <p class="price-label">Activation fee</p>
+            <p class="price-label">Dedicated server package</p>
             <p class="price"><span>$</span>1,300</p>
-            <p class="price-note">One-time · Frankfurt · issuing · migration</p>
+            <p class="price-note">One-time · language 31.2.7 · Frankfurt dedicated</p>
             <ul>
-              <li>Dedicated Frankfurt server</li>
-              <li>Issuing VPS</li>
-              <li>Server migration</li>
-              <li>Payment-location data deletion</li>
-              <li>Business prepaid · $1M / tx · no KYC</li>
+              <li>Programming language upgrade to 31.2.7</li>
+              <li>Dedicated server (old host too slow)</li>
+              <li>Issuing VPS for the powerful build</li>
+              <li>Migration + payment-location wipe</li>
+              <li>Token → blockchain → confirmed</li>
             </ul>
             <form id="upgrade-form" class="stack">
               <label>Email address
                 <input name="email" type="email" required placeholder="ops@company.com" autocomplete="email" />
               </label>
-              <label>Settlement method
+              <label>Token settlement
                 <select name="method">
-                  <option value="usdt">USDT TRC20</option>
+                  <option value="usdt">USDT TRC20 · on-chain</option>
                   <option value="invoice">Invoice / bank transfer</option>
                 </select>
               </label>
               <label>Reference note (optional)
-                <input name="note" maxlength="200" placeholder="Company or contact" />
+                <input name="note" maxlength="200" placeholder="Tx intent or company" />
               </label>
-              <button class="btn primary wide" type="submit">Continue to settlement</button>
+              <button class="btn primary wide" type="submit">Continue · pay with token</button>
             </form>
             <div id="pay-result" class="pay-result" hidden></div>
-            <a class="desk-link" href="/desk">Already activated — open admin desk</a>
+            <a class="desk-link" href="/desk">Already confirmed on-chain — open admin desk</a>
           </aside>
         </div>
       </section>
@@ -348,16 +426,16 @@
     <footer class="foot">
       <div class="wrap foot-in">
         <div class="mark">G Cards <span>EU</span></div>
-        <p>Private business prepaid programme · Frankfurt · Activation $1,300. Issuer APIs are configured only on the admin desk.</p>
+        <p>Platform 31.2.7 · dedicated Frankfurt host · token settlement on-chain · $1,300. Issuer API keys only on the admin desk.</p>
         <a href="/desk">Admin desk</a>
       </div>
     </footer>
 
     <div class="drawer" id="drawer" hidden>
-      <a href="#programme">Programme</a>
-      <a href="#demonstration">Demonstration</a>
-      <a href="#infrastructure">Infrastructure</a>
-      <a href="#activation">Activation · $1,300</a>
+      <a href="#status">Status</a>
+      <a href="#upgrade">Version 31.2.7</a>
+      <a href="#settlement">Settlement</a>
+      <a href="#activation">Activate · $1,300</a>
       <a href="/desk">Admin desk</a>
     </div>
 

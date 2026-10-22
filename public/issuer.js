@@ -208,7 +208,7 @@ function bindCheckout() {
       result.hidden = false;
       result.textContent =
         body.instructions ||
-        'Payment request recorded. We will confirm and activate the G Cards EU Frankfurt package.';
+        'Token payment recorded. We confirm on the blockchain, then unlock platform 31.2.7 on the dedicated server.';
       form.reset();
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {

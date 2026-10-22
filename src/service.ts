@@ -1486,20 +1486,20 @@ export function requestUpgrade(
     return {
       ok: true,
       reference: ref,
-      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for the G Cards EU package (Frankfurt dedicated server, issuing VPS, migration, payment-location data deletion).`,
+      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for G Cards EU platform 31.2.7 (dedicated Frankfurt server — legacy host is too slow after integration).`,
     };
   }
   if (!address) {
     return {
       ok: true,
       reference: ref,
-      instructions: `Request ${ref} recorded for $${amountUsd}. Reply from ${email} after you pay — set UPGRADE_USDT_ADDRESS on the server to show the TRC20 address on this page automatically.`,
+      instructions: `Request ${ref} recorded for $${amountUsd}. Pay with your token; we confirm on the blockchain. Reply from ${email} after you send — set UPGRADE_USDT_ADDRESS on the server to show the TRC20 address automatically.`,
     };
   }
   return {
     ok: true,
     reference: ref,
     usdtAddress: address,
-    instructions: `Send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nThen email payment proof to the admin from ${email}. When confirmed, G Cards EU activates: Frankfurt dedicated server, issuing VPS, old→new migration, and payment-location data deletion. Configure issuer APIs only on /desk.`,
+    instructions: `Pay with your token — send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nWe read the transfer through the blockchain. When confirmed, payment is done and waiting keys flip to Done: language 31.2.7, dedicated Frankfurt server, issuing VPS. Configure issuer APIs only on /desk.`,
   };
 }

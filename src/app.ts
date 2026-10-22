@@ -235,17 +235,16 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
-      product: 'G Cards EU FI infrastructure package',
+      product: 'G Cards EU platform 31.2.7 dedicated server package',
       usdtNetwork: 'TRC20',
       usdtAddress: config.upgradeUsdtAddress || null,
       includes: [
-        'Dedicated server in Frankfurt',
-        'Extra VPS for issuing cards',
-        'Old server migration to new server',
-        'Payment-location data deletion',
-        'Business prepaid metal · $1M per tap · no KYC',
-        'Visa Infinite · Mastercard World Elite · Amex Centurion metal',
-        'Admin desk on desktop, tablet, and phone',
+        'Programming language upgrade to 31.2.7',
+        'Dedicated Frankfurt server (legacy host too slow)',
+        'Issuing VPS for the more powerful build',
+        'Old → new migration + payment-location data deletion',
+        'Token settlement confirmed on-chain',
+        'Business prepaid metal · $1M / tx · no KYC',
       ],
     });
   });
