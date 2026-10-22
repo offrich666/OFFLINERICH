@@ -395,9 +395,41 @@ function bindChatbot() {
   });
 }
 
+async function bindPhoneAccess() {
+  const root = document.getElementById('phone-access');
+  const qr = document.getElementById('phone-qr');
+  const link = document.getElementById('phone-url');
+  const hint = document.getElementById('phone-hint');
+  if (!root || !qr || !link || !hint) return;
+  try {
+    const res = await fetch('/api/phone-access', { headers: { Accept: 'application/json' } });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data?.ok || !data.url) {
+      if (data?.hint) {
+        root.hidden = false;
+        hint.textContent = data.hint;
+        link.hidden = true;
+        qr.hidden = true;
+      }
+      return;
+    }
+    root.hidden = false;
+    link.hidden = false;
+    qr.hidden = false;
+    link.href = data.url;
+    link.textContent = data.url;
+    hint.textContent = data.hint || 'Open this HTTPS link in Safari on iPhone.';
+    if (data.qrSvg) qr.innerHTML = data.qrSvg;
+  } catch {
+    /* optional panel */
+  }
+}
+
 bindDeck(document);
 bindCards(document);
 bindMenu();
 bindCheckout();
 bindPos();
 bindChatbot();
+bindPhoneAccess();

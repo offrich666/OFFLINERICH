@@ -3,6 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
     <title>G Cards EU · Platform 31.2.7 · Dedicated server</title>
     <meta
       name="description"
@@ -399,6 +402,20 @@
               <li>Keep your payment reference and admin email</li>
               <li>USDC clears — dedicated server + 31.2.7 go live on <a href="/desk">/desk</a></li>
             </ol>
+            <aside class="phone-access" id="phone-access" hidden>
+              <p class="eyebrow">Open on iPhone</p>
+              <p class="phone-access-lede">
+                Safari on iPhone cannot open <code>127.0.0.1</code> — that address is the phone itself.
+                Scan this QR or tap the HTTPS link.
+              </p>
+              <div class="phone-access-row">
+                <div class="phone-qr" id="phone-qr" aria-hidden="true"></div>
+                <div class="phone-access-copy">
+                  <a class="phone-url" id="phone-url" href="#" rel="noopener"></a>
+                  <p class="phone-hint" id="phone-hint"></p>
+                </div>
+              </div>
+            </aside>
           </div>
           <aside class="price-card" id="price-card">
             <p class="price-label">Dedicated server · USDC</p>
