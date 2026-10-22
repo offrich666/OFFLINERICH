@@ -235,7 +235,7 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
-      product: 'GG-CARD.EU Frankfurt infrastructure package',
+      product: 'G Cards EU Frankfurt infrastructure package',
       usdtNetwork: 'TRC20',
       usdtAddress: config.upgradeUsdtAddress || null,
       includes: [
@@ -243,7 +243,8 @@ export function createApp(options: CreateAppOptions = {}) {
         'Extra VPS for issuing cards',
         'Old server migration to new server',
         'Payment-location data deletion',
-        'Corporate $1M per-transaction limit · no card KYC · corporate KYC required',
+        'Business prepaid metal · $1M per transaction · no KYC',
+        'Visa · Mastercard · American Express',
         'Admin desk on desktop, tablet, and phone',
       ],
     });
