@@ -305,3 +305,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .partner .steps li { margin-bottom: 8px; }
 .partner code { background: white; border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; font-size: 12px; }
 a.btn { display: inline-block; text-decoration: none; text-align: center; }
+
+textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius:12px; padding:11px 12px; color:var(--ink); font:inherit; min-height:120px; }
+.pay2-pan { display:grid; place-items:start; padding:8px; }

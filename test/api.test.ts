@@ -466,3 +466,113 @@ test('setup stores a live Immersve key and keeps it out of the public config', a
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+
+test('Pay2.House connect issues a client card and shows the number', async () => {
+  const { privateKey, publicKey } = await import('node:crypto').then((crypto) =>
+    crypto.generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    }),
+  );
+  void publicKey;
+  const pay2 = {
+    calls: [] as Array<{ url: string; body: string }>,
+    async fetchImpl(input: RequestInfo | URL, init?: RequestInit) {
+      const url = String(input);
+      const body = String(init?.body ?? '');
+      pay2.calls.push({ url, body });
+      if (url.includes('/wallets')) {
+        return new Response(
+          JSON.stringify({
+            status: 'success',
+            code: 'REQUEST_SUCCESS',
+            wallets: [{ account_number: 'P2U12345678', name: 'USD', balance: 120, currency_code: 'USD', trc20_address: 'TXtest' }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/cards/issue')) {
+        return new Response(
+          JSON.stringify({ status: 'success', code: 'REQUEST_SUCCESS', card_id: 'VC999', card_number: '5412751234123456' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/cards/details')) {
+        return new Response(
+          JSON.stringify({
+            status: 'success',
+            code: 'REQUEST_SUCCESS',
+            card_id: 'VC999',
+            card_number: '5412751234123456',
+            cvv: '123',
+            expiration_date: '09/29',
+            password: '4455',
+            balance: 25,
+            card_status: 'active',
+            currency_code: 'USD',
+            first_name: 'Ada',
+            last_name: 'Lovelace',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({ status: 'error', code: 'UNKNOWN', msg: url }), { status: 500 });
+    },
+  };
+  const started = await listen({ dbPath: ':memory:', fetchImpl: pay2.fetchImpl as typeof fetch, env: { SELF_SIGNUP: '' } });
+  try {
+    const signedIn = await call(started.base, '/api/login', undefined, {
+      username: ADMIN_USERNAME,
+      password: ADMIN_PASSWORD,
+    });
+    const token = String((signedIn.data as { token: string }).token);
+    const connected = await call(started.base, '/api/setup/pay2', token, {
+      apiKey: 'pay2-test-key',
+      keyId: 'key-1',
+      privateKeyPem: privateKey,
+      accountNumber: 'P2U12345678',
+      binNumber: '54127500',
+    });
+    assert.equal(connected.status, 200);
+    assert.equal((connected.data as { issuer: string }).issuer, 'pay2');
+    const created = await call(started.base, '/api/admin/clients', token, { email: 'pay2client@example.com' });
+    assert.equal(created.status, 201);
+    const clientId = String((created.data as { client: { id: string } }).client.id);
+    const issued = await call(
+      started.base,
+      '/api/card',
+      token,
+      {
+        firstName: 'Ada',
+        lastName: 'Lovelace',
+        email: 'pay2client@example.com',
+        phone: '18005550100',
+        dob: '1990-01-02',
+        line1: '1 Street',
+        city: 'Austin',
+        state: 'TX',
+        postalCode: '78701',
+        country: 'US',
+        type: 'virtual',
+        acceptedTerms: true,
+      },
+      { 'x-client-id': clientId },
+    );
+    assert.equal(issued.status, 201);
+    assert.equal((issued.data as { status: string }).status, 'issued');
+    assert.equal((issued.data as { card: { last4: string; issuerMode: string } }).card.last4, '3456');
+    assert.equal((issued.data as { card: { issuerMode: string } }).card.issuerMode, 'pay2');
+    const secure = await call(started.base, '/api/wallets/secure-details', token, {}, { 'x-client-id': clientId });
+    assert.equal(secure.status, 200);
+    assert.equal((secure.data as { mode: string }).mode, 'pay2');
+    assert.match(String((secure.data as { pan: string }).pan), /5412/);
+    const cfg = await fetch(`${started.base}/api/config`);
+    const body = (await cfg.json()) as { issuer: string; pay2Ready: boolean };
+    assert.equal(body.issuer, 'pay2');
+    assert.equal(body.pay2Ready, true);
+  } finally {
+    await started.close();
+  }
+});
