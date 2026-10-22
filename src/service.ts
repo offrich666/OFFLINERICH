@@ -1459,7 +1459,7 @@ export function requestUpgrade(
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the G Cards EU infrastructure package.');
   }
-  const method = (input.method ?? 'usdt').trim().toLowerCase();
+  const method = (input.method ?? 'usdc').trim().toLowerCase();
   const note = (input.note ?? '').trim().slice(0, 200);
   const amountUsd = Number(input.amountUsd ?? ctx.config.upgradePriceUsd) || ctx.config.upgradePriceUsd;
   const ref = id('upg_');
@@ -1481,25 +1481,25 @@ export function requestUpgrade(
   if (!Array.isArray(list)) list = [];
   list.push(row);
   ctx.store.setSetting('upgrade_requests', JSON.stringify(list.slice(-200)));
-  const address = ctx.config.upgradeUsdtAddress;
+  const address = ctx.config.upgradeUsdcAddress;
   if (method === 'invoice') {
     return {
       ok: true,
       reference: ref,
-      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for G Cards EU platform 31.2.7 (dedicated Frankfurt server — legacy host is too slow after integration).`,
+      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for G Cards EU platform 31.2.7 (dedicated Frankfurt server paid separately from card-spend tokens).`,
     };
   }
   if (!address) {
     return {
       ok: true,
       reference: ref,
-      instructions: `Request ${ref} recorded for $${amountUsd}. Pay with your token; we confirm on the blockchain. Reply from ${email} after you send — set UPGRADE_USDT_ADDRESS on the server to show the TRC20 address automatically.`,
+      instructions: `Request ${ref} recorded for $${amountUsd} USDC. Pay the dedicated server fee in USDC directly (not card-spend tokens). Reply from ${email} after you send — set UPGRADE_USDC_ADDRESS on the server to show the USDC address automatically.`,
     };
   }
   return {
     ok: true,
     reference: ref,
-    usdtAddress: address,
-    instructions: `Pay with your token — send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nWe read the transfer through the blockchain. When confirmed, payment is done and waiting keys flip to Done: language 31.2.7, dedicated Frankfurt server, issuing VPS. Configure issuer APIs only on /desk.`,
+    usdcAddress: address,
+    instructions: `Pay the dedicated server fee in USDC directly — send exactly $${amountUsd} USDC to:\n${address}\n\nReference: ${ref}\nThis is not card-spend funding. Tokens you add on the desk increase spend balance only. When USDC clears, waiting keys flip to Done: language 31.2.7, dedicated Frankfurt server, issuing VPS. Configure issuer APIs only on /desk.`,
   };
 }

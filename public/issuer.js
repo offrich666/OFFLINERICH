@@ -208,7 +208,7 @@ function bindCheckout() {
       result.hidden = false;
       result.textContent =
         body.instructions ||
-        'Token payment recorded. We confirm on the blockchain, then unlock platform 31.2.7 on the dedicated server.';
+        'USDC server payment recorded. When it clears, platform 31.2.7 unlocks on the dedicated server. Desk tokens remain for card spend only.';
       form.reset();
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {

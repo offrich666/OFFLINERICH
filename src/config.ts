@@ -45,7 +45,7 @@ export type Config = {
   pay2AccountNumber: string;
   pay2BinNumber: string;
   pay2Ready: boolean;
-  upgradeUsdtAddress: string;
+  upgradeUsdcAddress: string;
   upgradePriceUsd: number;
   rpcUrls: Record<number, string>;
 };
@@ -120,7 +120,7 @@ export function loadConfig(env: Env): Config {
     pay2AccountNumber,
     pay2BinNumber,
     pay2Ready: Boolean(pay2ApiKey && pay2KeyId && pay2PrivateKeyPem && pay2AccountNumber),
-    upgradeUsdtAddress: env.UPGRADE_USDT_ADDRESS?.trim() ?? '',
+    upgradeUsdcAddress: env.UPGRADE_USDC_ADDRESS?.trim() || env.UPGRADE_USDT_ADDRESS?.trim() || '',
     upgradePriceUsd: Math.max(1, integer(env.UPGRADE_PRICE_USD, 1300)),
     rpcUrls,
   };

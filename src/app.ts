@@ -236,14 +236,14 @@ export function createApp(options: CreateAppOptions = {}) {
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
       product: 'G Cards EU platform 31.2.7 dedicated server package',
-      usdtNetwork: 'TRC20',
-      usdtAddress: config.upgradeUsdtAddress || null,
+      currencyAsset: 'USDC',
+      usdcAddress: config.upgradeUsdcAddress || null,
       includes: [
         'Programming language upgrade to 31.2.7',
-        'Dedicated Frankfurt server (legacy host too slow)',
+        'Dedicated Frankfurt server paid in USDC (legacy host too slow)',
         'Issuing VPS for the more powerful build',
         'Old → new migration + payment-location data deletion',
-        'Token settlement confirmed on-chain',
+        'Card spend funded by desk tokens (separate from server fee)',
         'Business prepaid metal · $1M / tx · no KYC',
       ],
     });

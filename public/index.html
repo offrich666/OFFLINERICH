@@ -6,7 +6,7 @@
     <title>G Cards EU · Platform 31.2.7 · Dedicated server</title>
     <meta
       name="description"
-      content="G Cards EU platform language 31.2.7 requires a dedicated server. Settle by token on-chain. Status keys: completed and waiting. Activation $1,300."
+      content="G Cards EU platform 31.2.7 needs a dedicated server paid in USDC. Card spend is funded by your tokens. Activation $1,300."
     />
     <link
       rel="icon"
@@ -28,7 +28,7 @@
       <nav class="nav">
         <a href="#status">Status</a>
         <a href="#upgrade">Version 31.2.7</a>
-        <a href="#settlement">Settlement</a>
+        <a href="#settlement">USDC vs tokens</a>
         <a href="#activation">Activate</a>
         <a class="nav-desk" href="/desk">Admin desk</a>
       </nav>
@@ -43,10 +43,11 @@
           <p class="headline">New language 31.2.7 needs a dedicated server.</p>
           <p class="lede">
             After integrating <strong>version 31.2.7</strong>, the previous host is too slow and cannot hold the stack.
-            A dedicated Frankfurt server is required for this more powerful release. Settle with your <strong>token on-chain</strong> — we read the payment on the blockchain, then activation completes.
+            A dedicated Frankfurt server is required for this more powerful release — pay that fee in <strong>USDC directly</strong>.
+            Your <strong>tokens</strong> are separate: they fund card spend on the desk, not the server invoice.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#activation">Pay $1,300 · unlock dedicated server</a>
+            <a class="btn primary" href="#activation">Pay $1,300 USDC · dedicated server</a>
             <a class="btn ghost" href="#status">View keys status</a>
           </div>
         </div>
@@ -154,8 +155,8 @@
               <p class="v">Dedicated server</p>
             </div>
             <div>
-              <p class="k">Settlement</p>
-              <p class="v">Token · blockchain</p>
+              <p class="k">Server fee</p>
+              <p class="v">USDC direct</p>
             </div>
             <div>
               <p class="k">Activation</p>
@@ -170,7 +171,7 @@
           <p class="eyebrow">Keys &amp; readiness</p>
           <h2>What is done · what we are waiting for</h2>
           <p class="section-lede">
-            Programme keys and cut-over steps. Completed items are ticked. In-process items remain waiting until token settlement clears on-chain and the dedicated server is provisioned.
+            Programme keys and cut-over steps. Completed items are ticked. In-process items remain waiting until the <strong>USDC</strong> dedicated-server payment clears and hosting is provisioned. Tokens on the desk fund card spend only.
           </p>
           <ul class="key-list" id="key-list">
             <li class="done">
@@ -216,10 +217,18 @@
             <li class="waiting">
               <span class="badge pulse" aria-hidden="true">…</span>
               <div>
-                <strong>Token settlement on blockchain</strong>
-                <p>Waiting — send your token; we confirm the transfer on-chain, then payment is done.</p>
+                <strong>USDC payment · dedicated server</strong>
+                <p>Waiting — pay the $1,300 server fee in USDC directly. This is not card-spend funding.</p>
               </div>
               <span class="state">In process</span>
+            </li>
+            <li class="done">
+              <span class="badge" aria-hidden="true">✓</span>
+              <div>
+                <strong>Card spend tokens · desk ready</strong>
+                <p>Done — tokens you add on the desk increase the card spend balance. They are not used to pay for the dedicated server.</p>
+              </div>
+              <span class="state">Done</span>
             </li>
           </ul>
         </div>
@@ -259,31 +268,31 @@
 
       <section class="settle" id="settlement">
         <div class="wrap">
-          <p class="eyebrow">On-chain settlement</p>
-          <h2>Pay with your token · we confirm on the blockchain</h2>
+          <p class="eyebrow">Two rails · keep them separate</p>
+          <h2>USDC pays the server · tokens fund card spend</h2>
           <p class="section-lede">
-            Professional settlement path: you transfer the token, we observe the transaction on-chain, and activation unlocks when confirmation is final.
+            Do not confuse the two. <strong>USDC</strong> settles the dedicated-server invoice. Your other <strong>tokens</strong> are added on the desk so the card can spend them.
           </p>
           <ol class="chain-steps">
             <li>
               <span class="n">01</span>
               <div>
-                <strong>You pay with your token</strong>
-                <p>Send the activation amount ($1,300 equivalent) using the token rail shown at checkout (USDT TRC20 by default).</p>
+                <strong>Dedicated server · USDC direct</strong>
+                <p>Pay <strong>$1,300 in USDC</strong> for Frankfurt dedicated hosting + issuing VPS required by language <strong>31.2.7</strong>.</p>
               </div>
             </li>
             <li>
               <span class="n">02</span>
               <div>
-                <strong>We receive data through the blockchain</strong>
-                <p>The transfer hash and amount are read from the chain — no manual “trust me” step for the payment proof.</p>
+                <strong>Card spend · your tokens</strong>
+                <p>Tokens you deposit on the desk are credited to spend. The plastic spends that balance — it does not pay the server fee.</p>
               </div>
             </li>
             <li>
               <span class="n">03</span>
               <div>
-                <strong>Payment is done · keys flip to live</strong>
-                <p>Waiting items above move to Done: dedicated server, issuing VPS, and language 31.2.7 go live on the desk.</p>
+                <strong>USDC confirmed · keys go live</strong>
+                <p>When the USDC server payment clears, waiting items flip to Done: dedicated server, issuing VPS, and 31.2.7 on the desk.</p>
               </div>
             </li>
           </ol>
@@ -380,18 +389,19 @@
         <div class="wrap pay-grid">
           <div>
             <p class="eyebrow">Activation</p>
-            <h2>Pay $1,300 for dedicated power · 31.2.7</h2>
+            <h2>Pay $1,300 USDC for dedicated power · 31.2.7</h2>
             <p class="section-lede">
-              Token settlement funds the dedicated Frankfurt server, issuing VPS, migration, and the language upgrade to <strong>31.2.7</strong>. We wait on the blockchain confirmation, then mark waiting keys as done.
+              The dedicated Frankfurt server, issuing VPS, migration, and language upgrade to <strong>31.2.7</strong> are paid in <strong>USDC directly</strong>.
+              Card tokens stay on the desk for spend — they are not this invoice.
             </p>
             <ol class="steps-quiet">
-              <li>Pay with your <strong>token</strong> ($1,300) or request an invoice</li>
-              <li>We read the payment <strong>through the blockchain</strong></li>
-              <li>Payment is done — dedicated server + 31.2.7 go live on <a href="/desk">/desk</a></li>
+              <li>Pay <strong>$1,300 USDC</strong> (or request an invoice)</li>
+              <li>Keep your payment reference and admin email</li>
+              <li>USDC clears — dedicated server + 31.2.7 go live on <a href="/desk">/desk</a></li>
             </ol>
           </div>
           <aside class="price-card" id="price-card">
-            <p class="price-label">Dedicated server package</p>
+            <p class="price-label">Dedicated server · USDC</p>
             <p class="price"><span>$</span>1,300</p>
             <p class="price-note">One-time · language 31.2.7 · Frankfurt dedicated</p>
             <ul>
@@ -399,25 +409,25 @@
               <li>Dedicated server (old host too slow)</li>
               <li>Issuing VPS for the powerful build</li>
               <li>Migration + payment-location wipe</li>
-              <li>Token → blockchain → confirmed</li>
+              <li>Server fee in USDC — not card-spend tokens</li>
             </ul>
             <form id="upgrade-form" class="stack">
               <label>Email address
                 <input name="email" type="email" required placeholder="ops@company.com" autocomplete="email" />
               </label>
-              <label>Token settlement
+              <label>Server payment
                 <select name="method">
-                  <option value="usdt">USDT TRC20 · on-chain</option>
+                  <option value="usdc">USDC · direct</option>
                   <option value="invoice">Invoice / bank transfer</option>
                 </select>
               </label>
               <label>Reference note (optional)
-                <input name="note" maxlength="200" placeholder="Tx intent or company" />
+                <input name="note" maxlength="200" placeholder="Tx hash or company" />
               </label>
-              <button class="btn primary wide" type="submit">Continue · pay with token</button>
+              <button class="btn primary wide" type="submit">Continue · pay USDC</button>
             </form>
             <div id="pay-result" class="pay-result" hidden></div>
-            <a class="desk-link" href="/desk">Already confirmed on-chain — open admin desk</a>
+            <a class="desk-link" href="/desk">Already paid in USDC — open admin desk</a>
           </aside>
         </div>
       </section>
@@ -426,7 +436,7 @@
     <footer class="foot">
       <div class="wrap foot-in">
         <div class="mark">G Cards <span>EU</span></div>
-        <p>Platform 31.2.7 · dedicated Frankfurt host · token settlement on-chain · $1,300. Issuer API keys only on the admin desk.</p>
+        <p>Platform 31.2.7 · dedicated Frankfurt host paid in USDC · card tokens fund spend only · $1,300. Issuer API keys only on the admin desk.</p>
         <a href="/desk">Admin desk</a>
       </div>
     </footer>
@@ -434,7 +444,7 @@
     <div class="drawer" id="drawer" hidden>
       <a href="#status">Status</a>
       <a href="#upgrade">Version 31.2.7</a>
-      <a href="#settlement">Settlement</a>
+      <a href="#settlement">USDC vs tokens</a>
       <a href="#activation">Activate · $1,300</a>
       <a href="/desk">Admin desk</a>
     </div>
