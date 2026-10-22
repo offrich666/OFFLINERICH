@@ -1449,3 +1449,57 @@ export function tokensEqual(a: string, b: string): boolean {
   if (left.length !== right.length || left.length === 0) return false;
   return timingSafeEqual(left, right);
 }
+
+
+export function requestUpgrade(
+  ctx: Ctx,
+  input: { email?: string; method?: string; note?: string; amountUsd?: number },
+) {
+  const email = (input.email ?? '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the Europe Pay2 issuer update.');
+  }
+  const method = (input.method ?? 'usdt').trim().toLowerCase();
+  const note = (input.note ?? '').trim().slice(0, 200);
+  const amountUsd = Number(input.amountUsd ?? ctx.config.upgradePriceUsd) || ctx.config.upgradePriceUsd;
+  const ref = id('upg_');
+  const row = {
+    id: ref,
+    email,
+    method,
+    note,
+    amountUsd,
+    createdAt: ctx.now(),
+  };
+  const existing = ctx.store.getSettings().upgrade_requests;
+  let list: unknown[] = [];
+  try {
+    list = existing ? (JSON.parse(existing) as unknown[]) : [];
+  } catch {
+    list = [];
+  }
+  if (!Array.isArray(list)) list = [];
+  list.push(row);
+  ctx.store.setSetting('upgrade_requests', JSON.stringify(list.slice(-200)));
+  const address = ctx.config.upgradeUsdtAddress;
+  if (method === 'invoice') {
+    return {
+      ok: true,
+      reference: ref,
+      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for the Europe Pay2 issuer update (VPS + PHP API).`,
+    };
+  }
+  if (!address) {
+    return {
+      ok: true,
+      reference: ref,
+      instructions: `Request ${ref} recorded for $${amountUsd}. Reply from ${email} after you pay — set UPGRADE_USDT_ADDRESS on the server to show the TRC20 address on this page automatically.`,
+    };
+  }
+  return {
+    ok: true,
+    reference: ref,
+    usdtAddress: address,
+    instructions: `Send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nThen email payment proof to the admin from ${email}. When confirmed, the Europe Pay2 issuer update (faster VPS + PHP API) is unlocked on the desk.`,
+  };
+}

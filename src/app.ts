@@ -231,6 +231,26 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json(await service.connectPay2(ctx, req.body ?? {}));
   }));
 
+  app.get('/api/upgrade', (_req, res) => {
+    res.json({
+      priceUsd: config.upgradePriceUsd,
+      currency: 'usd',
+      product: 'Europe Pay2 issuer update',
+      usdtNetwork: 'TRC20',
+      usdtAddress: config.upgradeUsdtAddress || null,
+      includes: [
+        'Faster issue VPS',
+        'PHP issuer API language layer',
+        'Europe-ready Pay2.House path',
+        'Desk access on desktop, tablet, and phone',
+      ],
+    });
+  });
+
+  app.post('/api/upgrade', asyncRoute(async (req, res) => {
+    res.status(201).json(service.requestUpgrade(ctx, req.body ?? {}));
+  }));
+
   app.post('/api/card/topup-pay2', asyncRoute(async (req, res) => {
     res.json(await service.topUpPay2Card(ctx, actor(req), req.body ?? {}));
   }));
@@ -317,6 +337,9 @@ export function createApp(options: CreateAppOptions = {}) {
   }));
 
   const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../public');
+  app.get(['/desk', '/desk/'], (_req, res) => {
+    res.sendFile(path.join(publicDir, 'desk.html'));
+  });
   app.use(express.static(publicDir));
 
   app.use('/api', (_req, res) => {
