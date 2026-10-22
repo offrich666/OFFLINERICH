@@ -3,33 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>GG Card · Europe Pay2 issuer update</title>
+    <title>GG-CARD.EU · Corporate card infrastructure</title>
     <meta
       name="description"
-      content="Europe-legitimated Pay2.House issuer update for GG Card — faster VPS, PHP issuer API, completed desk stack. One payment: $1,340."
+      content="GG-CARD.EU — corporate spend cards with $1M transaction limits, Frankfurt dedicated server, issuing VPS, migration, and payment-location data deletion. $1,340."
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%230c1528' width='16' height='16' rx='3'/%3E%3Crect fill='%23d4b06a' x='3' y='5' width='10' height='7' rx='1'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%070b14' width='16' height='16' rx='2'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='7' font-family='Georgia' fill='%23c9a96e'%3EGG%3C/text%3E%3C/svg%3E"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/issuer.css" />
   </head>
   <body>
     <div class="ambient" aria-hidden="true"></div>
+    <div class="grain" aria-hidden="true"></div>
 
     <header class="top">
-      <a class="mark" href="/">GG<span>CARD</span></a>
+      <a class="mark" href="/">GG-CARD<span>.EU</span></a>
       <nav class="nav">
-        <a href="#included">Included</a>
-        <a href="#why">Why</a>
-        <a href="#built">Built</a>
-        <a class="nav-cta" href="#pay">Pay $1,340</a>
+        <a href="#limits">Limits</a>
+        <a href="#included">Infrastructure</a>
+        <a href="#pay">Activate</a>
         <a class="nav-desk" href="/desk">Admin desk</a>
       </nav>
       <button class="menu" type="button" aria-label="Open menu" data-menu>Menu</button>
@@ -38,215 +38,187 @@
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Europe · Pay2.House · Ready to activate</p>
-          <p class="brand-line">GG CARD</p>
-          <h1>Europe issuer update — legitimated, faster, complete</h1>
+          <p class="eyebrow">Private banking infrastructure · Europe</p>
+          <h1 class="brand">GG-CARD.EU</h1>
+          <p class="headline">Corporate cards. Bank-grade desk. Frankfurt core.</p>
           <p class="lede">
-            One page. One package. Pay <strong>$1,340</strong> to unlock the Europe-facing Pay2 issuer path on GG Card: faster VPS, PHP issuer API language, and the desk already built to issue on every device.
+            One completed package: dedicated server in Frankfurt, extra issuing VPS, full migration from your old host, and deletion of payment-location data — with corporate limits up to
+            <strong>$1,000,000</strong> per transaction.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#pay">Pay $1,340 · activate</a>
-            <a class="btn ghost" href="#included">What’s included</a>
+            <a class="btn primary" href="#pay">Activate · $1,340</a>
+            <a class="btn ghost" href="#included">See what’s included</a>
           </div>
-          <p class="status-line"><span class="dot"></span> Stack shipped · waiting on your payment to go live on VPS</p>
+          <dl class="hero-meta">
+            <div><dt>Per transaction</dt><dd>$1M</dd></div>
+            <div><dt>Card KYC</dt><dd>Not required</dd></div>
+            <div><dt>Corporate KYC</dt><dd>Required</dd></div>
+            <div><dt>Core location</dt><dd>Frankfurt</dd></div>
+          </dl>
         </div>
-        <div class="hero-stage" id="stage">
-          <article class="plastic visa" data-card tabindex="0" aria-label="GG Card Visa — tilt and flip">
-            <div class="face front">
-              <div class="plastic-top"><span>GG Card</span><span class="scheme visa-word">VISA</span></div>
-              <div class="chip"></div>
-              <p class="pan">•••• •••• •••• 1340</p>
-              <div class="plastic-bottom">
-                <div><small>Region</small><strong>Europe</strong></div>
-                <div><small>Issuer</small><strong>Pay2</strong></div>
-                <div><small>Status</small><strong>Ready</strong></div>
+
+        <div class="scene" id="scene" aria-label="GG-CARD.EU plastic cards">
+          <div class="scene-floor" aria-hidden="true"></div>
+          <div class="deck" data-deck>
+            <article class="plastic visa" data-card tabindex="0" aria-label="GG-CARD.EU Visa — 3D tilt and flip">
+              <div class="face front">
+                <div class="holo" aria-hidden="true"></div>
+                <div class="plastic-top">
+                  <span class="bank">GG-CARD.EU</span>
+                  <span class="scheme visa-word">VISA</span>
+                </div>
+                <div class="chip" aria-hidden="true"></div>
+                <p class="pan">•••• •••• •••• 0001</p>
+                <div class="plastic-bottom">
+                  <div><small>Holder</small><strong>Corporate</strong></div>
+                  <div><small>Limit</small><strong>$1M / tx</strong></div>
+                  <div><small>Region</small><strong>EU</strong></div>
+                </div>
               </div>
-            </div>
-            <div class="face back">
-              <div class="mag"></div>
-              <p>Europe Pay2 path · PHP JWT API · faster issue VPS</p>
-              <p class="sig">GG Card · OfflineRich</p>
-            </div>
-          </article>
-          <article class="plastic master" data-card tabindex="0" aria-label="GG Card Mastercard — tilt and flip">
-            <div class="face front">
-              <div class="plastic-top">
-                <span>GG Card</span>
-                <span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>
+              <div class="face back">
+                <div class="mag" aria-hidden="true"></div>
+                <p>Frankfurt dedicated · issuing VPS · migrated desk</p>
+                <p class="sig">GG-CARD.EU · Corporate programme</p>
               </div>
-              <div class="chip"></div>
-              <p class="pan">•••• •••• •••• EU24</p>
-              <div class="plastic-bottom">
-                <div><small>Network</small><strong>Mastercard</strong></div>
-                <div><small>Rail</small><strong>Pay2.House</strong></div>
-                <div><small>API</small><strong>PHP / RS256</strong></div>
+            </article>
+            <article class="plastic master" data-card tabindex="0" aria-label="GG-CARD.EU Mastercard — 3D tilt and flip">
+              <div class="face front">
+                <div class="holo" aria-hidden="true"></div>
+                <div class="plastic-top">
+                  <span class="bank">GG-CARD.EU</span>
+                  <span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>
+                </div>
+                <div class="chip" aria-hidden="true"></div>
+                <p class="pan">•••• •••• •••• FRA1</p>
+                <div class="plastic-bottom">
+                  <div><small>Network</small><strong>Mastercard</strong></div>
+                  <div><small>KYC</small><strong>Card: none</strong></div>
+                  <div><small>Corp</small><strong>KYC needed</strong></div>
+                </div>
               </div>
-            </div>
-            <div class="face back">
-              <div class="mag"></div>
-              <p>Move over · on phone, tap to flip — same plastic feel as a real card.</p>
-              <p class="sig">Issue from any screen</p>
-            </div>
-          </article>
-          <p class="hint">Hover to tilt · tap / click to flip</p>
+              <div class="face back">
+                <div class="mag" aria-hidden="true"></div>
+                <p>Move over the plastic · on phone, tap to flip.</p>
+                <p class="sig">Bank desk on every device</p>
+              </div>
+            </article>
+          </div>
+          <p class="hint">3D tilt on hover · tap or click to flip</p>
+        </div>
+      </section>
+
+      <section class="limits" id="limits">
+        <div class="wrap">
+          <p class="eyebrow">Corporate programme</p>
+          <h2>Limits &amp; compliance posture</h2>
+          <p class="section-lede">
+            Built for corporate desks that need high ticket size without retail cardholder KYC friction — while the company itself completes KYC.
+          </p>
+          <div class="limit-strip">
+            <article>
+              <p class="num">$1,000,000</p>
+              <p class="label">Per transaction ceiling</p>
+              <p>Corporate limit for a single authorised spend — sized for treasury and B2B rails.</p>
+            </article>
+            <article>
+              <p class="num">No KYC</p>
+              <p class="label">On the card</p>
+              <p>Cardholders are not put through retail KYC to receive plastic / virtual cards from the desk.</p>
+            </article>
+            <article>
+              <p class="num">KYC</p>
+              <p class="label">Corporate — required</p>
+              <p>The company / programme owner completes KYC. Cards ride under that corporate umbrella.</p>
+            </article>
+          </div>
         </div>
       </section>
 
       <section class="band" id="included">
         <div class="wrap">
           <p class="eyebrow">What’s included · $1,340</p>
-          <h2>Everything in this update</h2>
+          <h2>Completed infrastructure package</h2>
           <p class="section-lede">
-            Not a teaser — the work below is already in the product. Your payment turns it on with a faster VPS and Europe issuer go-live.
+            Not a roadmap — the move to Frankfurt-class hosting, issuing capacity, migration, and data hygiene is the product.
           </p>
-          <ul class="check-list">
+          <ol class="infra">
             <li>
-              <span class="done">Done</span>
+              <span class="idx">01</span>
               <div>
-                <strong>Faster issue VPS update</strong>
-                <p>Server capacity sized for card create, secure details, and top-up — less wait when you issue from the desk.</p>
+                <h3>New dedicated server · Frankfurt</h3>
+                <p>Primary GG-CARD.EU host in Frankfurt (FRA) — EU latency, stable uplink, bank-desk uptime baseline.</p>
               </div>
             </li>
             <li>
-              <span class="done">Done</span>
+              <span class="idx">02</span>
               <div>
-                <strong>PHP issuer API language layer</strong>
-                <p>Pay2.House-style PHP JWT (RS256) signing path wired so the issuer API speaks the language partners expect.</p>
+                <h3>New VPS · issuing cards</h3>
+                <p>Extra VPS reserved for card issue, secure details, and top-up traffic so the desk stays fast under load.</p>
               </div>
             </li>
             <li>
-              <span class="done">Done</span>
+              <span class="idx">03</span>
               <div>
-                <strong>Europe-facing Pay2 issue path</strong>
-                <p>Connect → issue virtual Visa / Mastercard → show number → top-up from the admin desk.</p>
+                <h3>Old server → new server migration</h3>
+                <p>Cut-over of your existing GG Card deployment: data, desk sessions path, and client records onto the new stack.</p>
               </div>
             </li>
             <li>
-              <span class="done">Done</span>
+              <span class="idx">04</span>
               <div>
-                <strong>Admin desk on all devices</strong>
-                <p>Same console on desktop, tablet, and phone over LAN — no separate app install.</p>
+                <h3>Data deletion · payment location</h3>
+                <p>After migration, payment-location data from the old environment is deleted so residual payment geo is not retained there.</p>
               </div>
             </li>
             <li>
-              <span class="done">Done</span>
+              <span class="idx">05</span>
               <div>
-                <strong>Wallet deposit + LFUSD at $1</strong>
-                <p>QR deposit, private-key wallet, and dollar peg already on the desk while Immersve partner keys can arrive later.</p>
+                <h3>Bank desk · all devices</h3>
+                <p>Admin console at <a href="/desk">/desk</a> on desktop, tablet, and phone. Issuer API credentials are entered only inside the desk — never on this public page.</p>
               </div>
-            </li>
-            <li>
-              <span class="soon">Activate</span>
-              <div>
-                <strong>Live Europe issuer flip after payment</strong>
-                <p>We point your deployment at the upgraded VPS and unlock Pay2 Europe issue once $1,340 clears.</p>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="why" id="why">
-        <div class="wrap why-grid">
-          <div>
-            <p class="eyebrow">Why this update</p>
-            <h2>Why pay $1,340 now</h2>
-            <p class="section-lede">
-              Immersve Universal EVM partner keys take time. Pay2.House is the Europe-ready bridge so you issue real virtual cards today — with the stack already written.
-            </p>
-          </div>
-          <ol class="why-list">
-            <li>
-              <strong>Legitimated Europe path</strong>
-              <p>Position the desk as EU-facing issuer update, not a sandbox toy — Pay2 BINs and JWT production flow.</p>
-            </li>
-            <li>
-              <strong>Speed of issue</strong>
-              <p>Faster VPS means create / pan / top-up stay snappy when clients wait on a call or in chat.</p>
-            </li>
-            <li>
-              <strong>Right API language</strong>
-              <p>PHP issuer signing matches Pay2.House docs — fewer integration surprises when ops scale.</p>
-            </li>
-            <li>
-              <strong>One payment, full package</strong>
-              <p>VPS + PHP layer + Europe go-live in a single $1,340 checkout — no drip of add-ons.</p>
             </li>
           </ol>
-        </div>
-      </section>
-
-      <section class="built" id="built">
-        <div class="wrap">
-          <p class="eyebrow">Built &amp; completed</p>
-          <h2>Code and stack already in place</h2>
-          <p class="section-lede">
-            This is what ships with the update — real modules on the desk, not slides.
-          </p>
-          <div class="built-layout">
-            <ul class="ship-list">
-              <li><code>src/pay2.ts</code> — Pay2 JWT RS256 connect, issue, secure PAN, top-up</li>
-              <li><code>src/service.ts</code> — Dual issuer (Pay2 today · Immersve when live keys arrive)</li>
-              <li><code>public/</code> — Europe landing + interactive plastic · desk at <code>/desk</code></li>
-              <li><code>POST /api/upgrade</code> — $1,340 checkout reference · USDT TRC20 or invoice</li>
-              <li>PHP issuer API language layer aligned with Pay2.House partner signing</li>
-              <li>Faster issue VPS target for create / details / top-up latency</li>
-            </ul>
-            <pre class="code" aria-label="Example Pay2 issuer JWT claim shape"><code><span class="c">// Pay2.House-style issuer claim (RS256)</span>
-{
-  <span class="k">"iss"</span>: <span class="s">"gg-card-europe"</span>,
-  <span class="k">"aud"</span>: <span class="s">"pay2.house"</span>,
-  <span class="k">"scope"</span>: <span class="s">"cards.issue cards.topup"</span>,
-  <span class="k">"region"</span>: <span class="s">"EU"</span>,
-  <span class="k">"vps"</span>: <span class="s">"faster-issue"</span>,
-  <span class="k">"api"</span>: <span class="s">"php-jwt"</span>
-}</code></pre>
-          </div>
         </div>
       </section>
 
       <section class="pay" id="pay">
         <div class="wrap pay-grid">
           <div>
-            <p class="eyebrow">Checkout</p>
-            <h2>Pay $1,340 to activate</h2>
+            <p class="eyebrow">Activation</p>
+            <h2>Pay $1,340 to go live</h2>
             <p class="section-lede">
-              Unlocks the Europe Pay2 issuer update on your GG Card deployment: VPS boost, PHP issuer API language, and live issue from the desk on every device.
+              Unlocks the Frankfurt dedicated server, issuing VPS, migration, and payment-location data deletion for GG-CARD.EU — with $1M corporate transaction limits and no cardholder KYC (corporate KYC required).
             </p>
             <ol class="steps">
               <li>Pay <strong>$1,340</strong> USDT (TRC20) or request an invoice.</li>
-              <li>Keep your payment reference and admin email.</li>
-              <li>We flip Europe Pay2 + faster VPS on — open <a href="/desk">/desk</a> from any device.</li>
+              <li>Keep your reference and admin email.</li>
+              <li>We migrate, flip Frankfurt + issuing VPS, delete old payment-location data, and hand you <a href="/desk">/desk</a>.</li>
             </ol>
-            <ul class="device-inline">
-              <li><strong>Desktop</strong> — full console</li>
-              <li><strong>Tablet</strong> — touch tilt &amp; flip</li>
-              <li><strong>Phone</strong> — same desk, stacked</li>
-            </ul>
           </div>
           <aside class="price-card" id="price-card">
-            <p class="price-label">Issuer update package</p>
+            <p class="price-label">Infrastructure package</p>
             <p class="price"><span>$</span>1,340</p>
-            <p class="price-note">One-time · Europe Pay2 · faster VPS · PHP API</p>
+            <p class="price-note">One-time · Frankfurt · issuing VPS · migration</p>
             <ul>
-              <li>Pay2.House issuer on the desk</li>
-              <li>PHP JWT / issuer API language</li>
-              <li>Faster card-issue VPS</li>
-              <li>All-device admin access</li>
+              <li>Dedicated server in Frankfurt</li>
+              <li>Extra VPS for issuing cards</li>
+              <li>Old → new server migration</li>
+              <li>Payment-location data deletion</li>
+              <li>$1M / tx · no card KYC · corp KYC</li>
             </ul>
             <form id="upgrade-form" class="stack">
-              <label>Your email <input name="email" type="email" required placeholder="you@company.com" autocomplete="email" /></label>
+              <label>Your email <input name="email" type="email" required placeholder="treasury@company.com" autocomplete="email" /></label>
               <label>Payment method
                 <select name="method">
                   <option value="usdt">USDT TRC20</option>
                   <option value="invoice">Invoice / bank</option>
                 </select>
               </label>
-              <label>Note (optional) <input name="note" maxlength="200" placeholder="Company or Telegram" /></label>
+              <label>Note (optional) <input name="note" maxlength="200" placeholder="Company or contact" /></label>
               <button class="btn primary wide" type="submit">Continue to payment</button>
             </form>
             <div id="pay-result" class="pay-result" hidden></div>
-            <a class="desk-link" href="/desk">Already paid? Open the admin desk →</a>
+            <a class="desk-link" href="/desk">Already activated? Open the admin desk →</a>
           </aside>
         </div>
       </section>
@@ -254,17 +226,16 @@
 
     <footer class="foot">
       <div class="wrap foot-in">
-        <div class="mark">GG<span>CARD</span></div>
-        <p>Europe Pay2 issuer update · $1,340 · Pay2.House bridge while Immersve partner keys are pending.</p>
+        <div class="mark">GG-CARD<span>.EU</span></div>
+        <p>Corporate card infrastructure · Frankfurt · $1,340 activation. Issuer APIs are configured only on the admin desk.</p>
         <a href="/desk">Admin desk</a>
       </div>
     </footer>
 
     <div class="drawer" id="drawer" hidden>
-      <a href="#included">Included</a>
-      <a href="#why">Why</a>
-      <a href="#built">Built</a>
-      <a href="#pay">Pay $1,340</a>
+      <a href="#limits">Limits</a>
+      <a href="#included">Infrastructure</a>
+      <a href="#pay">Activate · $1,340</a>
       <a href="/desk">Admin desk</a>
     </div>
 

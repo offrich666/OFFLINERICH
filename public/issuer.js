@@ -1,11 +1,32 @@
 const PRICE_USD = 1340;
 
+function bindDeck(root) {
+  const deck = root.querySelector('[data-deck]');
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!deck || reduce) return;
+
+  const scene = root.querySelector('#scene') || deck.parentElement;
+  scene.addEventListener('pointermove', (event) => {
+    if (event.pointerType === 'touch') return;
+    const box = scene.getBoundingClientRect();
+    const x = (event.clientX - box.left) / box.width - 0.5;
+    const y = (event.clientY - box.top) / box.height - 0.5;
+    deck.style.transform = `rotateX(${(12 - y * 10).toFixed(2)}deg) rotateY(${(-18 + x * 16).toFixed(2)}deg)`;
+  });
+  scene.addEventListener('pointerleave', () => {
+    deck.style.transform = '';
+  });
+}
+
 function bindCards(root) {
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   root.querySelectorAll('[data-card]').forEach((card) => {
     let dragging = false;
     let startX = 0;
     let startY = 0;
+    const baseVisa = 'translate3d(-18px, -28px, 40px) rotateZ(-6deg)';
+    const baseMaster = 'translate3d(12px, 20px, 80px) rotateZ(4deg)';
+    const base = card.classList.contains('visa') ? baseVisa : baseMaster;
 
     const setTilt = (clientX, clientY) => {
       if (reduce || card.classList.contains('flipped')) return;
@@ -13,11 +34,11 @@ function bindCards(root) {
       const x = (clientX - box.left) / box.width - 0.5;
       const y = (clientY - box.top) / box.height - 0.5;
       card.style.setProperty('--gx', `${((x + 0.5) * 100).toFixed(0)}%`);
-      card.style.transform = `perspective(1000px) rotateX(${(-y * 14).toFixed(2)}deg) rotateY(${(x * 18).toFixed(2)}deg)`;
+      card.style.transform = `${base} rotateX(${(-y * 12).toFixed(2)}deg) rotateY(${(x * 14).toFixed(2)}deg)`;
     };
 
     const resetTilt = () => {
-      card.style.transform = '';
+      card.style.transform = base;
     };
 
     card.addEventListener('pointermove', (event) => {
@@ -49,6 +70,7 @@ function bindCards(root) {
         resetTilt();
       }
     });
+    resetTilt();
   });
 }
 
@@ -78,6 +100,9 @@ function bindCheckout() {
     const data = Object.fromEntries(new FormData(form).entries());
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true;
+    result.style.color = '';
+    result.style.borderColor = '';
+    result.style.background = '';
     try {
       const response = await fetch('/api/upgrade', {
         method: 'POST',
@@ -87,7 +112,9 @@ function bindCheckout() {
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error?.message || 'Could not start payment.');
       result.hidden = false;
-      result.textContent = body.instructions || 'Payment request recorded. We will confirm and unlock the Europe Pay2 issuer update.';
+      result.textContent =
+        body.instructions ||
+        'Payment request recorded. We will confirm and activate the GG-CARD.EU Frankfurt infrastructure package.';
       form.reset();
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     } catch (error) {
@@ -102,20 +129,7 @@ function bindCheckout() {
   });
 }
 
-function pulsePrice() {
-  const price = document.querySelector('#price-card .price');
-  if (!price || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  price.animate(
-    [
-      { transform: 'translateY(0)' },
-      { transform: 'translateY(-3px)' },
-      { transform: 'translateY(0)' },
-    ],
-    { duration: 2400, iterations: Infinity, easing: 'ease-in-out' },
-  );
-}
-
+bindDeck(document);
 bindCards(document);
 bindMenu();
 bindCheckout();
-pulsePrice();

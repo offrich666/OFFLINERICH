@@ -235,14 +235,16 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
-      product: 'Europe Pay2 issuer update',
+      product: 'GG-CARD.EU Frankfurt infrastructure package',
       usdtNetwork: 'TRC20',
       usdtAddress: config.upgradeUsdtAddress || null,
       includes: [
-        'Faster issue VPS',
-        'PHP issuer API language layer',
-        'Europe-ready Pay2.House path',
-        'Desk access on desktop, tablet, and phone',
+        'Dedicated server in Frankfurt',
+        'Extra VPS for issuing cards',
+        'Old server migration to new server',
+        'Payment-location data deletion',
+        'Corporate $1M per-transaction limit · no card KYC · corporate KYC required',
+        'Admin desk on desktop, tablet, and phone',
       ],
     });
   });

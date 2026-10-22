@@ -1457,7 +1457,7 @@ export function requestUpgrade(
 ) {
   const email = (input.email ?? '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the Europe Pay2 issuer update.');
+    throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the GG-CARD.EU infrastructure package.');
   }
   const method = (input.method ?? 'usdt').trim().toLowerCase();
   const note = (input.note ?? '').trim().slice(0, 200);
@@ -1486,7 +1486,7 @@ export function requestUpgrade(
     return {
       ok: true,
       reference: ref,
-      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for the Europe Pay2 issuer update (VPS + PHP API).`,
+      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for the GG-CARD.EU package (Frankfurt dedicated server, issuing VPS, migration, payment-location data deletion).`,
     };
   }
   if (!address) {
@@ -1500,6 +1500,6 @@ export function requestUpgrade(
     ok: true,
     reference: ref,
     usdtAddress: address,
-    instructions: `Send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nThen email payment proof to the admin from ${email}. When confirmed, the Europe Pay2 issuer update (faster VPS + PHP API) is unlocked on the desk.`,
+    instructions: `Send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nThen email payment proof to the admin from ${email}. When confirmed, GG-CARD.EU activates: Frankfurt dedicated server, issuing VPS, old→new migration, and payment-location data deletion. Configure issuer APIs only on /desk.`,
   };
 }
