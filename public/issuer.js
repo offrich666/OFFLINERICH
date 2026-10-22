@@ -228,7 +228,10 @@ function bindPos() {
   if (!stage) return;
   const label = stage.querySelector('[data-pos-label]');
   const status = stage.querySelector('[data-pos-status]');
-  const receipt = stage.querySelector('[data-pos-receipt]');
+  const banner = stage.querySelector('[data-pos-receipt]');
+  const hint = stage.querySelector('[data-apay-hint]');
+  const confirm = stage.querySelector('[data-apay-confirm]');
+  const done = stage.querySelector('[data-apay-done]');
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -236,42 +239,55 @@ function bindPos() {
     if (el) el.textContent = text;
   };
 
-  const reset = () => {
-    stage.classList.remove('is-tapping', 'is-approving', 'is-approved');
-    if (receipt) receipt.hidden = true;
-    setText(label, 'Present card');
-    setText(status, 'Waiting…');
+  const show = (el, on) => {
+    if (!el) return;
+    el.hidden = !on;
   };
 
-  if (reduce) {
+  const reset = () => {
+    stage.classList.remove('is-ready', 'is-auth', 'is-tapping', 'is-approved');
+    show(banner, false);
+    show(confirm, false);
+    show(done, false);
+    setText(label, 'Hold iPhone near reader');
+    setText(status, 'Ready for Apple Pay');
+    setText(hint, 'Double Click Side Button');
+  };
+
+  const approved = () => {
     stage.classList.add('is-approved');
     setText(label, 'Approved');
     setText(status, 'Transaction confirmed');
-    if (receipt) receipt.hidden = false;
+    setText(hint, 'Hold Near Reader');
+    show(confirm, true);
+    show(done, true);
+    show(banner, true);
+  };
+
+  if (reduce) {
+    reset();
+    approved();
     return;
   }
 
   const run = async () => {
     reset();
+    await wait(600);
+    stage.classList.add('is-ready');
+    setText(hint, 'Double Click Side Button');
     await wait(700);
-    setText(label, 'Tap to pay');
-    setText(status, 'Ready');
-    await wait(500);
+    stage.classList.add('is-auth');
+    setText(hint, 'Face ID');
+    await wait(800);
+    stage.classList.remove('is-auth');
     stage.classList.add('is-tapping');
-    setText(label, 'Reading metal…');
+    setText(label, 'Reading Apple Pay…');
     setText(status, 'Contactless');
-    await wait(1100);
+    setText(hint, 'Hold Near Reader');
+    await wait(1200);
     stage.classList.remove('is-tapping');
-    stage.classList.add('is-approving');
-    setText(label, 'Authorising');
-    setText(status, '$1,000,000.00');
-    await wait(700);
-    stage.classList.remove('is-approving');
-    stage.classList.add('is-approved');
-    setText(label, 'Approved');
-    setText(status, 'Transaction confirmed');
-    if (receipt) receipt.hidden = false;
-    await wait(2600);
+    approved();
+    await wait(2800);
   };
 
   (async () => {

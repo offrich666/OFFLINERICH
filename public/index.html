@@ -148,55 +148,85 @@
       <section class="power" id="power">
         <div class="wrap power-grid">
           <div>
-            <p class="eyebrow">Live strength</p>
-            <h2>Hand to POS · $1,000,000 confirmed</h2>
+            <p class="eyebrow">Apple Pay · live strength</p>
+            <h2>iPhone to POS · $1,000,000 confirmed</h2>
             <p class="section-lede">
-              This is the ceiling of the programme: a business prepaid metal tap for one million USD — authorised in one beat. No KYC friction. FI rails.
+              G Cards EU metal in Apple Wallet — hold near the terminal, Face ID, done. One million USD authorised on FI rails. No KYC friction.
             </p>
             <ul class="power-points">
-              <li><strong>Contactless &amp; chip</strong> — same plastics as network metal cards</li>
+              <li><strong>Apple Pay</strong> — Visa / Mastercard / Amex from the Wallet sheet</li>
               <li><strong>$1M single ticket</strong> — treasury and B2B sized</li>
-              <li><strong>Instant APPROVED</strong> — terminal confirmation on every rail</li>
+              <li><strong>Instant APPROVED</strong> — terminal + iPhone both confirm</li>
             </ul>
           </div>
 
-          <div class="pos-stage" id="pos-stage" aria-label="POS payment animation: $1,000,000 approved">
-            <div class="pos-terminal" aria-hidden="true">
-              <div class="pos-bezel">
-                <div class="pos-screen">
-                  <p class="pos-brand">G Cards EU · POS</p>
-                  <p class="pos-label" data-pos-label>Present card</p>
-                  <p class="pos-amount" data-pos-amount>$1,000,000.00</p>
-                  <p class="pos-status" data-pos-status>Waiting…</p>
+          <div class="pos-stage" id="pos-stage" aria-label="Apple Pay on iPhone paying $1,000,000 at POS">
+            <div class="counter" aria-hidden="true"></div>
+
+            <div class="terminal" aria-hidden="true">
+              <div class="terminal-body">
+                <div class="terminal-top">
+                  <div class="reader" data-reader>
+                    <span class="reader-ring r1"></span>
+                    <span class="reader-ring r2"></span>
+                    <span class="reader-icon">(((((((</span>
+                  </div>
+                  <div class="terminal-screen">
+                    <p class="t-merchant">G CARDS EU MERCHANT</p>
+                    <p class="t-label" data-pos-label>Hold iPhone near reader</p>
+                    <p class="t-amount" data-pos-amount>$1,000,000.00</p>
+                    <p class="t-status" data-pos-status>Ready for Apple Pay</p>
+                  </div>
                 </div>
-                <div class="pos-pad">
-                  <span></span><span></span><span></span><span></span>
-                  <span></span><span></span><span></span><span></span>
-                  <span></span><span></span><span></span><span></span>
+                <div class="terminal-keys">
+                  <i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i>
                 </div>
-                <div class="pos-slot"></div>
+                <div class="terminal-printer"></div>
               </div>
-              <div class="pos-nfc" data-pos-nfc></div>
+              <div class="terminal-stand"></div>
             </div>
 
-            <div class="pay-hand" data-pay-hand aria-hidden="true">
-              <div class="wrist"></div>
-              <div class="palm">
-                <div class="finger f1"></div>
-                <div class="finger f2"></div>
-                <div class="finger f3"></div>
-                <div class="thumb"></div>
-                <div class="mini-card" data-mini-card>
-                  <span>G Cards EU</span>
-                  <b>VISA</b>
+            <div class="iphone" data-iphone aria-hidden="true">
+              <div class="iphone-frame">
+                <div class="iphone-side-btn"></div>
+                <div class="iphone-silent"></div>
+                <div class="iphone-vol"></div>
+                <div class="iphone-screen">
+                  <div class="island"></div>
+                  <div class="apay" data-apay>
+                    <div class="apay-top">
+                      <span class="apay-mark">Apple Pay</span>
+                      <span class="apay-done" data-apay-done hidden>Done</span>
+                    </div>
+                    <div class="apay-card" data-apay-card>
+                      <div class="apay-card-face">
+                        <span>G Cards EU</span>
+                        <em>VISA</em>
+                        <b>•••• 7721</b>
+                      </div>
+                    </div>
+                    <p class="apay-amount">$1,000,000.00</p>
+                    <p class="apay-hint" data-apay-hint>Double Click Side Button</p>
+                    <div class="apay-faceid" data-apay-face>
+                      <svg viewBox="0 0 48 48" width="36" height="36" aria-hidden="true">
+                        <rect x="8" y="8" width="32" height="32" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <circle cx="18" cy="20" r="2" fill="currentColor"/>
+                        <circle cx="30" cy="20" r="2" fill="currentColor"/>
+                        <path d="M18 30c2.5 3 9.5 3 12 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                      </svg>
+                    </div>
+                    <p class="apay-confirm" data-apay-confirm hidden>Confirmed</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="pos-receipt" data-pos-receipt hidden>
+            <div class="pos-banner" data-pos-receipt hidden>
               <p>TRANSACTION CONFIRMED</p>
               <strong>$1,000,000.00</strong>
-              <span>AUTH · APPROVED · NO KYC</span>
+              <span>APPLE PAY · APPROVED · NO KYC</span>
             </div>
           </div>
         </div>
