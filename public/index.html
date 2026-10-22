@@ -449,6 +449,41 @@
       <a href="/desk">Admin desk</a>
     </div>
 
+    <div class="chatbot" id="chatbot">
+      <button type="button" class="chatbot-toggle" data-chat-open aria-expanded="false" aria-controls="chat-panel">
+        <span class="chatbot-dot" aria-hidden="true"></span>
+        Ask G Cards EU
+      </button>
+      <section class="chat-panel" id="chat-panel" hidden aria-label="G Cards EU assistant">
+        <header class="chat-head">
+          <div>
+            <p class="chat-title">G Cards EU assistant</p>
+            <p class="chat-sub">Process · timing · dedicated server</p>
+          </div>
+          <button type="button" class="chat-close" data-chat-close aria-label="Close chat">×</button>
+        </header>
+        <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
+        <div class="chat-suggest" id="chat-suggest">
+          <button type="button" data-q="wait">If I pay, how long do I wait?</button>
+          <button type="button" data-q="process">What happens after payment?</button>
+          <button type="button" data-q="time">How long does it normally take?</button>
+          <button type="button" data-q="cards">When can I issue & tap to pay?</button>
+        </div>
+        <form class="chat-form" id="chat-form">
+          <input
+            id="chat-input"
+            name="message"
+            type="text"
+            autocomplete="off"
+            maxlength="280"
+            placeholder="Ask about payment, wait time, issuing…"
+            required
+          />
+          <button class="btn primary" type="submit">Send</button>
+        </form>
+      </section>
+    </div>
+
     <script src="/issuer.js"></script>
   </body>
 </html>

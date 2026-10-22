@@ -295,8 +295,109 @@ function bindPos() {
   })();
 }
 
+function bindChatbot() {
+  const root = document.getElementById('chatbot');
+  const panel = document.getElementById('chat-panel');
+  const log = document.getElementById('chat-log');
+  const form = document.getElementById('chat-form');
+  const input = document.getElementById('chat-input');
+  const openBtn = document.querySelector('[data-chat-open]');
+  const closeBtn = document.querySelector('[data-chat-close]');
+  const suggest = document.getElementById('chat-suggest');
+  if (!root || !panel || !log || !form || !input || !openBtn) return;
+
+  const answers = {
+    wait:
+      'After you pay $1,300 USDC, here is what happens:\n\n1) You receive a dedicated Frankfurt server\n2) We integrate all programme files on that server (platform 31.2.7)\n3) You start issuing cards from the desk\n4) After cards are issued, you tap to pay and spend through the cards\n\nNormally the full process takes about 24 hours. We complete it faster once USDC clears.',
+    process:
+      'This is how we do it:\n\n• You pay the dedicated-server fee in USDC\n• You receive the dedicated server\n• We integrate all files on that server\n• You start issuing cards\n• After card issuing, you tap to pay and start paying through the cards\n\nDesk tokens only fund card spend — they do not pay for the server.',
+    time:
+      'How long does this process take?\n\nNormally it takes about 24 hours from USDC payment to a live issuing desk.\n\nWe do it faster: dedicated server → file integration → card issuing ready. Status keys on this page flip from In process to Done as each step finishes.',
+    cards:
+      'After USDC payment and we integrate all files on your dedicated server, you issue cards from the admin desk.\n\nOnce a card is issued, you can tap to pay (Apple Pay / contactless) and start paying through the cards. Tokens you add on the desk increase that spend balance.',
+    usdc:
+      'The $1,300 dedicated-server package is paid in USDC directly. Other tokens on the desk are only for card spend — they are not the server invoice.',
+    default:
+      'Ask what happens after you pay, how long you wait, or when you can issue cards and tap to pay.\n\nNormally ~24 hours after USDC — we finish faster when payment clears. Try a suggested question below.',
+  };
+
+  const matchAnswer = (text) => {
+    const q = text.toLowerCase();
+    if (/(wait|after (i )?pay|how long.*(after|payment)|when.*(ready|live|server))/.test(q)) return answers.wait;
+    if (/(process|how (do|does|we)|steps|integrate|dedicated server|what if)/.test(q)) return answers.process;
+    if (/(time|24|hour|faster|normally|how long)/.test(q)) return answers.time;
+    if (/(issue|issuing|tap|apple|spend|card)/.test(q)) return answers.cards;
+    if (/(usdc|token|pay)/.test(q)) return answers.usdc;
+    return answers.default;
+  };
+
+  const addMsg = (role, text) => {
+    const el = document.createElement('div');
+    el.className = `chat-msg ${role}`;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  };
+
+  const reply = async (text) => {
+    const typing = addMsg('bot typing', 'Assistant is typing…');
+    await new Promise((r) => window.setTimeout(r, 450 + Math.min(900, text.length * 4)));
+    typing.remove();
+    addMsg('bot', matchAnswer(text));
+  };
+
+  const ask = async (text) => {
+    const clean = text.trim();
+    if (!clean) return;
+    addMsg('user', clean);
+    input.value = '';
+    await reply(clean);
+  };
+
+  let greeted = false;
+  const open = () => {
+    panel.hidden = false;
+    openBtn.setAttribute('aria-expanded', 'true');
+    openBtn.hidden = true;
+    if (!greeted) {
+      greeted = true;
+      addMsg(
+        'bot',
+        'Welcome. Ask what happens after you pay USDC, how long you wait, or when you can issue cards and tap to pay.\n\nNormally the full process takes about 24 hours — we complete it faster when payment clears.',
+      );
+    }
+    input.focus();
+  };
+  const close = () => {
+    panel.hidden = true;
+    openBtn.hidden = false;
+    openBtn.setAttribute('aria-expanded', 'false');
+  };
+
+  openBtn.addEventListener('click', open);
+  closeBtn?.addEventListener('click', close);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    ask(input.value);
+  });
+  suggest?.querySelectorAll('[data-q]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-q');
+      const labels = {
+        wait: 'If I pay, how long do I wait?',
+        process: 'What happens after payment?',
+        time: 'How long does it normally take?',
+        cards: 'When can I issue and tap to pay?',
+      };
+      ask(labels[key] || btn.textContent || '');
+    });
+  });
+}
+
 bindDeck(document);
 bindCards(document);
 bindMenu();
 bindCheckout();
 bindPos();
+bindChatbot();
