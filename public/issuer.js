@@ -4,15 +4,15 @@ function cardBase(key) {
   const narrow = window.matchMedia('(max-width: 960px)').matches;
   if (narrow) {
     return {
-      visa: 'translate3d(-22px, -28px, 20px) rotateZ(-8deg)',
-      master: 'translate3d(0, 4px, 60px) rotateZ(1deg)',
-      amex: 'translate3d(22px, 36px, 100px) rotateZ(9deg)',
+      visa: 'translate3d(-18px, -22px, 16px) rotateZ(-7deg)',
+      master: 'translate3d(0, 4px, 52px) rotateZ(1deg)',
+      amex: 'translate3d(18px, 30px, 90px) rotateZ(8deg)',
     }[key];
   }
   return {
-    visa: 'translate3d(-36px, -40px, 20px) rotateZ(-10deg)',
-    master: 'translate3d(0, 8px, 70px) rotateZ(2deg)',
-    amex: 'translate3d(34px, 52px, 120px) rotateZ(11deg)',
+    visa: 'translate3d(-28px, -32px, 16px) rotateZ(-8deg)',
+    master: 'translate3d(0, 6px, 60px) rotateZ(2deg)',
+    amex: 'translate3d(28px, 42px, 104px) rotateZ(9deg)',
   }[key];
 }
 
