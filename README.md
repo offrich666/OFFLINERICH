@@ -28,6 +28,23 @@ npm run build:web
 npm start
 ```
 
+## Phone access (same Wi‑Fi)
+
+1. On your PC: `HOST=0.0.0.0` (default) and `npm start`
+2. Terminal prints a **Phone** URL like `http://192.168.x.x:3847/?access=…`
+3. Phone must be on the **same Wi‑Fi** as the PC
+4. Open that exact URL (token required for API calls)
+
+Optional tunnel (when not on the same network), from the PC:
+
+```bash
+npx --yes cloudflared tunnel --url http://127.0.0.1:3847
+```
+
+Then open the printed `https://….trycloudflare.com/?access=YOUR_TOKEN` on your phone.
+
+Anyone with the URL + token can trigger trades — treat it like a password.
+
 ## Burst buy
 
 1. Open the dashboard

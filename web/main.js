@@ -1,10 +1,29 @@
 const $ = (id) => document.getElementById(id);
 const selected = new Set();
 
+function resolveAccessToken() {
+  const params = new URLSearchParams(location.search);
+  const fromQuery = params.get("access");
+  if (fromQuery) {
+    sessionStorage.setItem("lst_access", fromQuery);
+    // Keep token in the address bar for easy phone bookmarking, but also
+    // strip it from history copies when possible after storing.
+    return fromQuery;
+  }
+  return sessionStorage.getItem("lst_access") || "";
+}
+
+const accessToken = resolveAccessToken();
+
 async function api(path, options) {
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options?.headers || {}),
+  };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
     ...options,
+    headers,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);

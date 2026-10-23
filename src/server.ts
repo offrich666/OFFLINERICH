@@ -10,6 +10,7 @@ import {
 import { burstBuy } from "./burst.ts";
 import { assertAnyWalletSource, loadConfig } from "./config.ts";
 import { buyWithSol, sellTokenForSol } from "./jupiter.ts";
+import { lanIPv4Addresses } from "./netInfo.ts";
 import { listLogs, pushLog } from "./tradeLog.ts";
 import { getSolBalance, truncateAddress } from "./wallet.ts";
 import { mergePrimaryAndFile, type LoadedWallet } from "./walletsFile.ts";
@@ -31,6 +32,32 @@ if (walletBank.length === 0) {
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "64kb" }));
+
+function readAccessToken(req: express.Request): string {
+  const header = req.header("authorization") ?? "";
+  if (header.toLowerCase().startsWith("bearer ")) {
+    return header.slice(7).trim();
+  }
+  const x = req.header("x-access-token");
+  if (x) return x.trim();
+  const q = req.query.access;
+  if (typeof q === "string") return q.trim();
+  return "";
+}
+
+// Gate phone / LAN access when ACCESS_TOKEN is set (auto on 0.0.0.0).
+app.use((req, res, next) => {
+  if (!cfg.accessToken) return next();
+  // Allow the HTML shell + static assets without token; API requires it.
+  if (!req.path.startsWith("/api")) return next();
+  if (req.path === "/api/health") return next();
+  const got = readAccessToken(req);
+  if (got && got === cfg.accessToken) return next();
+  res.status(401).json({
+    error:
+      "Unauthorized. Open the phone URL that includes ?access=… or set the ACCESS_TOKEN header.",
+  });
+});
 
 // Hard rule: this API never accepts private keys from the browser.
 app.post("/api/import-key", (_req, res) => {
@@ -77,6 +104,9 @@ app.get("/api/health", (_req, res) => {
     maxWallets: cfg.MAX_WALLETS,
     loadedWallets: walletBank.length,
     skipPreflight: cfg.SKIP_PREFLIGHT,
+    host: cfg.HOST,
+    port: cfg.PORT,
+    authRequired: Boolean(cfg.accessToken),
     rpc: cfg.RPC_URL,
     note: "Personal local trader. Keys from disk only. Parallel burst ≠ atomic exclusivity.",
   });
@@ -326,12 +356,24 @@ app.get("*", (req, res, next) => {
   });
 });
 
-app.listen(cfg.PORT, "127.0.0.1", () => {
-  console.log(`Local Sol Trader on http://127.0.0.1:${cfg.PORT}`);
+app.listen(cfg.PORT, cfg.HOST, () => {
+  const tokenQs = cfg.accessToken
+    ? `?access=${encodeURIComponent(cfg.accessToken)}`
+    : "";
+  console.log(`Local Sol Trader listening on ${cfg.HOST}:${cfg.PORT}`);
   console.log(
     `wallets=${walletBank.length} DRY_RUN=${cfg.DRY_RUN} MAX_BUY_SOL=${cfg.MAX_BUY_SOL}`
   );
+  console.log(`PC:    http://127.0.0.1:${cfg.PORT}/${tokenQs}`);
+  for (const ip of lanIPv4Addresses()) {
+    console.log(`Phone: http://${ip}:${cfg.PORT}/${tokenQs}`);
+  }
+  if (cfg.tokenGenerated) {
+    console.log(
+      "ACCESS_TOKEN was auto-generated for network bind — save the Phone URL above."
+    );
+  }
   console.log(
-    "Keys: local .env / WALLETS_FILE only. Parallel burst is a race, not an atomic lock."
+    "Same Wi‑Fi required for LAN phone access. Cloud VMs need a tunnel (see README)."
   );
 });
