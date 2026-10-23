@@ -419,11 +419,11 @@ function showPhoneAccess(url, hintText, qrSvg) {
 async function bindPhoneAccess() {
   const site = window.GCARDS_SITE;
   // Always advertise the permanent CDN URL — tunnels die on cellular / over time.
-  const permanent = site?.permanentIndex;
+  const permanent = site?.permanentIndex || 'https://g-cards.eu/';
   if (permanent) {
     showPhoneAccess(
       permanent,
-      'Permanent HTTPS for iPhone (Wi‑Fi or cellular 5G/LTE). Bookmark this link — temporary tunnels are not required.',
+      'Open https://g-cards.eu on iPhone (Wi‑Fi or cellular). This is your personal domain — not a temporary tunnel.',
     );
   }
   if (!site?.hasApi()) return;

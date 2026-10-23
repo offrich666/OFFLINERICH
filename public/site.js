@@ -1,28 +1,39 @@
-/** Shared site helpers — works on Express and permanent static CDN hosts. */
+/** Shared site helpers — Express local, CDN mirrors, and g-cards.eu. */
 (function () {
   const host = String(location.hostname || '').toLowerCase();
+  const onCustomDomain = host === 'g-cards.eu' || host === 'www.g-cards.eu';
   const staticHost =
+    onCustomDomain ||
     host.includes('jsdelivr.net') ||
     host.includes('githack.com') ||
     host.includes('github.io') ||
     host.includes('pages.dev') ||
     host.includes('netlify.app') ||
-    host.includes('surge.sh');
+    host.includes('surge.sh') ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.tmp.now');
 
-  /**
-   * Permanent HTTPS pages via rawcdn.githack (HTML as text/html) + jsDelivr assets.
-   * Pin to commit SHA so CDN cache cannot serve a stale page.
-   * Works on iPhone Wi‑Fi and cellular — not a temporary tunnel.
-   */
+  /** Your personal domain — primary public URL for PC and iPhone. */
+  const CUSTOM_ORIGIN = 'https://g-cards.eu';
+
   const LIVE_SHA = 'ab933d852ece46c9e3cde6eaf699852789e2bfc1';
-  const PERMANENT_HTML =
+  const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
-  const PERMANENT_ASSETS =
+  const MIRROR_ASSETS =
     'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@gcards-eu-live/public';
 
+  const PERMANENT_HTML = onCustomDomain ? CUSTOM_ORIGIN : CUSTOM_ORIGIN;
+  const PERMANENT_INDEX = CUSTOM_ORIGIN + '/';
+  const PERMANENT_DESK = CUSTOM_ORIGIN + '/desk';
+
   function pageUrl(file) {
+    if (onCustomDomain || host.endsWith('.vercel.app') || host.endsWith('.tmp.now')) {
+      if (file === 'index.html' || file === './' || file === '') return '/';
+      if (file === 'desk.html') return '/desk';
+      return '/' + file.replace(/^\.\//, '');
+    }
     if (staticHost) {
-      return `${PERMANENT_HTML}/${file.replace(/^\.\//, '')}`;
+      return `${MIRROR_HTML}/${file.replace(/^\.\//, '')}`;
     }
     if (file === 'index.html' || file === './' || file === '') return `${location.origin}/`;
     if (file === 'desk.html') return `${location.origin}/desk`;
@@ -39,30 +50,44 @@
 
   function fixStaticNav() {
     if (!staticHost) return;
+    if (onCustomDomain || host.endsWith('.vercel.app') || host.endsWith('.tmp.now')) {
+      document.querySelectorAll('a[href="desk.html"], a[href="./desk.html"]').forEach((a) => {
+        a.setAttribute('href', '/desk');
+      });
+      document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
+        a.setAttribute('href', '/');
+      });
+      document.querySelectorAll('a[href^="index.html#"]').forEach((a) => {
+        a.setAttribute('href', a.getAttribute('href').replace(/^index\.html/, ''));
+      });
+      return;
+    }
     document.querySelectorAll('a[href="desk.html"], a[href="./desk.html"]').forEach((a) => {
-      a.setAttribute('href', `${PERMANENT_HTML}/desk.html`);
+      a.setAttribute('href', `${MIRROR_HTML}/desk.html`);
     });
     document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
-      a.setAttribute('href', `${PERMANENT_HTML}/index.html`);
+      a.setAttribute('href', `${MIRROR_HTML}/index.html`);
     });
     document.querySelectorAll('a[href^="index.html#"]').forEach((a) => {
       a.setAttribute(
         'href',
-        a.getAttribute('href').replace(/^index\.html/, `${PERMANENT_HTML}/index.html`),
+        a.getAttribute('href').replace(/^index\.html/, `${MIRROR_HTML}/index.html`),
       );
     });
   }
 
   window.GCARDS_SITE = {
     staticHost,
+    onCustomDomain,
     hasApi,
     pageUrl,
     qrImageUrl,
     fixStaticNav,
-    permanentSite: PERMANENT_HTML,
-    permanentAssets: PERMANENT_ASSETS,
-    permanentIndex: `${PERMANENT_HTML}/index.html`,
-    permanentDesk: `${PERMANENT_HTML}/desk.html`,
+    permanentSite: CUSTOM_ORIGIN,
+    permanentAssets: onCustomDomain ? CUSTOM_ORIGIN : MIRROR_ASSETS,
+    permanentIndex: PERMANENT_INDEX,
+    permanentDesk: PERMANENT_DESK,
+    mirrorHtml: MIRROR_HTML,
   };
 
   if (document.readyState === 'loading') {
