@@ -25,11 +25,13 @@
   const PERMANENT_HTML = onCustomDomain ? CUSTOM_ORIGIN : CUSTOM_ORIGIN;
   const PERMANENT_INDEX = CUSTOM_ORIGIN + '/';
   const PERMANENT_DESK = CUSTOM_ORIGIN + '/desk';
+  const PERMANENT_COMPANY = CUSTOM_ORIGIN + '/company';
 
   function pageUrl(file) {
     if (onCustomDomain || host.endsWith('.vercel.app') || host.endsWith('.tmp.now')) {
       if (file === 'index.html' || file === './' || file === '') return '/';
       if (file === 'desk.html') return '/desk';
+      if (file === 'company.html') return '/company';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -37,6 +39,7 @@
     }
     if (file === 'index.html' || file === './' || file === '') return `${location.origin}/`;
     if (file === 'desk.html') return `${location.origin}/desk`;
+    if (file === 'company.html') return `${location.origin}/company`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
@@ -54,16 +57,25 @@
       document.querySelectorAll('a[href="desk.html"], a[href="./desk.html"]').forEach((a) => {
         a.setAttribute('href', '/desk');
       });
+      document.querySelectorAll('a[href="company.html"], a[href="./company.html"]').forEach((a) => {
+        a.setAttribute('href', '/company');
+      });
       document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
         a.setAttribute('href', '/');
       });
       document.querySelectorAll('a[href^="index.html#"]').forEach((a) => {
         a.setAttribute('href', a.getAttribute('href').replace(/^index\.html/, ''));
       });
+      document.querySelectorAll('a[href^="company.html#"]').forEach((a) => {
+        a.setAttribute('href', a.getAttribute('href').replace(/^company\.html/, '/company'));
+      });
       return;
     }
     document.querySelectorAll('a[href="desk.html"], a[href="./desk.html"]').forEach((a) => {
       a.setAttribute('href', `${MIRROR_HTML}/desk.html`);
+    });
+    document.querySelectorAll('a[href="company.html"], a[href="./company.html"]').forEach((a) => {
+      a.setAttribute('href', `${MIRROR_HTML}/company.html`);
     });
     document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
       a.setAttribute('href', `${MIRROR_HTML}/index.html`);
@@ -87,6 +99,7 @@
     permanentAssets: onCustomDomain ? CUSTOM_ORIGIN : MIRROR_ASSETS,
     permanentIndex: PERMANENT_INDEX,
     permanentDesk: PERMANENT_DESK,
+    permanentCompany: PERMANENT_COMPANY,
     mirrorHtml: MIRROR_HTML,
   };
 

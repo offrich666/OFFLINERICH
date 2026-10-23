@@ -9,7 +9,9 @@
   "rewrites": [
     { "source": "/", "destination": "/index.html" },
     { "source": "/desk", "destination": "/desk.html" },
-    { "source": "/desk/", "destination": "/desk.html" }
+    { "source": "/desk/", "destination": "/desk.html" },
+    { "source": "/company", "destination": "/company.html" },
+    { "source": "/company/", "destination": "/company.html" }
   ],
   "headers": [
     {

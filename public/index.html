@@ -7,7 +7,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="format-detection" content="telephone=no" />
     <script>
-      /* CDN HTML hosts need assets from jsDelivr (correct CSS/JS MIME). */
       (function () {
         if (/githack\.com|jsdelivr\.net/i.test(location.hostname)) {
           document.write(
@@ -16,10 +15,10 @@
         }
       })();
     </script>
-    <title>G Cards EU · Issuing offline · Dedicated Frankfurt server</title>
+    <title>G Cards EU · Cards</title>
     <meta
       name="description"
-      content="G Cards EU issuing is unavailable — server down for platform 31.2.7. Activate a dedicated Frankfurt server for $1,300 USDC to unlock card issuing."
+      content="G Cards EU prepaid cards. Register, then order your Visa or Mastercard."
     />
     <link
       rel="icon"
@@ -32,42 +31,39 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="issuer.css" />
+    <link rel="stylesheet" href="client.css" />
     <script src="site.js"></script>
   </head>
-  <body>
+  <body class="client-site">
     <div class="page-bg" aria-hidden="true"></div>
 
     <header class="top">
-      <a class="mark" href="index.html">G Cards <span>EU</span></a>
+      <a class="mark" href="/">G Cards <span>EU</span></a>
       <nav class="nav">
-        <a href="#status">Status</a>
-        <a href="#upgrade">Version 31.2.7</a>
-        <a href="#architecture">Architecture</a>
-        <a href="#settlement">USDC vs tokens</a>
-        <a href="#activation">Activate</a>
-        <a class="nav-desk" href="desk.html">Admin desk</a>
+        <a href="#cards">Cards</a>
+        <a href="#register">Register</a>
+        <a href="#order">Order card</a>
       </nav>
       <button class="menu" type="button" aria-label="Open menu" data-menu>Menu</button>
     </header>
 
     <main>
-      <section class="hero">
+      <section class="hero client-hero">
         <div class="hero-copy">
-          <p class="eyebrow fault">Issuing offline · Server down · 31.2.7</p>
+          <p class="eyebrow">Prepaid cards</p>
           <h1>G Cards EU</h1>
-          <p class="headline">Card issuing is not available on this server.</p>
+          <p class="headline">Choose a card. Register. Order.</p>
           <p class="lede">
-            Platform <strong>31.2.7</strong> took the host down. Visa / Mastercard issuing stays locked until a
-            <strong>dedicated Frankfurt server</strong> is online — activation <strong>$1,300 USDC</strong>.
-            Desk tokens fund card spend only; they do not pay the server invoice.
+            See the cards we offer, create your account, then place an order.
+            Your card details stay in your account after the order is processed.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#activation">Pay $1,300 USDC · activate dedicated server</a>
-            <a class="btn ghost" href="#architecture">View cut-over map</a>
+            <a class="btn primary" href="#register">Register</a>
+            <a class="btn ghost" href="#cards">See cards</a>
           </div>
         </div>
 
-        <div class="scene" id="scene" aria-label="G Cards EU metal cards">
+        <div class="scene" id="scene" aria-label="G Cards EU cards">
           <div class="deck" data-deck>
             <article class="metal visa" data-card data-base="visa" tabindex="0" aria-label="G Cards EU Visa">
               <div class="face front">
@@ -79,10 +75,10 @@
                   <span class="contactless" aria-hidden="true"></span>
                 </div>
                 <div class="chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-                <p class="product">Business prepaid · Infinite metal</p>
+                <p class="product">Virtual · Visa</p>
                 <p class="pan emboss">4532 8819 0044 7721</p>
                 <div class="row bottom">
-                  <div><small>Cardholder</small><strong class="emboss">Business holder</strong></div>
+                  <div><small>Cardholder</small><strong class="emboss">Your name</strong></div>
                   <div><small>Valid thru</small><strong class="emboss">12/30</strong></div>
                   <span class="logo-visa">Visa</span>
                 </div>
@@ -91,8 +87,8 @@
                 <div class="brush" aria-hidden="true"></div>
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
-                <div class="cvv-block"><span>CVV</span><b>882</b></div>
-                <p class="sig">G Cards EU · Platform 31.2.7</p>
+                <div class="cvv-block"><span>CVV</span><b>•••</b></div>
+                <p class="sig">G Cards EU · Visa</p>
               </div>
             </article>
 
@@ -106,10 +102,10 @@
                   <span class="contactless" aria-hidden="true"></span>
                 </div>
                 <div class="chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-                <p class="product">Business prepaid · World Elite</p>
+                <p class="product">Virtual · Mastercard</p>
                 <p class="pan emboss">5412 7700 3318 0199</p>
                 <div class="row bottom">
-                  <div><small>Cardholder</small><strong class="emboss">Business holder</strong></div>
+                  <div><small>Cardholder</small><strong class="emboss">Your name</strong></div>
                   <div><small>Valid thru</small><strong class="emboss">09/29</strong></div>
                   <span class="logo-mc" aria-hidden="true"><i></i><i></i></span>
                 </div>
@@ -118,35 +114,34 @@
                 <div class="brush" aria-hidden="true"></div>
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
-                <div class="cvv-block"><span>CVV</span><b>441</b></div>
-                <p class="sig">G Cards EU · Dedicated FRA host</p>
+                <div class="cvv-block"><span>CVV</span><b>•••</b></div>
+                <p class="sig">G Cards EU · Mastercard</p>
               </div>
             </article>
 
-            <article class="metal amex" data-card data-base="amex" tabindex="0" aria-label="G Cards EU American Express">
+            <article class="metal amex" data-card data-base="amex" tabindex="0" aria-label="G Cards EU metal">
               <div class="face front">
                 <div class="brush" aria-hidden="true"></div>
                 <div class="sheen" aria-hidden="true"></div>
                 <div class="edge" aria-hidden="true"></div>
                 <div class="row top">
                   <span class="name">G Cards EU</span>
-                  <span class="logo-amex">American<br />Express</span>
+                  <span class="logo-amex">Metal</span>
                 </div>
                 <div class="chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-                <p class="product">Business prepaid · Centurion metal</p>
+                <p class="product">Physical · Metal</p>
                 <p class="pan emboss amex-pan">3782 822463 10005</p>
                 <div class="row bottom">
-                  <div><small>Member since</small><strong class="emboss">26</strong></div>
-                  <div><small>Expires</small><strong class="emboss">08/31</strong></div>
-                  <div><small>Limit</small><strong class="emboss">$1M / tx</strong></div>
+                  <div><small>Member</small><strong class="emboss">You</strong></div>
+                  <div><small>Valid thru</small><strong class="emboss">08/31</strong></div>
                 </div>
               </div>
               <div class="face back">
                 <div class="brush" aria-hidden="true"></div>
                 <div class="mag" aria-hidden="true"></div>
                 <div class="sig-strip">Authorised signature</div>
-                <div class="cvv-block"><span>CID</span><b>1005</b></div>
-                <p class="sig">G Cards EU · No KYC prepaid</p>
+                <div class="cvv-block"><span>CID</span><b>•••</b></div>
+                <p class="sig">G Cards EU · Metal</p>
               </div>
             </article>
           </div>
@@ -154,333 +149,97 @@
         </div>
       </section>
 
-      <section class="specs" aria-label="Platform summary">
+      <section class="cards-offer" id="cards">
         <div class="wrap">
-          <div class="spec-row">
-            <div>
-              <p class="k">Issuing</p>
-              <p class="v fault">Offline</p>
-            </div>
-            <div>
-              <p class="k">Language</p>
-              <p class="v">31.2.7</p>
-            </div>
-            <div>
-              <p class="k">Host</p>
-              <p class="v">Server down</p>
-            </div>
-            <div>
-              <p class="k">Required</p>
-              <p class="v">Dedicated FRA</p>
-            </div>
-            <div>
-              <p class="k">Activation</p>
-              <p class="v">$1,300 USDC</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="architecture" id="architecture">
-        <div class="wrap">
-          <p class="eyebrow">Cut-over map · FRA</p>
-          <h2>Desk → overloaded host → dedicated Frankfurt → activate issuing</h2>
-          <p class="section-lede">
-            The admin desk talks to today’s host. That host cannot load <strong>31.2.7</strong> — issuing is offline.
-            Pay <strong>$1,300 USDC</strong> for the dedicated Frankfurt server, then merge legacy hosts and integrate Visa / Mastercard issuer code.
-          </p>
-          <figure class="arch-figure">
-            <img
-              src="gcards-frankfurt-architecture.png"
-              width="1280"
-              height="720"
-              alt="G Cards EU architecture: admin app to overloaded host, dedicated Frankfurt server, then merge servers and integrate Visa Mastercard issuer code"
-            />
-            <figcaption>
-              1 Pay dedicated FRA server · $1,300 USDC · 2 Merge &amp; migrate · 3 Activate Visa / Mastercard issuing
-            </figcaption>
-          </figure>
-        </div>
-      </section>
-
-      <section class="status" id="status">
-        <div class="wrap">
-          <p class="eyebrow">Keys &amp; readiness</p>
-          <h2>What is done · what we are waiting for</h2>
-          <p class="section-lede">
-            Issuing stays offline until the <strong>USDC</strong> dedicated-server payment clears and Frankfurt is provisioned.
-            Tokens on the desk fund card spend only — they do not unlock the host.
-          </p>
-          <ul class="key-list" id="key-list">
-            <li class="done">
-              <span class="badge" aria-hidden="true">✓</span>
-              <div>
-                <strong>Language package prepared · 31.2.7</strong>
-                <p>New programming language / runtime build staged for integration.</p>
-              </div>
-              <span class="state">Done</span>
-            </li>
-            <li class="done">
-              <span class="badge" aria-hidden="true">✓</span>
-              <div>
-                <strong>Issuer desk &amp; API key fields</strong>
-                <p>Admin desk ready to accept issuer keys after go-live (configured only on <a href="desk.html">/desk</a>).</p>
-              </div>
-              <span class="state">Done</span>
-            </li>
-            <li class="done">
-              <span class="badge" aria-hidden="true">✓</span>
-              <div>
-                <strong>Migration plan · old → new host</strong>
-                <p>Cut-over steps documented for programme data and payment-location wipe.</p>
-              </div>
-              <span class="state">Done</span>
-            </li>
-            <li class="waiting">
-              <span class="badge pulse" aria-hidden="true">…</span>
-              <div>
-                <strong>Card issuing · locked</strong>
-                <p>Unavailable — server down for 31.2.7. No Visa / Mastercard cards can be issued on this host.</p>
-              </div>
-              <span class="state">Offline</span>
-            </li>
-            <li class="waiting">
-              <span class="badge pulse" aria-hidden="true">…</span>
-              <div>
-                <strong>Dedicated server · Frankfurt</strong>
-                <p>Waiting — required for 31.2.7. Previous server cannot hold the new version under load.</p>
-              </div>
-              <span class="state">In process</span>
-            </li>
-            <li class="waiting">
-              <span class="badge pulse" aria-hidden="true">…</span>
-              <div>
-                <strong>USDC payment · dedicated server</strong>
-                <p>Waiting — pay <strong>$1,300 USDC</strong> to activate the dedicated host and unlock issuing. Not card-spend funding.</p>
-              </div>
-              <span class="state">In process</span>
-            </li>
-            <li class="done">
-              <span class="badge" aria-hidden="true">✓</span>
-              <div>
-                <strong>Card spend tokens · desk ready</strong>
-                <p>Done — tokens you add on the desk increase the card spend balance. They are not used to pay for the dedicated server.</p>
-              </div>
-              <span class="state">Done</span>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="upgrade" id="upgrade">
-        <div class="wrap upgrade-grid">
-          <div>
-            <p class="eyebrow">Why dedicated</p>
-            <h2>Version 31.2.7 outgrew the old server</h2>
-            <p class="section-lede">
-              The programming language layer moves from the legacy build to <strong>31.2.7</strong>. After integration, the prior host is slow, unstable under issue traffic, and is not holding the stack. This release needs dedicated power.
-            </p>
-          </div>
-          <div class="compare">
-            <article>
-              <p class="compare-label">Legacy host</p>
-              <h3>Old version</h3>
-              <ul>
-                <li>Shared / previous server</li>
-                <li>Slow after 31.2.7 integration</li>
-                <li>Cannot hold issuing load</li>
-              </ul>
+          <p class="eyebrow">What you can order</p>
+          <h2>Cards available</h2>
+          <p class="section-lede">Pick the network that fits how you spend. Register first, then order.</p>
+          <div class="offer-grid">
+            <article class="offer">
+              <p class="offer-brand">Visa</p>
+              <h3>Virtual Visa</h3>
+              <p>Instant virtual card for online spend after your order is approved.</p>
             </article>
-            <article class="target">
-              <p class="compare-label">Required</p>
-              <h3>Dedicated · 31.2.7</h3>
-              <ul>
-                <li>Frankfurt dedicated server</li>
-                <li>Issuing VPS for card create</li>
-                <li>Stable for the more powerful build</li>
-              </ul>
+            <article class="offer">
+              <p class="offer-brand">Mastercard</p>
+              <h3>Virtual Mastercard</h3>
+              <p>Worldwide acceptance on Mastercard rails once issued to your account.</p>
+            </article>
+            <article class="offer">
+              <p class="offer-brand">Metal</p>
+              <h3>Physical metal</h3>
+              <p>Physical card option after your account is registered and the order is placed.</p>
             </article>
           </div>
         </div>
       </section>
 
-      <section class="settle" id="settlement">
-        <div class="wrap">
-          <p class="eyebrow">Two rails · keep them separate</p>
-          <h2>USDC pays the server · tokens fund card spend</h2>
-          <p class="section-lede">
-            Do not confuse the two. <strong>USDC</strong> settles the dedicated-server invoice. Your other <strong>tokens</strong> are added on the desk so the card can spend them.
-          </p>
-          <ol class="chain-steps">
-            <li>
-              <span class="n">01</span>
-              <div>
-                <strong>Dedicated server · USDC direct</strong>
-                <p>Pay <strong>$1,300 in USDC</strong> for Frankfurt dedicated hosting + issuing VPS required by language <strong>31.2.7</strong>.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">02</span>
-              <div>
-                <strong>Card spend · your tokens</strong>
-                <p>Tokens you deposit on the desk are credited to spend. The plastic spends that balance — it does not pay the server fee.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">03</span>
-              <div>
-                <strong>USDC confirmed · keys go live</strong>
-                <p>When the USDC server payment clears, waiting items flip to Done: dedicated server, issuing VPS, and 31.2.7 on the desk.</p>
-              </div>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      <section class="demo" id="demonstration">
-        <div class="wrap demo-grid">
-          <div class="demo-copy">
-            <p class="eyebrow">After go-live</p>
-            <h2>Apple Pay on the powerful stack</h2>
-            <p class="section-lede">
-              Once 31.2.7 runs on dedicated hardware, G Cards EU metal in Apple Wallet settles high-value tickets — including <strong>$1,000,000.00</strong> — at the point of sale.
-            </p>
-            <ol class="steps-quiet">
-              <li>Open Apple Pay on the device</li>
-              <li>Authenticate with Face ID</li>
-              <li>Hold near the reader — transaction confirmed</li>
-            </ol>
-          </div>
-
-          <div class="pos-stage" id="pos-stage" aria-label="Apple Pay demonstration: $1,000,000 approved">
-            <div class="counter" aria-hidden="true"></div>
-            <div class="terminal" aria-hidden="true">
-              <div class="terminal-body">
-                <div class="terminal-top">
-                  <div class="reader" data-reader>
-                    <span class="reader-ring r1"></span>
-                    <span class="reader-ring r2"></span>
-                    <span class="reader-icon">(((((((</span>
-                  </div>
-                  <div class="terminal-screen">
-                    <p class="t-merchant">G Cards EU merchant</p>
-                    <p class="t-label" data-pos-label>Hold iPhone near reader</p>
-                    <p class="t-amount" data-pos-amount>$1,000,000.00</p>
-                    <p class="t-status" data-pos-status>Ready for Apple Pay</p>
-                  </div>
-                </div>
-                <div class="terminal-keys">
-                  <i></i><i></i><i></i><i></i>
-                  <i></i><i></i><i></i><i></i>
-                  <i></i><i></i><i></i><i></i>
-                </div>
-                <div class="terminal-printer"></div>
-              </div>
-              <div class="terminal-stand"></div>
-            </div>
-
-            <div class="iphone" data-iphone aria-hidden="true">
-              <div class="iphone-frame">
-                <div class="iphone-side-btn"></div>
-                <div class="iphone-silent"></div>
-                <div class="iphone-vol"></div>
-                <div class="iphone-screen">
-                  <div class="island"></div>
-                  <div class="apay" data-apay>
-                    <div class="apay-top">
-                      <span class="apay-mark">Apple Pay</span>
-                      <span class="apay-done" data-apay-done hidden>Done</span>
-                    </div>
-                    <div class="apay-card">
-                      <div class="apay-card-face">
-                        <span>G Cards EU</span>
-                        <em>Visa</em>
-                        <b>•••• 7721</b>
-                      </div>
-                    </div>
-                    <p class="apay-amount">$1,000,000.00</p>
-                    <p class="apay-hint" data-apay-hint>Double Click Side Button</p>
-                    <div class="apay-faceid" data-apay-face>
-                      <svg viewBox="0 0 48 48" width="34" height="34" aria-hidden="true">
-                        <rect x="8" y="8" width="32" height="32" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
-                        <circle cx="18" cy="20" r="2" fill="currentColor"/>
-                        <circle cx="30" cy="20" r="2" fill="currentColor"/>
-                        <path d="M18 30c2.5 3 9.5 3 12 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                      </svg>
-                    </div>
-                    <p class="apay-confirm" data-apay-confirm hidden>Confirmed</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="pos-banner" data-pos-receipt hidden>
-              <p>Transaction confirmed</p>
-              <strong>$1,000,000.00</strong>
-              <span>Apple Pay · Approved · No KYC</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="pay" id="activation">
-        <div class="wrap pay-grid">
+      <section class="portal" id="register">
+        <div class="wrap portal-grid">
           <div>
-            <p class="eyebrow">Activation</p>
-            <h2>Pay $1,300 USDC for dedicated power · 31.2.7</h2>
+            <p class="eyebrow">Account</p>
+            <h2>Register</h2>
             <p class="section-lede">
-              The dedicated Frankfurt server, issuing VPS, migration, and language upgrade to <strong>31.2.7</strong> are paid in <strong>USDC directly</strong>.
-              Card tokens stay on the desk for spend — they are not this invoice.
+              Create your G Cards EU account with email and password.
+              After register you can order a card on this page.
             </p>
-            <ol class="steps-quiet">
-              <li>Pay <strong>$1,300 USDC</strong> (or request an invoice)</li>
-              <li>Keep your payment reference and admin email</li>
-              <li>USDC clears — dedicated server + 31.2.7 go live on <a href="desk.html">/desk</a></li>
-            </ol>
-            <aside class="phone-access" id="phone-access" hidden>
-              <p class="eyebrow">Open on iPhone</p>
-              <p class="phone-access-lede">
-                Permanent HTTPS — works on cellular (5G/LTE) and Wi‑Fi. Do not use <code>127.0.0.1</code>
-                or temporary tunnel links that expire.
-              </p>
-              <div class="phone-access-row">
-                <div class="phone-qr" id="phone-qr" aria-hidden="true"></div>
-                <div class="phone-access-copy">
-                  <a class="phone-url" id="phone-url" href="#" rel="noopener"></a>
-                  <p class="phone-hint" id="phone-hint"></p>
-                </div>
-              </div>
-            </aside>
           </div>
-          <aside class="price-card" id="price-card">
-            <p class="price-label">Dedicated server · USDC</p>
-            <p class="price"><span>$</span>1,300</p>
-            <p class="price-note">One-time · language 31.2.7 · Frankfurt dedicated</p>
-            <ul>
-              <li>Programming language upgrade to 31.2.7</li>
-              <li>Dedicated server (old host too slow)</li>
-              <li>Issuing VPS for the powerful build</li>
-              <li>Migration + payment-location wipe</li>
-              <li>Server fee in USDC — not card-spend tokens</li>
-            </ul>
-            <form id="upgrade-form" class="stack">
-              <label>Email address
-                <input name="email" type="email" required placeholder="ops@company.com" autocomplete="email" />
-              </label>
-              <label>Server payment
-                <select name="method">
-                  <option value="usdc">USDC · direct</option>
-                  <option value="invoice">Invoice / bank transfer</option>
+          <div class="portal-card" id="auth-panel">
+            <div class="portal-tabs" role="tablist">
+              <button type="button" class="portal-tab on" data-tab="register" role="tab" aria-selected="true">Register</button>
+              <button type="button" class="portal-tab" data-tab="signin" role="tab" aria-selected="false">Sign in</button>
+            </div>
+            <p class="portal-flash" id="auth-flash" hidden></p>
+            <form id="register-form" class="stack portal-form">
+              <label>Email <input name="email" type="email" autocomplete="email" required placeholder="you@email.com" /></label>
+              <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters" /></label>
+              <button class="btn primary wide" type="submit">Create account</button>
+            </form>
+            <form id="signin-form" class="stack portal-form" hidden>
+              <label>Email <input name="email" type="email" autocomplete="email" required placeholder="you@email.com" /></label>
+              <label>Password <input name="password" type="password" autocomplete="current-password" required placeholder="Password" /></label>
+              <button class="btn primary wide" type="submit">Sign in</button>
+            </form>
+            <p class="portal-session" id="session-line" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="portal order-section" id="order">
+        <div class="wrap portal-grid">
+          <div>
+            <p class="eyebrow">Next step</p>
+            <h2>Order your card</h2>
+            <p class="section-lede">
+              Available after you register. Choose a card type and send your order details.
+            </p>
+          </div>
+          <div class="portal-card" id="order-panel">
+            <p class="portal-lock" id="order-lock">Register or sign in above to order a card.</p>
+            <p class="portal-flash" id="order-flash" hidden></p>
+            <form id="order-form" class="stack portal-form" hidden>
+              <label>Card
+                <select name="cardBrand" required>
+                  <option value="visa">Virtual Visa</option>
+                  <option value="mastercard">Virtual Mastercard</option>
+                  <option value="metal">Physical metal</option>
                 </select>
               </label>
-              <label>Reference note (optional)
-                <input name="note" maxlength="200" placeholder="Tx hash or company" />
-              </label>
-              <button class="btn primary wide" type="submit">Continue · pay USDC</button>
+              <label>First name <input name="firstName" autocomplete="given-name" required /></label>
+              <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
+              <label>Phone <input name="phone" autocomplete="tel" required placeholder="+48…" /></label>
+              <label>Country <input name="country" maxlength="2" required placeholder="PL" autocapitalize="characters" /></label>
+              <label>City <input name="city" autocomplete="address-level2" required /></label>
+              <label>Address <input name="line1" autocomplete="address-line1" required /></label>
+              <label class="check"><input type="checkbox" name="acceptedTerms" required /> <span>I accept the cardholder terms and I am the person named on the card.</span></label>
+              <button class="btn primary wide" type="submit">Order card</button>
             </form>
-            <div id="pay-result" class="pay-result" hidden></div>
-            <a class="desk-link" href="desk.html">Already paid in USDC — open admin desk</a>
-          </aside>
+            <div id="order-done" class="order-done" hidden>
+              <p class="eyebrow">Order received</p>
+              <h3>Your card order is in</h3>
+              <p id="order-done-copy" class="section-lede"></p>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -488,55 +247,17 @@
     <footer class="foot">
       <div class="wrap foot-in">
         <div class="mark">G Cards <span>EU</span></div>
-        <p>Platform 31.2.7 · dedicated Frankfurt host paid in USDC · card tokens fund spend only · $1,300. Issuer API keys only on the admin desk.</p>
-        <a href="desk.html">Admin desk</a>
+        <p>Register · order a card · manage spend in your account.</p>
       </div>
     </footer>
 
     <div class="drawer" id="drawer" hidden>
-      <a href="#status">Status</a>
-      <a href="#upgrade">Version 31.2.7</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#settlement">USDC vs tokens</a>
-      <a href="#activation">Activate · $1,300</a>
-      <a href="desk.html">Admin desk</a>
-    </div>
-
-    <div class="chatbot" id="chatbot">
-      <button type="button" class="chatbot-toggle" data-chat-open aria-expanded="false" aria-controls="chat-panel">
-        <span class="chatbot-dot" aria-hidden="true"></span>
-        Ask G Cards EU
-      </button>
-      <section class="chat-panel" id="chat-panel" hidden aria-label="G Cards EU assistant">
-        <header class="chat-head">
-          <div>
-            <p class="chat-title">G Cards EU assistant</p>
-            <p class="chat-sub">Process · timing · dedicated server</p>
-          </div>
-          <button type="button" class="chat-close" data-chat-close aria-label="Close chat">×</button>
-        </header>
-        <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
-        <div class="chat-suggest" id="chat-suggest">
-          <button type="button" data-q="wait">If I pay, how long do I wait?</button>
-          <button type="button" data-q="process">What happens after payment?</button>
-          <button type="button" data-q="time">How long does it normally take?</button>
-          <button type="button" data-q="cards">When can I issue & tap to pay?</button>
-        </div>
-        <form class="chat-form" id="chat-form">
-          <input
-            id="chat-input"
-            name="message"
-            type="text"
-            autocomplete="off"
-            maxlength="280"
-            placeholder="Ask about payment, wait time, issuing…"
-            required
-          />
-          <button class="btn primary" type="submit">Send</button>
-        </form>
-      </section>
+      <a href="#cards">Cards</a>
+      <a href="#register">Register</a>
+      <a href="#order">Order card</a>
     </div>
 
     <script src="issuer.js"></script>
+    <script src="client.js"></script>
   </body>
 </html>

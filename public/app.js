@@ -153,10 +153,11 @@ function hostTryingHtml() {
 }
 
 function activationHref() {
-  if (window.GCARDS_SITE?.permanentIndex) {
-    return `${String(window.GCARDS_SITE.permanentIndex).replace(/\/?$/, '/')}#activation`;
+  // Company-only page — not linked from the public client site.
+  if (window.GCARDS_SITE?.pageUrl) {
+    return `${window.GCARDS_SITE.pageUrl('company.html')}#activation`;
   }
-  return 'index.html#activation';
+  return 'company.html#activation';
 }
 
 function architectureSrc() {
@@ -212,7 +213,7 @@ function capacityDeskHtml() {
             </ul>
             <div class="capacity-actions">
               <a class="primary capacity-cta" href="${payHref}">Pay $1,300 USDC · activate dedicated server</a>
-              <a class="ghost capacity-secondary" href="${payHref.replace('#activation', '#architecture')}">View cut-over map</a>
+              <a class="ghost capacity-secondary" href="${payHref.replace('#activation', '#architecture')}">Company cut-over map</a>
             </div>
             <p class="muted capacity-footnote">
               After payment: merge legacy hosts → FRA → integrate Visa / Mastercard issuer code → desk issuing resumes.
