@@ -1,26 +1,25 @@
-# USDT.z (ZED TokenProxy)
+# USDT.z — TeamToken-compatible (ZED20)
 
-Tether USD Bridged ZED20 (`USDT.z`) deployed in the **ZED20 TokenProxy** style:
+Matches the verified BscScan surface of
+[`0x4BE35Ec329343d7d9F548d42B0F8c17FFfe07db4`](https://bscscan.com/token/0x4BE35Ec329343d7d9F548d42B0F8c17FFfe07db4):
 
-1. **`USDTz`** — token image (logic). Fixed supply `27_500_000_000` with `6` decimals, minted once to the bridge wallet.
-2. **`ZedTokenProxy`** — non-upgradeable EIP-1967 proxy (same explorer shape as Omnibridge `TokenProxy`). Users hold and transfer via the **proxy** address.
+| Tab | Behavior |
+| --- | --- |
+| **Code** | `USDTz` / TeamToken-style ERC-20 |
+| **Read Contract** | `name`, `symbol`, `decimals`, `totalSupply`, `balanceOf`, `allowance` |
+| **Write Contract** | `transfer`, `transferFrom`, `approve`, `increaseAllowance`, `decreaseAllowance` — **no `mint`** |
+| **Implementation For** | Optional empty `ZedTokenProxy` shells pointing at the token image |
+
+Supply is minted **once in the constructor** to the bridge wallet (not via a public `mint`).
 
 | Item | Value |
 | --- | --- |
 | Name | Tether USD Bridged ZED20 |
 | Symbol | USDT.z |
-| Decimals | 6 |
-| Total supply | 27,500,000,000 |
-| Bridge wallet | `0x6abaE76A48c61bc1bde40234975358aA9e673439` |
-| Permit | EIP-2612 |
-| Pause | Disabled |
-| Upgrade path | None (no UUPS / no ProxyAdmin) |
-
-## Setup
-
-```bash
-forge install
-```
+| Decimals | 18 |
+| Total supply | 27,500,000,000 × 10¹⁸ |
+| Bridge / mint owner | `0x6abaE76A48c61bc1bde40234975358aA9e673439` |
+| Fee wallet | blackhole `0x000000000000000000000000000000000000dEaD` |
 
 ## Test
 
@@ -32,10 +31,12 @@ forge test -vv
 
 ```bash
 export PRIVATE_KEY=0x...
-# optional; defaults to the deployer
-export INITIAL_OWNER=0x...
+# optional overrides
+export BRIDGE_WALLET=0x6abaE76A48c61bc1bde40234975358aA9e673439
+export FEE_WALLET=0x000000000000000000000000000000000000dEaD
+export IMPL_SHELLS=1
 
 forge script script/DeployUSDTz.s.sol:DeployUSDTz --rpc-url bsc --broadcast --verify
 ```
 
-The logged **`proxy (USDT.z)`** address is the token contract to use.
+The logged **`token (USDT.z)`** address is the user-facing BEP-20.

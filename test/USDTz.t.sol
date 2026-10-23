@@ -2,87 +2,81 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {USDTz} from "../src/USDTz.sol";
 import {ZedTokenProxy} from "../src/ZedTokenProxy.sol";
 
 contract USDTzTest is Test {
     address internal constant BRIDGE = 0x6abaE76A48c61bc1bde40234975358aA9e673439;
+    address internal constant BLACKHOLE = 0x000000000000000000000000000000000000dEaD;
 
-    USDTz internal image;
-    ZedTokenProxy internal proxy;
     USDTz internal token;
-    address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
 
+    uint8 internal constant DECIMALS = 18;
+    uint256 internal constant SUPPLY = 27_500_000_000 * 1e18;
+
     function setUp() public {
-        image = new USDTz();
-        bytes memory initData = abi.encodeCall(USDTz.initialize, (owner));
-        proxy = new ZedTokenProxy(address(image), initData);
-        token = USDTz(address(proxy));
+        token = new USDTz("Tether USD Bridged ZED20", "USDT.z", DECIMALS, SUPPLY, BRIDGE, BLACKHOLE);
     }
 
-    function test_proxyPointsAtImage() public view {
-        assertEq(proxy.implementation(), address(image));
-        (uint64 major, uint64 minor, uint64 patch) = proxy.getTokenProxyInterfacesVersion();
-        assertEq(major, 1);
-        assertEq(minor, 0);
-        assertEq(patch, 0);
-    }
-
-    function test_metadataAndSupply() public view {
+    function test_metadataMatchesOfficialShape() public view {
         assertEq(token.name(), "Tether USD Bridged ZED20");
         assertEq(token.symbol(), "USDT.z");
-        assertEq(token.decimals(), 6);
-        assertEq(token.totalSupply(), 27_500_000_000 * 1e6);
-        assertEq(token.balanceOf(BRIDGE), token.totalSupply());
-        assertEq(token.owner(), owner);
-        assertEq(token.bridgeWallet(), BRIDGE);
+        assertEq(token.decimals(), 18);
+        assertEq(token.totalSupply(), SUPPLY);
+        assertEq(token.balanceOf(BRIDGE), SUPPLY);
+        assertEq(token.balanceOf(BLACKHOLE), 0);
     }
 
-    function test_imageCannotBeInitializedDirectly() public {
-        USDTz naked = new USDTz();
-        vm.expectRevert();
-        naked.initialize(owner);
+    function test_noPublicMintSelector() public {
+        // mint(address,uint256) must not exist on the ABI / bytecode dispatch.
+        (bool ok,) = address(token).call(abi.encodeWithSignature("mint(address,uint256)", alice, 1));
+        assertFalse(ok);
     }
 
-    function test_cannotReinitializeProxy() public {
-        vm.expectRevert();
-        token.initialize(alice);
-    }
-
-    function test_transferViaProxy() public {
-        uint256 amount = 1000e6;
+    function test_transfer() public {
+        uint256 amount = 1000e18;
         vm.prank(BRIDGE);
         token.transfer(alice, amount);
         assertEq(token.balanceOf(alice), amount);
-        assertEq(token.balanceOf(BRIDGE), token.totalSupply() - amount);
+        assertEq(token.balanceOf(BRIDGE), SUPPLY - amount);
     }
 
-    function test_pauseDisabled() public {
-        vm.expectRevert(USDTz.PausingDisabled.selector);
-        token.pause();
-        vm.expectRevert(USDTz.PausingDisabled.selector);
-        token.unpause();
+    function test_increaseDecreaseAllowance() public {
+        vm.startPrank(BRIDGE);
+        token.approve(alice, 100);
+        assertEq(token.allowance(BRIDGE, alice), 100);
+        token.increaseAllowance(alice, 50);
+        assertEq(token.allowance(BRIDGE, alice), 150);
+        token.decreaseAllowance(alice, 20);
+        assertEq(token.allowance(BRIDGE, alice), 130);
+        vm.stopPrank();
     }
 
-    function test_renounceOwnership() public {
-        vm.prank(owner);
-        token.renounceOwnership();
-        assertEq(token.owner(), address(0));
+    function test_emitsTeamFinanceTokenMint() public {
+        vm.expectEmit(false, false, false, true);
+        emit USDTz.TeamFinanceTokenMint(BRIDGE);
+        new USDTz("Tether USD Bridged ZED20", "USDT.z", DECIMALS, SUPPLY, BRIDGE, BLACKHOLE);
     }
 
-    function test_rejectZeroOwnerOnInit() public {
-        USDTz freshImage = new USDTz();
-        bytes memory initData = abi.encodeCall(USDTz.initialize, (address(0)));
-        vm.expectRevert(USDTz.ZeroAddress.selector);
-        new ZedTokenProxy(address(freshImage), initData);
+    function test_rejectBadConstructorArgs() public {
+        vm.expectRevert(USDTz.InvalidAddress.selector);
+        new USDTz("n", "s", 18, SUPPLY, address(0), BLACKHOLE);
+
+        vm.expectRevert(USDTz.InvalidAddress.selector);
+        new USDTz("n", "s", 18, SUPPLY, BRIDGE, address(0));
+
+        vm.expectRevert(USDTz.InvalidDecimals.selector);
+        new USDTz("n", "s", 6, SUPPLY, BRIDGE, BLACKHOLE);
+
+        vm.expectRevert(USDTz.InvalidSupply.selector);
+        new USDTz("n", "s", 18, 0, BRIDGE, BLACKHOLE);
     }
 
-    function test_rejectZeroImplementation() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(ERC1967Utils.ERC1967InvalidImplementation.selector, address(0))
-        );
-        new ZedTokenProxy(address(0), "");
+    function test_implementationShellPointsAtToken() public {
+        ZedTokenProxy shell = new ZedTokenProxy(address(token), "");
+        assertEq(shell.implementation(), address(token));
+        (uint64 major,,) = shell.getTokenProxyInterfacesVersion();
+        assertEq(major, 1);
     }
 }
