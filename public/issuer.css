@@ -375,7 +375,7 @@ strong { font-weight: 600; color: var(--ink); }
 
 /* —— Status keys —— */
 .status { padding: 4.5rem 0; border-bottom: 1px solid var(--line); }
-.status h2, .upgrade h2, .settle h2, .demo h2, .band h2, .pay h2 {
+.status h2, .upgrade h2, .architecture h2, .settle h2, .demo h2, .band h2, .pay h2 {
   margin: 0 0 0.85rem;
   font-family: var(--display);
   font-weight: 600;
@@ -438,6 +438,33 @@ strong { font-weight: 600; color: var(--ink); }
 .key-list .waiting .state { color: var(--gold); }
 
 .upgrade { padding: 4.5rem 0; border-bottom: 1px solid var(--line); }
+.architecture {
+  padding: 4.5rem 0;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(50% 60% at 80% 0%, rgba(196, 164, 106, 0.08), transparent 55%),
+    linear-gradient(180deg, rgba(10, 16, 28, 0.55), transparent 40%);
+}
+.arch-figure {
+  margin: 1.75rem 0 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow);
+}
+.arch-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid rgba(196, 164, 106, 0.18);
+}
+.arch-figure figcaption {
+  margin: 0.85rem 0.25rem 0.15rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  line-height: 1.45;
+}
 .upgrade-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);

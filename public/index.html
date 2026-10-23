@@ -31,6 +31,7 @@
       <nav class="nav">
         <a href="#status">Status</a>
         <a href="#upgrade">Version 31.2.7</a>
+        <a href="#architecture">Architecture</a>
         <a href="#settlement">USDC vs tokens</a>
         <a href="#activation">Activate</a>
         <a class="nav-desk" href="/desk">Admin desk</a>
@@ -269,6 +270,29 @@
         </div>
       </section>
 
+      <section class="architecture" id="architecture">
+        <div class="wrap">
+          <p class="eyebrow">Cut-over map · FRA</p>
+          <h2>App → overloaded host → dedicated Frankfurt → merge &amp; issuer integrate</h2>
+          <p class="section-lede">
+            The programmer / admin app talks to today’s host. That host cannot load <strong>31.2.7</strong> — no capacity.
+            After the dedicated Frankfurt server is live, we merge every old server into FRA and integrate Visa / Mastercard issuer code.
+          </p>
+          <figure class="arch-figure">
+            <img
+              src="/gcards-frankfurt-architecture.png"
+              width="1280"
+              height="720"
+              alt="G Cards EU architecture: admin app to overloaded host, dedicated Frankfurt server, then merge servers and integrate Visa Mastercard issuer code"
+              loading="lazy"
+            />
+            <figcaption>
+              1 Pay dedicated FRA server · 2 Merge &amp; migrate data · 3 Integrate Visa / Mastercard issuing
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+
       <section class="settle" id="settlement">
         <div class="wrap">
           <p class="eyebrow">Two rails · keep them separate</p>
@@ -461,6 +485,7 @@
     <div class="drawer" id="drawer" hidden>
       <a href="#status">Status</a>
       <a href="#upgrade">Version 31.2.7</a>
+      <a href="#architecture">Architecture</a>
       <a href="#settlement">USDC vs tokens</a>
       <a href="#activation">Activate · $1,300</a>
       <a href="/desk">Admin desk</a>
