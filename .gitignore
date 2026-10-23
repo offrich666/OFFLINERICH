@@ -5,6 +5,7 @@ build/
 .env.local
 wallets.txt
 wallets.json
+wallets-evm.txt
 *.keys
 *.log
 .DS_Store

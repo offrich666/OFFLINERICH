@@ -1,74 +1,77 @@
-# Local Sol Trader
+# Personal multi-chain sniper (local)
 
-Personal, **local-only** Solana Jupiter trader for **your** machine.
+Fast **CLI** sniper for your own machine + optional Solana web dashboard.
 
-It will **not** accept private keys in the browser (no “instant import” paste UI). That pattern is how drain sites work. Bulk keys load from a **local file** only.
+Private keys stay in **local files**. There is **no** browser “upload private key” — that pattern drains wallets.
 
-## Features
+## Supported chains
 
-- Local dashboard on `http://127.0.0.1:3847`
-- Single key via `PRIVATE_KEY` and/or bulk via `WALLETS_FILE` (hundreds supported, default cap 500)
-- Select wallets → **burst buy** (parallel Jupiter swaps)
-- `DRY_RUN=true` by default + `MAX_BUY_SOL` per wallet
-- HTTP key-import endpoints return **403**
+| id | kind | buy via |
+| --- | --- | --- |
+| `solana` | Solana | Jupiter |
+| `ethereum` | EVM | LiFi |
+| `base` | EVM | LiFi |
+| `bsc` | EVM | LiFi |
+| `arbitrum` | EVM | LiFi |
+| `polygon` | EVM | LiFi |
+| `optimism` | EVM | LiFi |
+| `avalanche` | EVM | LiFi |
 
-## Honest speed limits
+```bash
+npm run chains
+```
 
-Parallel burst is a **race**, not an atomic lock on the pool. Other traders can still land between your transactions. Bundle engines typically allow only a **handful** of txs per bundle — not 300 atomic entries. A paid private RPC helps latency; nothing guarantees “nobody between” on a public memecoin launch.
+## Load wallets (local “upload”)
 
-## Setup
+```bash
+# merge keys from a file into your bank (disk only)
+npm run wallets:import -- --from ./incoming-keys.txt --to ./wallets.txt
+
+# EVM hex keys
+npm run wallets:import -- --from ./incoming-evm.txt --to ./wallets-evm.txt
+```
+
+One private key per line. `#` comments allowed. Files are gitignored.
+
+## Snipe (fast path)
+
+Dry-run quote (default):
+
+```bash
+# Solana
+npm run snipe -- --chain solana --token <MINT> --amount 0.05 --wallets ./wallets.txt
+
+# Base / BSC / ETH / …
+npm run snipe -- --chain base --token 0xToken --amount 0.02 --wallets ./wallets-evm.txt
+```
+
+Live send (real funds):
+
+```bash
+npm run snipe -- --chain base --token 0xToken --amount 0.02 --wallets ./wallets-evm.txt --live
+```
+
+Optional: `RPC_URL_BASE`, `RPC_URL_BSC`, `RPC_URL_SOLANA`, etc. in `.env`.
+
+## Dashboard (Solana UI)
 
 ```bash
 cp .env.example .env
-cp wallets.example.txt wallets.txt
-# Edit wallets.txt: one base58 secret per line (your burners)
-# Edit .env: WALLETS_FILE=./wallets.txt  DRY_RUN=true
-npm install
-npm run build:web
-npm start
+npm run build:web && npm start
 ```
 
-## Phone access (same Wi‑Fi)
+## Speed / “nobody between” reality
 
-1. On your PC: `HOST=0.0.0.0` (default) and `npm start`
-2. Terminal prints a **Phone** URL like `http://192.168.x.x:3847/?access=…`
-3. Phone must be on the **same Wi‑Fi** as the PC
-4. Open that exact URL (token required for API calls)
-
-Optional tunnel (when not on the same network), from the PC:
-
-```bash
-npx --yes cloudflared tunnel --url http://127.0.0.1:3847
-```
-
-Then open the printed `https://….trycloudflare.com/?access=YOUR_TOKEN` on your phone.
-
-Anyone with the URL + token can trigger trades — treat it like a password.
-
-## Burst buy
-
-1. Open the dashboard
-2. Select wallets
-3. Paste mint + SOL per wallet
-4. **Burst buy / quote** (dry-run first)
+Parallel multi-wallet fire is a **race**, not an atomic lock across 300 wallets. Other traders can still land between your txs. Use a private RPC for lower latency.
 
 ## Security
 
-1. Never paste secrets into a website
-2. `wallets.txt` and `.env` are gitignored
-3. Prefer burners with only risk capital
-4. Server binds to `127.0.0.1` only
-
-## Scripts
-
-| Script | Purpose |
-| --- | --- |
-| `npm start` | Run API + UI |
-| `npm run dev` | Reload server on change |
-| `npm run build:web` | Build static UI |
-| `npm test` | Unit tests |
-| `npm run typecheck` | TypeScript check |
+1. Never paste keys into a website
+2. Prefer burners
+3. Default CLI mode is dry-run until `--live`
+4. Phone/LAN access uses an access token (see dashboard docs in prior README sections)
 
 ## Disclaimer
 
-Meme trading is high risk. No profit guarantee. You own your keys, RPC choice, slippage, and losses.
+High risk. No profit guarantee. You own keys, RPCs, slippage, and losses.
+`

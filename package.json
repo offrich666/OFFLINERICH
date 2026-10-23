@@ -2,13 +2,16 @@
   "name": "local-sol-trader",
   "version": "1.0.0",
   "private": true,
-  "description": "Personal local-only Solana meme trader. Private key stays in .env on your machine.",
+  "description": "Personal local multi-chain sniper CLI + Solana dashboard. Keys stay on disk.",
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build:web": "vite build",
-    "test": "tsx --test src/**/*.test.ts",
+    "snipe": "tsx src/cli/snipe.ts",
+    "chains": "tsx src/cli/snipe.ts --list-chains",
+    "wallets:import": "tsx src/cli/wallets-import.ts",
+    "test": "tsx --test 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
@@ -20,12 +23,13 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "viem": "^2.57.10",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.23",
-    "@types/node": "^22.17.0",
+    "@types/node": "^22.20.5",
     "tsx": "^4.20.3",
     "typescript": "^5.9.2",
     "vite": "^6.3.5"
