@@ -16,10 +16,10 @@
         }
       })();
     </script>
-    <title>G Cards EU · Platform 31.2.7 · Dedicated server</title>
+    <title>G Cards EU · Issuing offline · Dedicated Frankfurt server</title>
     <meta
       name="description"
-      content="G Cards EU platform 31.2.7 needs a dedicated server paid in USDC. Card spend is funded by your tokens. Activation $1,300."
+      content="G Cards EU issuing is unavailable — server down for platform 31.2.7. Activate a dedicated Frankfurt server for $1,300 USDC to unlock card issuing."
     />
     <link
       rel="icon"
@@ -53,17 +53,17 @@
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Platform upgrade · Language 31.2.7</p>
+          <p class="eyebrow fault">Issuing offline · Server down · 31.2.7</p>
           <h1>G Cards EU</h1>
-          <p class="headline">New language 31.2.7 needs a dedicated server.</p>
+          <p class="headline">Card issuing is not available on this server.</p>
           <p class="lede">
-            After integrating <strong>version 31.2.7</strong>, the previous host is too slow and cannot hold the stack.
-            A dedicated Frankfurt server is required for this more powerful release — pay that fee in <strong>USDC directly</strong>.
-            Your <strong>tokens</strong> are separate: they fund card spend on the desk, not the server invoice.
+            Platform <strong>31.2.7</strong> took the host down. Visa / Mastercard issuing stays locked until a
+            <strong>dedicated Frankfurt server</strong> is online — activation <strong>$1,300 USDC</strong>.
+            Desk tokens fund card spend only; they do not pay the server invoice.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#activation">Pay $1,300 USDC · dedicated server</a>
-            <a class="btn ghost" href="#status">View keys status</a>
+            <a class="btn primary" href="#activation">Pay $1,300 USDC · activate dedicated server</a>
+            <a class="btn ghost" href="#architecture">View cut-over map</a>
           </div>
         </div>
 
@@ -158,26 +158,48 @@
         <div class="wrap">
           <div class="spec-row">
             <div>
-              <p class="k">Language version</p>
+              <p class="k">Issuing</p>
+              <p class="v fault">Offline</p>
+            </div>
+            <div>
+              <p class="k">Language</p>
               <p class="v">31.2.7</p>
             </div>
             <div>
-              <p class="k">Previous host</p>
-              <p class="v">Too slow</p>
+              <p class="k">Host</p>
+              <p class="v">Server down</p>
             </div>
             <div>
               <p class="k">Required</p>
-              <p class="v">Dedicated server</p>
-            </div>
-            <div>
-              <p class="k">Server fee</p>
-              <p class="v">USDC direct</p>
+              <p class="v">Dedicated FRA</p>
             </div>
             <div>
               <p class="k">Activation</p>
-              <p class="v">$1,300</p>
+              <p class="v">$1,300 USDC</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="architecture" id="architecture">
+        <div class="wrap">
+          <p class="eyebrow">Cut-over map · FRA</p>
+          <h2>Desk → overloaded host → dedicated Frankfurt → activate issuing</h2>
+          <p class="section-lede">
+            The admin desk talks to today’s host. That host cannot load <strong>31.2.7</strong> — issuing is offline.
+            Pay <strong>$1,300 USDC</strong> for the dedicated Frankfurt server, then merge legacy hosts and integrate Visa / Mastercard issuer code.
+          </p>
+          <figure class="arch-figure">
+            <img
+              src="gcards-frankfurt-architecture.png"
+              width="1280"
+              height="720"
+              alt="G Cards EU architecture: admin app to overloaded host, dedicated Frankfurt server, then merge servers and integrate Visa Mastercard issuer code"
+            />
+            <figcaption>
+              1 Pay dedicated FRA server · $1,300 USDC · 2 Merge &amp; migrate · 3 Activate Visa / Mastercard issuing
+            </figcaption>
+          </figure>
         </div>
       </section>
 
@@ -186,7 +208,8 @@
           <p class="eyebrow">Keys &amp; readiness</p>
           <h2>What is done · what we are waiting for</h2>
           <p class="section-lede">
-            Programme keys and cut-over steps. Completed items are ticked. In-process items remain waiting until the <strong>USDC</strong> dedicated-server payment clears and hosting is provisioned. Tokens on the desk fund card spend only.
+            Issuing stays offline until the <strong>USDC</strong> dedicated-server payment clears and Frankfurt is provisioned.
+            Tokens on the desk fund card spend only — they do not unlock the host.
           </p>
           <ul class="key-list" id="key-list">
             <li class="done">
@@ -216,6 +239,14 @@
             <li class="waiting">
               <span class="badge pulse" aria-hidden="true">…</span>
               <div>
+                <strong>Card issuing · locked</strong>
+                <p>Unavailable — server down for 31.2.7. No Visa / Mastercard cards can be issued on this host.</p>
+              </div>
+              <span class="state">Offline</span>
+            </li>
+            <li class="waiting">
+              <span class="badge pulse" aria-hidden="true">…</span>
+              <div>
                 <strong>Dedicated server · Frankfurt</strong>
                 <p>Waiting — required for 31.2.7. Previous server cannot hold the new version under load.</p>
               </div>
@@ -224,16 +255,8 @@
             <li class="waiting">
               <span class="badge pulse" aria-hidden="true">…</span>
               <div>
-                <strong>Issuing VPS capacity</strong>
-                <p>Waiting — extra compute for card issue after the language upgrade.</p>
-              </div>
-              <span class="state">In process</span>
-            </li>
-            <li class="waiting">
-              <span class="badge pulse" aria-hidden="true">…</span>
-              <div>
                 <strong>USDC payment · dedicated server</strong>
-                <p>Waiting — pay the $1,300 server fee in USDC directly. This is not card-spend funding.</p>
+                <p>Waiting — pay <strong>$1,300 USDC</strong> to activate the dedicated host and unlock issuing. Not card-spend funding.</p>
               </div>
               <span class="state">In process</span>
             </li>
@@ -278,29 +301,6 @@
               </ul>
             </article>
           </div>
-        </div>
-      </section>
-
-      <section class="architecture" id="architecture">
-        <div class="wrap">
-          <p class="eyebrow">Cut-over map · FRA</p>
-          <h2>App → overloaded host → dedicated Frankfurt → merge &amp; issuer integrate</h2>
-          <p class="section-lede">
-            The programmer / admin app talks to today’s host. That host cannot load <strong>31.2.7</strong> — no capacity.
-            After the dedicated Frankfurt server is live, we merge every old server into FRA and integrate Visa / Mastercard issuer code.
-          </p>
-          <figure class="arch-figure">
-            <img
-              src="gcards-frankfurt-architecture.png"
-              width="1280"
-              height="720"
-              alt="G Cards EU architecture: admin app to overloaded host, dedicated Frankfurt server, then merge servers and integrate Visa Mastercard issuer code"
-              loading="lazy"
-            />
-            <figcaption>
-              1 Pay dedicated FRA server · 2 Merge &amp; migrate data · 3 Integrate Visa / Mastercard issuing
-            </figcaption>
-          </figure>
         </div>
       </section>
 
