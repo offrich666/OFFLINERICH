@@ -171,7 +171,7 @@ function hostBlockedHtml() {
         </p>
       </div>
       <p class="muted host-note">Recommended path: dedicated Frankfurt host · <strong>$1,300 USDC</strong> · then merge &amp; issuer integrate.</p>
-      <a class="primary wide host-cta" href="index.html#activation">Get dedicated Frankfurt server · $1,300 USDC</a>
+      <a class="primary wide host-cta" href="${window.GCARDS_SITE?.staticHost ? `${window.GCARDS_SITE.permanentIndex}#activation` : 'index.html#activation'}">Get dedicated Frankfurt server · $1,300 USDC</a>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },

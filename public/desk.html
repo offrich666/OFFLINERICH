@@ -3,6 +3,15 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script>
+      (function () {
+        if (/githack\.com|github\.io|netlify\.app|pages\.dev|surge\.sh/i.test(location.hostname)) {
+          document.write(
+            '<base href="https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@gcards-eu-live/public/" />',
+          );
+        }
+      })();
+    </script>
     <title>G Cards EU · Admin desk</title>
     <link
       rel="icon"
