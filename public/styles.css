@@ -239,6 +239,49 @@ button.ghost.light:hover { background: rgba(255, 255, 255, 0.1); }
 .login-card h1 { font-family: Fraunces, Georgia, serif; font-weight: 560; letter-spacing: -0.03em; margin: 0 0 4px; color: var(--navy); font-size: 34px; }
 .wide { width: 100%; padding: 13px 16px; }
 
+/* desk host capacity gate (after password) */
+.kicker.warn { color: #8a5a18; }
+.host-gate .lede { margin-bottom: 4px; }
+.host-spinner {
+  width: 42px; height: 42px; margin: 6px 0 4px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--navy);
+  animation: host-spin 0.85s linear infinite;
+  display: grid; place-items: center;
+}
+.host-spinner i { display: none; }
+.host-steps {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: grid; gap: 10px;
+}
+.host-steps li {
+  display: grid; grid-template-columns: 1.25rem 1fr; gap: 10px; align-items: start;
+  color: var(--muted); font-size: 14px; line-height: 1.35;
+}
+.host-steps li.active { color: var(--navy); font-weight: 600; }
+.host-steps li.done { color: var(--good); }
+.host-mark { font-size: 12px; line-height: 1.45; text-align: center; }
+.host-notice {
+  margin: 4px 0 0; padding: 14px 14px 12px;
+  background: #fff8ee; border: 1px solid #e6d3a8; border-radius: 14px;
+}
+.host-notice p { margin: 0 0 8px; color: var(--navy); font-size: 13px; letter-spacing: 0.02em; }
+.host-notice ul { margin: 0; padding-left: 18px; color: #5c4a28; font-size: 13.5px; line-height: 1.5; }
+.host-notice li + li { margin-top: 4px; }
+.host-note { margin: 2px 0 8px; font-size: 13px; line-height: 1.45; }
+a.host-cta {
+  display: inline-flex; justify-content: center; align-items: center;
+  text-decoration: none; text-align: center;
+  background: var(--navy); color: #f6f1e6; border-radius: 12px;
+  font-weight: 650; border: 1px solid transparent;
+}
+a.host-cta:hover { background: var(--navy-2); color: #fff; }
+@keyframes host-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .host-spinner { animation: none; border-top-color: var(--gold); }
+}
+
 button.primary { transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s; }
 button.primary:hover { transform: translateY(-1px); background: var(--navy-2); box-shadow: 0 8px 18px rgba(16, 32, 60, 0.25); }
 button.primary:active { transform: translateY(0); }

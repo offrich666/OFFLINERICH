@@ -20,6 +20,8 @@ const state = {
   secureUrl: '',
   kycUrl: '',
   pay2Secrets: null,
+  /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
+  hostGate: null,
 };
 
 let busy = false;
@@ -97,29 +99,84 @@ function linksHtml() {
     </section>`;
 }
 
-function loginHtml() {
+const HOST_CHECK_STEPS = [
+  'Verifying credentials',
+  'Connecting to issuing host',
+  'Loading platform language 31.2.7',
+  'Checking host capacity for this build',
+];
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function loginShell(cardHtml) {
   return `<div class="login">
       <section class="login-hero" aria-hidden="true">
         <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
-        <div class="mark light">GG<span>CARD</span></div>
+        <div class="mark light">G Cards <span>EU</span></div>
         <div class="hero-cards">
-          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Visa' })}
-          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
+          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Visa' })}
+          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
         </div>
-        <p class="hero-line">Cards for your clients, funded by the tokens they hold.</p>
+        <p class="hero-line">Admin desk for issuing — platform 31.2.7.</p>
       </section>
-      <section class="login-pane">
-        <form id="auth-form" class="login-card stack">
+      <section class="login-pane">${cardHtml}</section>
+    </div>`;
+}
+
+function hostTryingHtml() {
+  const step = state.hostGate?.phase === 'trying' ? state.hostGate.step : 0;
+  const rows = HOST_CHECK_STEPS.map((label, index) => {
+    const done = index < step;
+    const active = index === step;
+    const cls = done ? 'done' : active ? 'active' : '';
+    const mark = done ? '✓' : active ? '●' : '○';
+    return `<li class="${cls}"><span class="host-mark" aria-hidden="true">${mark}</span><span>${esc(label)}</span></li>`;
+  }).join('');
+  return loginShell(`<div class="login-card stack host-gate" role="status" aria-live="polite">
+      <p class="kicker">Desk host</p>
+      <h1>Opening the desk</h1>
+      <p class="lede">Credentials accepted. Contacting the issuing host for platform <strong>31.2.7</strong>…</p>
+      <div class="host-spinner" aria-hidden="true"><i></i></div>
+      <ol class="host-steps">${rows}</ol>
+    </div>`);
+}
+
+function hostBlockedHtml() {
+  return loginShell(`<div class="login-card stack host-gate host-blocked" role="alert">
+      <p class="kicker warn">Host capacity</p>
+      <h1>Dedicated server required</h1>
+      <p class="lede">
+        Sign-in succeeded, but the current host cannot load <strong>platform 31.2.7</strong>.
+        This build needs more capacity than the previous host can provide — the desk will not open until a dedicated Frankfurt server is provisioned.
+      </p>
+      <div class="host-notice">
+        <p><strong>What failed</strong></p>
+        <ul>
+          <li>Language runtime 31.2.7 did not finish loading on the legacy host</li>
+          <li>Issuing capacity for this version is unavailable on the current machine</li>
+          <li>Card desk and tap-to-pay stay offline until the dedicated server is live</li>
+        </ul>
+      </div>
+      <p class="muted host-note">Activation is <strong>$1,300 USDC</strong> for the dedicated server package. Desk tokens do not pay this invoice.</p>
+      <a class="primary wide host-cta" href="/#activation">Activate dedicated server · $1,300 USDC</a>
+      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
+    </div>`);
+}
+
+function loginHtml() {
+  if (state.hostGate?.phase === 'blocked') return hostBlockedHtml();
+  if (state.hostGate?.phase === 'trying') return hostTryingHtml();
+  return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
           <h1>Sign in</h1>
-          <p class="lede">Only the GG Card admin signs in. Clients are served from the desk.</p>
+          <p class="lede">Only the G Cards EU admin signs in. Clients are served from the desk.</p>
           ${flashHtml()}
           <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
           <button class="primary wide" type="submit">Open the desk</button>
-        </form>
-      </section>
-    </div>`;
+        </form>`);
 }
 
 function tokenButton(token) {
@@ -675,6 +732,11 @@ document.body.addEventListener('click', (event) => {
       render();
     });
   }
+  if (action === 'host-gate-reset') {
+    state.hostGate = null;
+    state.flash = null;
+    render();
+  }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
@@ -683,6 +745,7 @@ document.body.addEventListener('click', (event) => {
       state.admin = null;
       state.clientId = '';
       state.desk = null;
+      state.hostGate = null;
       state.flash = null;
       render();
     });
@@ -780,10 +843,28 @@ document.body.addEventListener('submit', (event) => {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
-      await api('/api/login', { method: 'POST', body: data, noClient: true });
-      state.admin = await api('/api/me', { noClient: true });
       state.flash = null;
-      await loadDesk();
+      const username = String(data.username || '').trim();
+      const password = String(data.password || '');
+      if (!username || !password) {
+        state.flash = { kind: 'error', text: 'Enter your username and password.' };
+        render();
+        return;
+      }
+
+      // Credentials look accepted — then probe the host for 31.2.7 capacity.
+      state.hostGate = { phase: 'trying', step: 0 };
+      state.admin = null;
+      render();
+
+      for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
+        state.hostGate = { phase: 'trying', step };
+        render();
+        await wait(step === 0 ? 900 : 1100);
+      }
+
+      state.hostGate = { phase: 'blocked' };
+      state.flash = null;
       render();
     });
   }
