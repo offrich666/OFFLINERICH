@@ -14,7 +14,7 @@
    * Pin to commit SHA so CDN cache cannot serve a stale page.
    * Works on iPhone Wi‑Fi and cellular — not a temporary tunnel.
    */
-  const LIVE_SHA = '88f16e3a480eae0d2fdf7b4bb3c3ac22972b6863';
+  const LIVE_SHA = '3bcaaddd3cfb62f8c6033c68dbdf502b7b5d8350';
   const PERMANENT_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   const PERMANENT_ASSETS =
