@@ -4,6 +4,10 @@ Fast **CLI** sniper for your own machine + optional Solana web dashboard.
 
 Private keys stay in **local files**. There is **no** browser “upload private key” — that pattern drains wallets.
 
+## Windows
+
+See **[WINDOWS.md](./WINDOWS.md)** and double-click helpers in `scripts\windows\` (`setup.cmd`, `snipe-solana-dry.cmd`, …).
+
 ## Supported chains
 
 | id | kind | buy via |
