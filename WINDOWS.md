@@ -2,17 +2,42 @@
 
 Same npm commands work in **Command Prompt** or **PowerShell**. Double-click helpers live in `scripts\windows\`.
 
+## Fix: PowerShell error from `C:\Users\Dell`
+
+If you see `The module 'scripts' could not be loaded`, you are **not inside the project folder**.
+
+```powershell
+# 1) Go to the repo (clone first if you do not have it)
+cd $HOME
+git clone https://github.com/offrich666/OFFLINERICH.git
+cd OFFLINERICH
+
+# If you already cloned it somewhere else:
+# cd path\to\OFFLINERICH
+
+# 2) PowerShell needs .\ before .cmd files
+.\scripts\windows\setup.cmd
+```
+
+Or skip the terminal: open File Explorer → go into the `OFFLINERICH` folder → `scripts` → `windows` → double-click `setup.cmd`.
+
 ## 0) Install once
 
 1. Install **Node.js LTS**: https://nodejs.org  
-2. Install **Git** (optional): https://git-scm.com  
-3. Open the project folder (clone or download this repo)
+2. Install **Git**: https://git-scm.com  
+3. Clone this repo, then open that folder (not `C:\Users\Dell`)
 
 ## 1) One-click setup
 
-In File Explorer open:
+In File Explorer open the **project** folder, then:
 
 `scripts\windows\setup.cmd`
+
+Or from PowerShell **inside the repo**:
+
+```powershell
+.\scripts\windows\setup.cmd
+```
 
 That will:
 - create `.env`, `wallets.txt`, `wallets-evm.txt` if missing
