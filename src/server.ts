@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,22 +13,38 @@ import { assertAnyWalletSource, loadConfig } from "./config.ts";
 import { buyWithSol, sellTokenForSol } from "./jupiter.ts";
 import { lanIPv4Addresses } from "./netInfo.ts";
 import { listLogs, pushLog } from "./tradeLog.ts";
-import { getSolBalance, truncateAddress } from "./wallet.ts";
+import { getSolBalance, keypairFromSecret, truncateAddress } from "./wallet.ts";
+import {
+  appendSecretsToFile,
+  parseSecretLines,
+} from "./wallets/universal.ts";
 import { mergePrimaryAndFile, type LoadedWallet } from "./walletsFile.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const cfg = loadConfig();
 assertAnyWalletSource(cfg);
 
-const walletBank: LoadedWallet[] = mergePrimaryAndFile({
-  privateKey: cfg.PRIVATE_KEY,
-  walletsFile: cfg.WALLETS_FILE,
-  maxWallets: cfg.MAX_WALLETS,
-});
-
-if (walletBank.length === 0) {
-  throw new Error("No wallets loaded. Check PRIVATE_KEY / WALLETS_FILE.");
+const walletsPath = cfg.WALLETS_FILE.trim() || "./wallets.txt";
+if (!fs.existsSync(path.resolve(walletsPath))) {
+  fs.writeFileSync(
+    path.resolve(walletsPath),
+    "# Personal wallets — keep on this PC only\n",
+    "utf8"
+  );
 }
+
+let walletBank: LoadedWallet[] = [];
+
+function reloadWalletBank(): LoadedWallet[] {
+  walletBank = mergePrimaryAndFile({
+    privateKey: cfg.PRIVATE_KEY,
+    walletsFile: walletsPath,
+    maxWallets: cfg.MAX_WALLETS,
+  });
+  return walletBank;
+}
+
+reloadWalletBank();
 
 const app = express();
 app.use(cors({ origin: true }));
@@ -59,17 +76,87 @@ app.use((req, res, next) => {
   });
 });
 
-// Hard rule: this API never accepts private keys from the browser.
+/**
+ * Personal local add: paste key(s) in the app UI → append to wallets.txt on THIS PC.
+ * Requires ACCESS_TOKEN when the server is bound for network/phone access.
+ * Never returns the secret back to the client.
+ */
+app.post("/api/wallets/add", (req, res) => {
+  try {
+    const text = String(req.body?.secret ?? req.body?.secrets ?? "").trim();
+    if (!text) throw new Error("Paste at least one private key");
+
+    const secrets = parseSecretLines(text);
+    if (!secrets.length) throw new Error("No private keys found in paste");
+    if (secrets.length > 50) {
+      throw new Error("Max 50 keys per paste — split into smaller batches");
+    }
+
+    const isEvm = (s: string) =>
+      /^0x[0-9a-fA-F]{64}$/.test(s) || /^[0-9a-fA-F]{64}$/.test(s);
+
+    const solSecrets = secrets.filter((s) => !isEvm(s));
+    const evmSecrets = secrets.filter((s) => isEvm(s));
+
+    const addresses: string[] = [];
+    for (const secret of solSecrets) {
+      const kp = keypairFromSecret(secret);
+      addresses.push(kp.publicKey.toBase58());
+    }
+
+    let added = 0;
+    let file = path.resolve(walletsPath);
+    if (solSecrets.length) {
+      const saved = appendSecretsToFile({ secrets: solSecrets, to: walletsPath });
+      added += saved.added;
+      file = saved.to;
+    }
+    if (evmSecrets.length) {
+      const evmPath = "./wallets-evm.txt";
+      const saved = appendSecretsToFile({ secrets: evmSecrets, to: evmPath });
+      added += saved.added;
+      // EVM addresses not loaded into Solana bank — note for user
+      addresses.push(...evmSecrets.map(() => "(evm-key)"));
+      file = `${file} + ${path.resolve(evmPath)}`;
+    }
+
+    const bank = reloadWalletBank();
+    pushLog({
+      action: "quote",
+      mint: "-",
+      dryRun: true,
+      ok: true,
+      detail: `added ${added} key(s); solana bank=${bank.length}`,
+    });
+
+    res.json({
+      added,
+      total: bank.length,
+      solanaAdded: solSecrets.length,
+      evmAdded: evmSecrets.length,
+      file,
+      addresses: addresses.map((a) =>
+        a === "(evm-key)" ? a : truncateAddress(a)
+      ),
+      note:
+        "Saved on this PC only. Secret is not echoed back. Dashboard trading uses Solana keys; EVM keys are for npm run snipe.",
+    });
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+// Old phishing-style bulk cloud import names stay refused.
 app.post("/api/import-key", (_req, res) => {
   res.status(403).json({
-    error:
-      "Refused. Bulk private keys are not accepted over HTTP. Put keys in a local WALLETS_FILE (one per line). Browser “instant import” UIs are a common drain vector.",
+    error: "Use POST /api/wallets/add from the local app UI (with access token).",
   });
 });
 app.post("/api/import-keys", (_req, res) => {
   res.status(403).json({
-    error:
-      "Refused. Use local WALLETS_FILE on disk only — never paste hundreds of keys into a webpage.",
+    error: "Use POST /api/wallets/add from the local app UI (with access token).",
   });
 });
 
@@ -157,15 +244,28 @@ app.get("/api/wallets", async (_req, res) => {
 /** Back-compat single-wallet summary (wallet 0). */
 app.get("/api/wallet", async (_req, res) => {
   try {
-    const w = walletBank[0]!;
+    const w = walletBank[0];
     const conn = connection();
-    const balance = await getSolBalance(conn, w.keypair.publicKey);
     let slot: number | null = null;
     try {
       slot = await conn.getSlot("confirmed");
     } catch {
       slot = null;
     }
+    if (!w) {
+      res.json({
+        publicKey: null,
+        truncated: "—",
+        balanceSol: 0,
+        dryRun: cfg.DRY_RUN,
+        maxBuySol: cfg.MAX_BUY_SOL,
+        loadedWallets: 0,
+        rpcConnected: slot !== null,
+        slot,
+      });
+      return;
+    }
+    const balance = await getSolBalance(conn, w.keypair.publicKey);
     res.json({
       publicKey: w.publicKey,
       truncated: truncateAddress(w.publicKey),

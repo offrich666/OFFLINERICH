@@ -58,10 +58,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 }
 
 export function assertAnyWalletSource(cfg: AppConfig): void {
+  // Empty bank is OK — personal UI can add keys later into WALLETS_FILE.
   if (!cfg.PRIVATE_KEY.trim() && !cfg.WALLETS_FILE.trim()) {
-    throw new Error(
-      "Set PRIVATE_KEY and/or WALLETS_FILE in local .env. Keys are never accepted over HTTP."
-    );
+    // default path used by server if unset
+    return;
   }
 }
 

@@ -47,6 +47,17 @@ cd C:\Users\Dell\Downloads\OFFLINERICH-cursor-personal-solana-trader-2789\OFFLIN
 2. Get the project via **ZIP** (above) or install **Git**: https://git-scm.com  
 3. Work inside that project folder — not bare `C:\Users\Dell`
 
+## Easy app: paste private key in the browser (on your PC)
+
+After install, double-click:
+
+`scripts\windows\start-app.cmd`
+
+It cleans a broken install, runs `npm.cmd install`, builds the UI, and starts the app.  
+Open the printed `http://127.0.0.1:3847/?access=…` link → **Add wallet** → paste your key → **Add to app**.
+
+If `tsx` / `EPERM` errors happened before, `start-app.cmd` is the fix (deletes `node_modules` and reinstalls).
+
 ## 1) One-click setup
 
 In File Explorer open the **project** folder, then:

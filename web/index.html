@@ -31,18 +31,25 @@
 
     <main class="grid">
       <section class="panel warn-panel">
-        <h2>Bulk wallets (local file)</h2>
-        <p>
-          Put up to hundreds of secrets in a local <code>wallets.txt</code>
-          (one base58 key per line) and set <code>WALLETS_FILE=./wallets.txt</code>
-          in <code>.env</code>. This UI will <strong>never</strong> accept pasted
-          private keys — that pattern is how drain sites work.
-        </p>
+        <h2>Add wallet (private key)</h2>
         <p class="muted">
-          Parallel burst fires many buys at once. It is a <em>race</em>, not an
-          atomic lock: other traders can still land between your txs. Jito-style
-          bundles only cover a handful of transactions, not 300.
+          Personal app on <strong>your PC</strong>. Keys are saved into local
+          <code>wallets.txt</code> only — not uploaded to any cloud.
         </p>
+        <label>
+          Paste Solana private key(s) — one per line
+          <textarea
+            id="secretPaste"
+            rows="4"
+            spellcheck="false"
+            placeholder="Paste base58 Phantom private key here…"
+          ></textarea>
+        </label>
+        <div class="actions">
+          <button id="addWalletBtn" type="button" class="primary">Add to app</button>
+        </div>
+        <p id="addWalletMsg" class="muted" hidden></p>
+        <p id="addWalletError" class="error" hidden></p>
       </section>
 
       <section class="panel">

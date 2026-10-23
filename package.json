@@ -5,14 +5,14 @@
   "description": "Personal local multi-chain sniper CLI + Solana dashboard. Keys stay on disk.",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
-    "build:web": "vite build",
-    "snipe": "tsx src/cli/snipe.ts",
-    "chains": "tsx src/cli/snipe.ts --list-chains",
-    "wallets:import": "tsx src/cli/wallets-import.ts",
-    "test": "tsx --test 'src/**/*.test.ts'",
-    "typecheck": "tsc --noEmit"
+    "dev": "npx --no-install tsx watch src/server.ts",
+    "start": "npx --no-install tsx src/server.ts",
+    "build:web": "npx --no-install vite build",
+    "snipe": "npx --no-install tsx src/cli/snipe.ts",
+    "chains": "npx --no-install tsx src/cli/snipe.ts --list-chains",
+    "wallets:import": "npx --no-install tsx src/cli/wallets-import.ts",
+    "test": "npx --no-install tsx --test \"src/**/*.test.ts\"",
+    "typecheck": "npx --no-install tsc --noEmit"
   },
   "engines": {
     "node": ">=20"
@@ -23,6 +23,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
+    "tsx": "^4.20.3",
     "viem": "^2.57.10",
     "zod": "^3.25.76"
   },
@@ -30,7 +31,6 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.23",
     "@types/node": "^22.20.5",
-    "tsx": "^4.20.3",
     "typescript": "^5.9.2",
     "vite": "^6.3.5"
   }

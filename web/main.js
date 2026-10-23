@@ -31,8 +31,41 @@ async function api(path, options) {
 }
 
 function setBusy(busy) {
-  for (const id of ["burstBtn", "buyBtn", "sellBtn", "refreshBtn", "selectAllBtn", "selectNoneBtn"]) {
-    $(id).disabled = busy;
+  for (const id of [
+    "burstBtn",
+    "buyBtn",
+    "sellBtn",
+    "refreshBtn",
+    "selectAllBtn",
+    "selectNoneBtn",
+    "addWalletBtn",
+  ]) {
+    const el = $(id);
+    if (el) el.disabled = busy;
+  }
+}
+
+async function addWallet() {
+  $("addWalletError").hidden = true;
+  $("addWalletMsg").hidden = true;
+  setBusy(true);
+  try {
+    const secret = $("secretPaste").value;
+    const result = await api("/api/wallets/add", {
+      method: "POST",
+      body: JSON.stringify({ secret }),
+    });
+    $("secretPaste").value = "";
+    $("addWalletMsg").hidden = false;
+    $("addWalletMsg").textContent = `Added ${result.added}. Total wallets: ${result.total}. Addresses: ${result.addresses.join(", ")}`;
+    selected.clear();
+    await refreshWallets();
+    await refreshLogs();
+  } catch (err) {
+    $("addWalletError").hidden = false;
+    $("addWalletError").textContent = err.message;
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -214,6 +247,7 @@ $("selectNoneBtn").addEventListener("click", async () => {
 $("burstBtn").addEventListener("click", burstBuy);
 $("buyBtn").addEventListener("click", buy);
 $("sellBtn").addEventListener("click", sell);
+$("addWalletBtn").addEventListener("click", addWallet);
 
 refreshWallets();
 refreshLogs();

@@ -33,10 +33,10 @@ test("explicit ACCESS_TOKEN is kept", () => {
   assert.equal(cfg.tokenGenerated, false);
 });
 
-test("assertAnyWalletSource rejects empty sources", () => {
+test("assertAnyWalletSource allows empty bank for personal UI add", () => {
   const cfg = loadConfig({
     RPC_URL: "https://api.mainnet-beta.solana.com",
     HOST: "127.0.0.1",
   } as NodeJS.ProcessEnv);
-  assert.throws(() => assertAnyWalletSource(cfg), /PRIVATE_KEY|WALLETS_FILE/);
+  assert.doesNotThrow(() => assertAnyWalletSource(cfg));
 });

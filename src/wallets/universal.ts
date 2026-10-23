@@ -109,25 +109,41 @@ export function loadEvmWallets(filePath: string, max = 500): EvmWallet[] {
 
 /**
  * Append secrets from an input file into an output wallets file (local disk only).
- * This is the personal “upload” path — never HTTP.
  */
 export function importWalletsToFile(opts: {
   from: string;
   to: string;
 }): { added: number; total: number; to: string } {
   const incoming = readSecrets(opts.from);
+  return appendSecretsToFile({ secrets: incoming, to: opts.to });
+}
+
+/** Append one or more secrets (already parsed) into a local wallets file. */
+export function appendSecretsToFile(opts: {
+  secrets: string[];
+  to: string;
+}): { added: number; total: number; to: string } {
   const absTo = path.resolve(opts.to);
   const existing = fs.existsSync(absTo) ? readSecrets(absTo) : [];
   const set = new Set(existing.map((s) => s.trim()));
   let added = 0;
-  for (const s of incoming) {
+  for (const raw of opts.secrets) {
+    const s = raw.trim();
+    if (!s || s.startsWith("#")) continue;
     if (set.has(s)) continue;
     set.add(s);
     existing.push(s);
     added++;
   }
   const header =
-    "# Personal wallets file — NEVER commit or upload to a website\n";
+    "# Personal wallets file — keep on this PC only\n";
   fs.writeFileSync(absTo, header + existing.join("\n") + "\n", "utf8");
   return { added, total: existing.length, to: absTo };
+}
+
+export function parseSecretLines(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#"));
 }
