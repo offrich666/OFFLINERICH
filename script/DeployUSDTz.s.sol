@@ -14,8 +14,10 @@ contract DeployUSDTz is Script {
 
     function run() external returns (USDTz token, address[] memory shells) {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
-        address bridge = vm.envOr("BRIDGE_WALLET", USDTz.BRIDGE_WALLET);
-        address feeWallet = vm.envOr("FEE_WALLET", USDTz.BLACKHOLE);
+        address bridge =
+            vm.envOr("BRIDGE_WALLET", address(0x6abaE76A48c61bc1bde40234975358aA9e673439));
+        address feeWallet =
+            vm.envOr("FEE_WALLET", address(0x000000000000000000000000000000000000dEaD));
         uint256 shellCount = vm.envOr("IMPL_SHELLS", uint256(1));
 
         uint256 supply = TOTAL_SUPPLY_HUMAN * (10 ** uint256(DECIMALS));
