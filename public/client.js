@@ -96,7 +96,7 @@
       if (order && session?.email) {
         orderDone.hidden = false;
         if (orderForm) orderForm.hidden = true;
-        orderDoneCopy.textContent = `${order.cardBrandLabel} for ${order.firstName} ${order.lastName} · ${session.email}. We will process the order and notify you when the card is ready.`;
+        orderDoneCopy.textContent = `${order.cardBrandLabel} for ${order.firstName} ${order.lastName} · ${session.email}. We will process the request and notify you when the card is ready.`;
       } else {
         orderDone.hidden = true;
       }
@@ -143,7 +143,7 @@
         rememberLocalAccount(email);
         writeSession({ email, local: true });
       }
-      showFlash(authFlash, 'Account created. You can order a card below.', 'ok');
+      showFlash(authFlash, 'Account created. You can request a card below.', 'ok');
       paintSession();
       document.getElementById('order')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
@@ -204,7 +204,7 @@
       line1: String(data.line1 || '').trim(),
       at: Date.now(),
     });
-    showFlash(orderFlash, 'Order received.', 'ok');
+    showFlash(orderFlash, 'Request received.', 'ok');
     paintSession();
   });
 

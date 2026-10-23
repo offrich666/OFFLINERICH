@@ -18,7 +18,7 @@
     <title>G Cards EU · Cards</title>
     <meta
       name="description"
-      content="G Cards EU prepaid cards. Register, then order your Visa or Mastercard."
+      content="G Cards EU cards. Register, then request your Visa or Mastercard."
     />
     <link
       rel="icon"
@@ -42,7 +42,6 @@
       <nav class="nav">
         <a href="#cards">Cards</a>
         <a href="#register">Register</a>
-        <a href="#order">Order card</a>
       </nav>
       <button class="menu" type="button" aria-label="Open menu" data-menu>Menu</button>
     </header>
@@ -50,12 +49,11 @@
     <main>
       <section class="hero client-hero">
         <div class="hero-copy">
-          <p class="eyebrow">Prepaid cards</p>
+          <p class="eyebrow">Your cards</p>
           <h1>G Cards EU</h1>
-          <p class="headline">Choose a card. Register. Order.</p>
+          <p class="headline">See the cards. Register to continue.</p>
           <p class="lede">
-            See the cards we offer, create your account, then place an order.
-            Your card details stay in your account after the order is processed.
+            Browse Visa, Mastercard, and metal cards. Create your account, then request a card from your profile.
           </p>
           <div class="cta-row">
             <a class="btn primary" href="#register">Register</a>
@@ -151,9 +149,9 @@
 
       <section class="cards-offer" id="cards">
         <div class="wrap">
-          <p class="eyebrow">What you can order</p>
+          <p class="eyebrow">Catalogue</p>
           <h2>Cards available</h2>
-          <p class="section-lede">Pick the network that fits how you spend. Register first, then order.</p>
+          <p class="section-lede">Pick the network that fits how you spend. Register first, then request a card.</p>
           <div class="offer-grid">
             <article class="offer">
               <p class="offer-brand">Visa</p>
@@ -181,7 +179,7 @@
             <h2>Register</h2>
             <p class="section-lede">
               Create your G Cards EU account with email and password.
-              After register you can order a card on this page.
+              After register you can request a card on this page.
             </p>
           </div>
           <div class="portal-card" id="auth-panel">
@@ -209,13 +207,13 @@
         <div class="wrap portal-grid">
           <div>
             <p class="eyebrow">Next step</p>
-            <h2>Order your card</h2>
+            <h2>Request your card</h2>
             <p class="section-lede">
-              Available after you register. Choose a card type and send your order details.
+              Available after you register. Choose a card type and send your details — no payment on this page.
             </p>
           </div>
           <div class="portal-card" id="order-panel">
-            <p class="portal-lock" id="order-lock">Register or sign in above to order a card.</p>
+            <p class="portal-lock" id="order-lock">Register or sign in above to request a card.</p>
             <p class="portal-flash" id="order-flash" hidden></p>
             <form id="order-form" class="stack portal-form" hidden>
               <label>Card
@@ -232,11 +230,11 @@
               <label>City <input name="city" autocomplete="address-level2" required /></label>
               <label>Address <input name="line1" autocomplete="address-line1" required /></label>
               <label class="check"><input type="checkbox" name="acceptedTerms" required /> <span>I accept the cardholder terms and I am the person named on the card.</span></label>
-              <button class="btn primary wide" type="submit">Order card</button>
+              <button class="btn primary wide" type="submit">Request card</button>
             </form>
             <div id="order-done" class="order-done" hidden>
-              <p class="eyebrow">Order received</p>
-              <h3>Your card order is in</h3>
+              <p class="eyebrow">Request received</p>
+              <h3>Your card request is in</h3>
               <p id="order-done-copy" class="section-lede"></p>
             </div>
           </div>
@@ -247,14 +245,13 @@
     <footer class="foot">
       <div class="wrap foot-in">
         <div class="mark">G Cards <span>EU</span></div>
-        <p>Register · order a card · manage spend in your account.</p>
+        <p>Register · request a card · manage your account.</p>
       </div>
     </footer>
 
     <div class="drawer" id="drawer" hidden>
       <a href="#cards">Cards</a>
       <a href="#register">Register</a>
-      <a href="#order">Order card</a>
     </div>
 
     <script src="issuer.js"></script>
