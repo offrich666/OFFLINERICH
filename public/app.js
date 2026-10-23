@@ -100,18 +100,22 @@ function linksHtml() {
 }
 
 const HOST_CHECK_STEPS = [
-  'Verifying credentials',
-  'Connecting to issuing host',
-  'Loading platform language 31.2.7',
-  'Checking host capacity for this build',
+  'Loading',
+  'Contacting version kernel',
+  'Trying to mount platform 31.2.7',
+  'Requesting desk session from host',
 ];
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function loginShell(cardHtml) {
-  return `<div class="login">
+function loginShell(cardHtml, { shimmer = false, fault = false } = {}) {
+  const cls = ['login'];
+  if (shimmer) cls.push('is-shimmering');
+  if (fault) cls.push('is-fault');
+  return `<div class="${cls.join(' ')}">
+      <div class="login-shimmer" aria-hidden="true"></div>
       <section class="login-hero" aria-hidden="true">
         <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
         <div class="mark light">G Cards <span>EU</span></div>
@@ -127,42 +131,51 @@ function loginShell(cardHtml) {
 
 function hostTryingHtml() {
   const step = state.hostGate?.phase === 'trying' ? state.hostGate.step : 0;
+  const current = HOST_CHECK_STEPS[step] || HOST_CHECK_STEPS[0];
   const rows = HOST_CHECK_STEPS.map((label, index) => {
     const done = index < step;
     const active = index === step;
     const cls = done ? 'done' : active ? 'active' : '';
     const mark = done ? '✓' : active ? '●' : '○';
-    return `<li class="${cls}"><span class="host-mark" aria-hidden="true">${mark}</span><span>${esc(label)}</span></li>`;
+    return `<li class="${cls}"><span class="host-mark" aria-hidden="true">${mark}</span><span>${esc(label)}${active ? '…' : ''}</span></li>`;
   }).join('');
-  return loginShell(`<div class="login-card stack host-gate" role="status" aria-live="polite">
-      <p class="kicker">Desk host</p>
-      <h1>Opening the desk</h1>
-      <p class="lede">Credentials accepted. Contacting the issuing host for platform <strong>31.2.7</strong>…</p>
+  return loginShell(
+    `<div class="login-card stack host-gate" role="status" aria-live="polite">
+      <p class="kicker">Desk bootstrap</p>
+      <h1>Loading</h1>
+      <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-    </div>`);
+      <p class="muted host-note">Contacting version kernel for platform <strong>31.2.7</strong>. Please wait.</p>
+    </div>`,
+    { shimmer: true },
+  );
 }
 
 function hostBlockedHtml() {
-  return loginShell(`<div class="login-card stack host-gate host-blocked" role="alert">
-      <p class="kicker warn">Host capacity</p>
-      <h1>Dedicated server required</h1>
+  return loginShell(
+    `<div class="login-card stack host-gate host-fault" role="alert">
+      <p class="kicker fault">HTTP 404 · Server down</p>
+      <p class="fault-code" aria-hidden="true">404</p>
+      <h1>Server unavailable</h1>
       <p class="lede">
-        Sign-in succeeded, but the current host cannot load <strong>platform 31.2.7</strong>.
-        This build needs more capacity than the previous host can provide — the desk will not open until a dedicated Frankfurt server is provisioned.
+        The desk host went down while loading <strong>platform 31.2.7</strong>.
+        The version kernel could not finish — this build is too heavy for the current machine.
       </p>
-      <div class="host-notice">
-        <p><strong>What failed</strong></p>
-        <ul>
-          <li>Language runtime 31.2.7 did not finish loading on the legacy host</li>
-          <li>Issuing capacity for this version is unavailable on the current machine</li>
-          <li>Card desk and tap-to-pay stay offline until the dedicated server is live</li>
-        </ul>
+      <div class="host-notice fault">
+        <p><strong>Reason</strong></p>
+        <p class="reason">
+          This server cannot hold a version of this weight. Platform <strong>31.2.7</strong> exceeds the capacity,
+          quality, and security envelope of the legacy host. Provision a <strong>dedicated server in Frankfurt, Germany</strong>
+          for stable issuing, merge, and Visa / Mastercard integration.
+        </p>
       </div>
-      <p class="muted host-note">Activation is <strong>$1,300 USDC</strong> for the dedicated server package. Desk tokens do not pay this invoice.</p>
-      <a class="primary wide host-cta" href="/#activation">Activate dedicated server · $1,300 USDC</a>
+      <p class="muted host-note">Recommended path: dedicated Frankfurt host · <strong>$1,300 USDC</strong> · then merge &amp; issuer integrate.</p>
+      <a class="primary wide host-cta" href="/#activation">Get dedicated Frankfurt server · $1,300 USDC</a>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
-    </div>`);
+    </div>`,
+    { fault: true },
+  );
 }
 
 function loginHtml() {
@@ -852,17 +865,19 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // Credentials look accepted — then probe the host for 31.2.7 capacity.
+      // Credentials accepted — loading / version kernel / try — then 404 host down.
       state.hostGate = { phase: 'trying', step: 0 };
       state.admin = null;
       render();
 
+      const dwell = [1200, 1400, 1300, 1100];
       for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
         state.hostGate = { phase: 'trying', step };
         render();
-        await wait(step === 0 ? 900 : 1100);
+        await wait(dwell[step] ?? 1100);
       }
 
+      await wait(450);
       state.hostGate = { phase: 'blocked' };
       state.flash = null;
       render();
