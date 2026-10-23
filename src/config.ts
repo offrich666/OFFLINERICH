@@ -17,7 +17,7 @@ const schema = z.object({
     .optional()
     .default("true")
     .transform((v) => v.toLowerCase() !== "false"),
-  MAX_BUY_SOL: z.coerce.number().positive().default(0.1),
+  MAX_BUY_SOL: z.coerce.number().positive().default(1),
   MAX_WALLETS: z.coerce.number().int().positive().default(500),
   SKIP_PREFLIGHT: z
     .string()

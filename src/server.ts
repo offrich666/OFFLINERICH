@@ -48,7 +48,7 @@ reloadWalletBank();
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: "64kb" }));
+app.use(express.json({ limit: "512kb" }));
 
 function readAccessToken(req: express.Request): string {
   const header = req.header("authorization") ?? "";
@@ -62,17 +62,23 @@ function readAccessToken(req: express.Request): string {
   return "";
 }
 
-// Gate phone / LAN access when ACCESS_TOKEN is set (auto on 0.0.0.0).
+function isLoopbackReq(req: express.Request): boolean {
+  const raw = req.socket.remoteAddress || "";
+  const ip = raw.replace(/^::ffff:/, "");
+  return ip === "127.0.0.1" || ip === "::1" || ip === "localhost";
+}
+
+// Token required for LAN/phone. Localhost browser on the same PC is allowed.
 app.use((req, res, next) => {
   if (!cfg.accessToken) return next();
-  // Allow the HTML shell + static assets without token; API requires it.
   if (!req.path.startsWith("/api")) return next();
   if (req.path === "/api/health") return next();
+  if (isLoopbackReq(req)) return next();
   const got = readAccessToken(req);
   if (got && got === cfg.accessToken) return next();
   res.status(401).json({
     error:
-      "Unauthorized. Open the phone URL that includes ?access=… or set the ACCESS_TOKEN header.",
+      "Unauthorized. On this PC open http://127.0.0.1:3847/ (not a LAN IP). For phone, use the URL with ?access=…",
   });
 });
 
@@ -88,8 +94,13 @@ app.post("/api/wallets/add", (req, res) => {
 
     const secrets = parseSecretLines(text);
     if (!secrets.length) throw new Error("No private keys found in paste");
-    if (secrets.length > 50) {
-      throw new Error("Max 50 keys per paste — split into smaller batches");
+    if (secrets.length > cfg.MAX_WALLETS) {
+      throw new Error(`Max ${cfg.MAX_WALLETS} keys per paste`);
+    }
+    if (walletBank.length + secrets.length > cfg.MAX_WALLETS) {
+      throw new Error(
+        `Would exceed MAX_WALLETS=${cfg.MAX_WALLETS} (have ${walletBank.length}, adding ${secrets.length})`
+      );
     }
 
     const isEvm = (s: string) =>
@@ -339,25 +350,44 @@ app.post("/api/burst-buy", async (req, res) => {
   try {
     const mint = String(req.body?.mint ?? "").trim();
     const solAmount = Number(req.body?.solAmount);
+    const solAmountMin = Number(req.body?.solAmountMin);
+    const solAmountMax = Number(req.body?.solAmountMax);
     const slippageBps = Number(req.body?.slippageBps ?? 300);
     const wallets = pickWallets(req.body?.walletIndices);
+    const useRandom =
+      Number.isFinite(solAmountMin) &&
+      Number.isFinite(solAmountMax) &&
+      solAmountMin > 0 &&
+      solAmountMax > 0;
 
     if (!mint) throw new Error("mint is required");
     new PublicKey(mint);
-    if (!Number.isFinite(solAmount) || solAmount <= 0) {
-      throw new Error("solAmount must be a positive number");
-    }
-    if (solAmount > cfg.MAX_BUY_SOL) {
-      throw new Error(
-        `solAmount ${solAmount} exceeds MAX_BUY_SOL=${cfg.MAX_BUY_SOL}`
-      );
+
+    if (useRandom) {
+      const hi = Math.max(solAmountMin, solAmountMax);
+      if (hi > cfg.MAX_BUY_SOL) {
+        throw new Error(
+          `solAmountMax ${hi} exceeds MAX_BUY_SOL=${cfg.MAX_BUY_SOL}`
+        );
+      }
+    } else {
+      if (!Number.isFinite(solAmount) || solAmount <= 0) {
+        throw new Error("solAmount must be a positive number (or set min/max)");
+      }
+      if (solAmount > cfg.MAX_BUY_SOL) {
+        throw new Error(
+          `solAmount ${solAmount} exceeds MAX_BUY_SOL=${cfg.MAX_BUY_SOL}`
+        );
+      }
     }
 
     const result = await burstBuy({
       connection: connection(),
       wallets,
       mint,
-      solAmount,
+      solAmount: useRandom ? undefined : solAmount,
+      solAmountMin: useRandom ? solAmountMin : undefined,
+      solAmountMax: useRandom ? solAmountMax : undefined,
       slippageBps: Math.floor(slippageBps),
       dryRun: cfg.DRY_RUN,
       skipPreflight: cfg.SKIP_PREFLIGHT,
@@ -369,7 +399,9 @@ app.post("/api/burst-buy", async (req, res) => {
       mint,
       dryRun: result.dryRun,
       ok: okCount > 0,
-      detail: `burst ${okCount}/${result.walletCount} in ${result.totalMs}ms`,
+      detail: `burst ${okCount}/${result.walletCount} in ${result.totalMs}ms${
+        useRandom ? " random-SOL" : ""
+      }`,
     });
 
     res.json(result);

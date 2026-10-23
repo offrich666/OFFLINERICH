@@ -161,14 +161,21 @@ async function burstBuy() {
   try {
     const indices = selectedIndices();
     if (!indices.length) throw new Error("Select at least one wallet");
+    const random = $("randomSol").checked;
+    const body = {
+      mint: $("mint").value.trim(),
+      slippageBps: Number($("slippage").value),
+      walletIndices: indices,
+    };
+    if (random) {
+      body.solAmountMin = Number($("solMin").value);
+      body.solAmountMax = Number($("solMax").value);
+    } else {
+      body.solAmount = Number($("solAmount").value);
+    }
     const result = await api("/api/burst-buy", {
       method: "POST",
-      body: JSON.stringify({
-        mint: $("mint").value.trim(),
-        solAmount: Number($("solAmount").value),
-        slippageBps: Number($("slippage").value),
-        walletIndices: indices,
-      }),
+      body: JSON.stringify(body),
     });
     showOut(result);
     await refreshLogs();

@@ -8,7 +8,7 @@ test("DRY_RUN defaults to true", () => {
     HOST: "127.0.0.1",
   } as NodeJS.ProcessEnv);
   assert.equal(cfg.DRY_RUN, true);
-  assert.equal(cfg.MAX_BUY_SOL, 0.1);
+  assert.equal(cfg.MAX_BUY_SOL, 1);
   assert.equal(cfg.MAX_WALLETS, 500);
   assert.equal(cfg.accessToken, "");
   assert.equal(cfg.tokenGenerated, false);
