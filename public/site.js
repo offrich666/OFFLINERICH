@@ -10,12 +10,13 @@
     host.includes('surge.sh');
 
   /**
-   * Permanent HTTPS pages (raw.githack serves HTML as text/html).
-   * Assets load from jsDelivr via <base> on those hosts.
+   * Permanent HTTPS pages via rawcdn.githack (HTML as text/html) + jsDelivr assets.
+   * Pin to commit SHA so CDN cache cannot serve a stale page.
    * Works on iPhone Wi‑Fi and cellular — not a temporary tunnel.
    */
+  const LIVE_SHA = '88f16e3a480eae0d2fdf7b4bb3c3ac22972b6863';
   const PERMANENT_HTML =
-    'https://raw.githack.com/offrich666/OFFLINERICH/gcards-eu-live/public';
+    'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   const PERMANENT_ASSETS =
     'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@gcards-eu-live/public';
 
@@ -45,7 +46,10 @@
       a.setAttribute('href', `${PERMANENT_HTML}/index.html`);
     });
     document.querySelectorAll('a[href^="index.html#"]').forEach((a) => {
-      a.setAttribute('href', a.getAttribute('href').replace(/^index\.html/, `${PERMANENT_HTML}/index.html`));
+      a.setAttribute(
+        'href',
+        a.getAttribute('href').replace(/^index\.html/, `${PERMANENT_HTML}/index.html`),
+      );
     });
   }
 
