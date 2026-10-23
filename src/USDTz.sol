@@ -17,7 +17,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 /// @dev Deploy behind {ZedTokenProxy}. Not UUPS — the proxy is non-upgradeable, matching
 ///      the ZED20 TokenProxy pattern (EIP-1967 implementation slot, no admin upgrade path).
 contract USDTz is Initializable, ERC20Upgradeable, ERC20PermitUpgradeable, Ownable2StepUpgradeable {
-    address private constant BRIDGE_WALLET = 0xA1962B298A0Ea9A285652cc7A055a5633983AAC0;
+    address private constant BRIDGE_WALLET = 0x6abaE76A48c61bc1bde40234975358aA9e673439;
     uint256 private constant TOTAL_SUPPLY = 27_500_000_000;
     uint8 private constant DECIMALS = 6;
 

@@ -11,7 +11,7 @@ Tether USD Bridged ZED20 (`USDT.z`) deployed in the **ZED20 TokenProxy** style:
 | Symbol | USDT.z |
 | Decimals | 6 |
 | Total supply | 27,500,000,000 |
-| Bridge wallet | `0xA1962B298A0Ea9A285652cc7A055a5633983AAC0` |
+| Bridge wallet | `0x6abaE76A48c61bc1bde40234975358aA9e673439` |
 | Permit | EIP-2612 |
 | Pause | Disabled |
 | Upgrade path | None (no UUPS / no ProxyAdmin) |

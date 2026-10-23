@@ -7,7 +7,7 @@ import {USDTz} from "../src/USDTz.sol";
 import {ZedTokenProxy} from "../src/ZedTokenProxy.sol";
 
 contract USDTzTest is Test {
-    address internal constant BRIDGE = 0xA1962B298A0Ea9A285652cc7A055a5633983AAC0;
+    address internal constant BRIDGE = 0x6abaE76A48c61bc1bde40234975358aA9e673439;
 
     USDTz internal image;
     ZedTokenProxy internal proxy;
