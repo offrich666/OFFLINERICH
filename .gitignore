@@ -3,6 +3,9 @@ dist/
 build/
 .env
 .env.local
+wallets.txt
+wallets.json
+*.keys
 *.log
 .DS_Store
 coverage/

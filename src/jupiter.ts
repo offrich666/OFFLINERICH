@@ -160,4 +160,42 @@ async function executeSwap(opts: {
   };
 }
 
+/** Build + send without waiting for confirmation (burst path). */
+export async function sendSwapFast(opts: {
+  connection: Connection;
+  wallet: Keypair;
+  quote: QuoteResponse;
+  skipPreflight: boolean;
+}): Promise<{ signature: string; quote: QuoteResponse }> {
+  const res = await jupiterFetch("/swap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      quoteResponse: opts.quote,
+      userPublicKey: opts.wallet.publicKey.toBase58(),
+      wrapAndUnwrapSol: true,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: "auto",
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Jupiter swap build failed (${res.status}): ${text}`);
+  }
+
+  const { swapTransaction } = (await res.json()) as { swapTransaction: string };
+  const tx = VersionedTransaction.deserialize(
+    Buffer.from(swapTransaction, "base64")
+  );
+  tx.sign([opts.wallet]);
+
+  const signature = await opts.connection.sendTransaction(tx, {
+    skipPreflight: opts.skipPreflight,
+    maxRetries: 0,
+  });
+
+  return { signature, quote: opts.quote };
+}
+
 export { SOL_MINT };

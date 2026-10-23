@@ -19,54 +19,61 @@
         <span class="mark">◈</span>
         <div>
           <h1>Local Sol Trader</h1>
-          <p class="tag">Personal machine only · key never leaves `.env`</p>
+          <p class="tag">Disk keys only · parallel burst race · not a cloud key vault</p>
         </div>
       </div>
       <div class="badges">
         <span id="rpcBadge" class="badge warn">RPC …</span>
+        <span id="walletCountBadge" class="badge">0 wallets</span>
         <span id="modeBadge" class="badge">DRY RUN</span>
       </div>
     </header>
 
     <main class="grid">
       <section class="panel warn-panel">
-        <h2>Read this</h2>
+        <h2>Bulk wallets (local file)</h2>
         <p>
-          Cloud sites that ask you to “import” Phantom private keys (including
-          random <code>*.cloud</code> dashboards) can drain you. This app refuses
-          browser key import. Put your key in a local <code>.env</code> file only.
+          Put up to hundreds of secrets in a local <code>wallets.txt</code>
+          (one base58 key per line) and set <code>WALLETS_FILE=./wallets.txt</code>
+          in <code>.env</code>. This UI will <strong>never</strong> accept pasted
+          private keys — that pattern is how drain sites work.
         </p>
         <p class="muted">
-          Meme coins can go to zero. There is no honest “1→10 SOL/day” guarantee.
+          Parallel burst fires many buys at once. It is a <em>race</em>, not an
+          atomic lock: other traders can still land between your txs. Jito-style
+          bundles only cover a handful of transactions, not 300.
         </p>
       </section>
 
       <section class="panel">
-        <h2>Wallet</h2>
+        <h2>Wallet bank</h2>
         <dl class="stats">
           <div>
-            <dt>Address</dt>
-            <dd id="walletAddr">—</dd>
+            <dt>Loaded</dt>
+            <dd id="loadedCount">—</dd>
           </div>
           <div>
-            <dt>SOL</dt>
-            <dd id="walletBal">—</dd>
+            <dt>Total SOL</dt>
+            <dd id="totalSol">—</dd>
           </div>
           <div>
-            <dt>Buy cap</dt>
+            <dt>Buy cap / wallet</dt>
             <dd id="buyCap">—</dd>
           </div>
         </dl>
-        <button id="refreshBtn" type="button" class="ghost">Refresh</button>
+        <div class="row-actions">
+          <button id="refreshBtn" type="button" class="ghost">Refresh</button>
+          <button id="selectAllBtn" type="button" class="ghost">Select all</button>
+          <button id="selectNoneBtn" type="button" class="ghost">Select none</button>
+        </div>
+        <div id="walletList" class="wallet-list"></div>
         <p id="walletError" class="error" hidden></p>
       </section>
 
       <section class="panel trade">
-        <h2>Trade via Jupiter</h2>
+        <h2>Burst buy via Jupiter</h2>
         <p class="muted">
-          Paste a mint that Jupiter can route (many graduated / liquid tokens).
-          Brand-new Pump.fun bonding-curve buys need a dedicated pump router —
-          start with quotes in dry-run.
+          Same SOL size per selected wallet. Dry-run shares one quote across the bank.
         </p>
         <label>
           Mint address
@@ -74,7 +81,7 @@
         </label>
         <div class="row">
           <label>
-            Buy SOL
+            Buy SOL / wallet
             <input id="solAmount" type="number" min="0.001" step="0.001" value="0.05" />
           </label>
           <label>
@@ -83,12 +90,13 @@
           </label>
         </div>
         <label>
-          Sell raw amount (base units)
+          Sell raw amount (single wallet #0)
           <input id="rawAmount" type="number" min="1" step="1" placeholder="Only for sell" />
         </label>
         <div class="actions">
-          <button id="buyBtn" type="button" class="primary">Buy / Quote</button>
-          <button id="sellBtn" type="button" class="ghost">Sell / Quote</button>
+          <button id="burstBtn" type="button" class="primary">Burst buy / quote</button>
+          <button id="buyBtn" type="button" class="ghost">Single buy #0</button>
+          <button id="sellBtn" type="button" class="ghost">Sell #0</button>
         </div>
         <pre id="tradeOut" class="out" hidden></pre>
       </section>

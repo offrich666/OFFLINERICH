@@ -5,6 +5,8 @@ loadEnv();
 
 const schema = z.object({
   PRIVATE_KEY: z.string().optional().default(""),
+  /** Local file with many secrets (one per line or JSON array). Never HTTP. */
+  WALLETS_FILE: z.string().optional().default(""),
   RPC_URL: z
     .string()
     .url()
@@ -15,6 +17,12 @@ const schema = z.object({
     .default("true")
     .transform((v) => v.toLowerCase() !== "false"),
   MAX_BUY_SOL: z.coerce.number().positive().default(0.1),
+  MAX_WALLETS: z.coerce.number().int().positive().default(500),
+  SKIP_PREFLIGHT: z
+    .string()
+    .optional()
+    .default("true")
+    .transform((v) => v.toLowerCase() !== "false"),
   PORT: z.coerce.number().int().positive().default(3847),
 });
 
@@ -29,10 +37,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   return parsed.data;
 }
 
-export function assertKeyPresent(cfg: AppConfig): void {
-  if (!cfg.PRIVATE_KEY.trim()) {
+export function assertAnyWalletSource(cfg: AppConfig): void {
+  if (!cfg.PRIVATE_KEY.trim() && !cfg.WALLETS_FILE.trim()) {
     throw new Error(
-      "PRIVATE_KEY is empty. Copy .env.example to .env and set your key locally. Never paste keys into websites."
+      "Set PRIVATE_KEY and/or WALLETS_FILE in local .env. Keys are never accepted over HTTP."
     );
   }
 }

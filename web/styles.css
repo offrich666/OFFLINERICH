@@ -218,11 +218,49 @@ input:focus {
   gap: 0.75rem;
 }
 
-.actions {
+.actions,
+.row-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.4rem;
+}
+
+.wallet-list {
+  margin-top: 0.9rem;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.wallet-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin: 0;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+.wallet-row:last-child {
+  border-bottom: 0;
+}
+
+.wallet-row .idx {
+  color: var(--accent);
+}
+
+.wallet-row .pk {
+  font-family: var(--font-mono);
+}
+
+.wallet-row .bal {
+  color: var(--muted);
 }
 
 button {
