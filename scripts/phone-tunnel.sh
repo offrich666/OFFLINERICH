@@ -14,6 +14,8 @@ if [[ ! -x "$BIN" ]]; then
 fi
 
 echo "Tunneling http://127.0.0.1:${PORT} → public HTTPS for iPhone"
-echo "Copy the trycloudflare.com URL into Safari (not 127.0.0.1)."
+echo "Using HTTP/2 (more reliable on mobile 5G than QUIC/UDP)."
+echo "Copy the HTTPS URL into Safari (not 127.0.0.1)."
 echo "Optional: PUBLIC_BASE_URL=<that-url> PORT=${PORT} npm start"
-exec "$BIN" tunnel --url "http://127.0.0.1:${PORT}"
+# http2: many mobile carriers break Cloudflare QUIC tunnels on 5G
+exec "$BIN" tunnel --protocol http2 --url "http://127.0.0.1:${PORT}"

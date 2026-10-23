@@ -200,7 +200,7 @@ export function createApp(options: CreateAppOptions = {}) {
       ok: true,
       url,
       qrSvg: await qrSvg(url),
-      hint: 'Scan this QR on iPhone Safari. Do not open 127.0.0.1 on the phone.',
+      hint: 'Open this HTTPS link in Safari on cellular (5G/LTE) or Wi‑Fi. Do not use 127.0.0.1 — that is the phone itself.',
     });
   }));
 
