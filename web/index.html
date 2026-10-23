@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Sol Trader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Outfit:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <header class="top">
+      <div class="brand">
+        <span class="mark">◈</span>
+        <div>
+          <h1>Local Sol Trader</h1>
+          <p class="tag">Disk keys only · phone via LAN URL + access token</p>
+        </div>
+      </div>
+      <div class="badges">
+        <span id="rpcBadge" class="badge warn">RPC …</span>
+        <span id="walletCountBadge" class="badge">0 wallets</span>
+        <span id="modeBadge" class="badge">DRY RUN</span>
+      </div>
+    </header>
+
+    <main class="grid">
+      <section class="panel warn-panel">
+        <h2>Add wallet (private key)</h2>
+        <p class="muted">
+          Personal app on <strong>your PC</strong>. Keys are saved into local
+          <code>wallets.txt</code> only — not uploaded to any cloud.
+        </p>
+        <label>
+          Paste Solana private key(s) — one per line (up to 500)
+          <textarea
+            id="secretPaste"
+            rows="8"
+            spellcheck="false"
+            placeholder="Paste many base58 keys, one per line…"
+          ></textarea>
+        </label>
+        <div class="actions">
+          <button id="addWalletBtn" type="button" class="primary">Bulk add to app</button>
+        </div>
+        <p id="addWalletMsg" class="muted" hidden></p>
+        <p id="addWalletError" class="error" hidden></p>
+      </section>
+
+      <section class="panel">
+        <h2>Wallet bank</h2>
+        <dl class="stats">
+          <div>
+            <dt>Loaded</dt>
+            <dd id="loadedCount">—</dd>
+          </div>
+          <div>
+            <dt>Total SOL</dt>
+            <dd id="totalSol">—</dd>
+          </div>
+          <div>
+            <dt>Buy cap / wallet</dt>
+            <dd id="buyCap">—</dd>
+          </div>
+        </dl>
+        <div class="row-actions">
+          <button id="refreshBtn" type="button" class="ghost">Refresh</button>
+          <button id="selectAllBtn" type="button" class="ghost">Select all</button>
+          <button id="selectNoneBtn" type="button" class="ghost">Select none</button>
+        </div>
+        <div id="walletList" class="wallet-list"></div>
+        <p id="walletError" class="error" hidden></p>
+      </section>
+
+      <section class="panel trade">
+        <h2>Burst buy via Jupiter</h2>
+        <p class="muted">
+          Selected wallets buy in parallel. Enable random SOL so each wallet spends
+          a different size (e.g. 0.1–1). Live mode is a race, not an atomic lock.
+        </p>
+        <label>
+          Mint address
+          <input id="mint" type="text" spellcheck="false" placeholder="Token mint…" />
+        </label>
+        <label class="wallet-row" style="border:0;padding:0;margin:0 0 0.8rem">
+          <input id="randomSol" type="checkbox" checked />
+          <span>Random SOL per wallet</span>
+        </label>
+        <div class="row">
+          <label>
+            Min SOL
+            <input id="solMin" type="number" min="0.001" step="0.01" value="0.1" />
+          </label>
+          <label>
+            Max SOL
+            <input id="solMax" type="number" min="0.001" step="0.01" value="1" />
+          </label>
+        </div>
+        <div class="row">
+          <label>
+            Fixed SOL (if random off)
+            <input id="solAmount" type="number" min="0.001" step="0.001" value="0.1" />
+          </label>
+          <label>
+            Slippage bps
+            <input id="slippage" type="number" min="1" max="5000" step="10" value="300" />
+          </label>
+        </div>
+        <label>
+          Sell raw amount (single wallet #0)
+          <input id="rawAmount" type="number" min="1" step="1" placeholder="Only for sell" />
+        </label>
+        <div class="actions">
+          <button id="burstBtn" type="button" class="primary">Burst buy / quote</button>
+          <button id="buyBtn" type="button" class="ghost">Single buy #0</button>
+          <button id="sellBtn" type="button" class="ghost">Sell #0</button>
+        </div>
+        <pre id="tradeOut" class="out" hidden></pre>
+      </section>
+
+      <section class="panel">
+        <h2>Log</h2>
+        <ul id="logList" class="log"></ul>
+      </section>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

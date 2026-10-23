@@ -1,0 +1,5 @@
+# Copy to wallets.txt and replace with YOUR secrets (gitignored).
+# One Phantom-export base58 private key per line.
+# Example placeholders only — do not use these:
+# <base58-secret-1>
+# <base58-secret-2>
