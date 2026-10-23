@@ -2,30 +2,34 @@
 
 Same npm commands work in **Command Prompt** or **PowerShell**. Double-click helpers live in `scripts\windows\`.
 
-## Fix: PowerShell error from `C:\Users\Dell`
+## Fix: common Windows errors
 
-If you see `The module 'scripts' could not be loaded`, you are **not inside the project folder**.
+### `git` is not recognized
+Git is not installed. **Easiest: download ZIP (no Git):**
+
+1. Open this link in your browser:  
+   https://github.com/offrich666/OFFLINERICH/archive/refs/heads/cursor/personal-solana-trader-2789.zip
+2. Extract the ZIP (right-click → Extract All) to e.g. `C:\Users\Dell\OFFLINERICH`
+3. Install **Node.js LTS** if needed: https://nodejs.org (then close and reopen PowerShell)
+4. In File Explorer open the extracted folder → `scripts` → `windows` → double-click **`setup.cmd`**
+
+Or install Git, reopen PowerShell, then clone:
+https://git-scm.com/download/win
+
+### `The module 'scripts' could not be loaded`
+You are in `C:\Users\Dell`, not the project folder. `cd` into the extracted/cloned folder first, then:
 
 ```powershell
-# 1) Go to the repo (clone first if you do not have it)
-cd $HOME
-git clone https://github.com/offrich666/OFFLINERICH.git
-cd OFFLINERICH
-
-# If you already cloned it somewhere else:
-# cd path\to\OFFLINERICH
-
-# 2) PowerShell needs .\ before .cmd files
+cd C:\Users\Dell\OFFLINERICH
+# folder name may be OFFLINERICH-cursor-personal-solana-trader-2789 if from ZIP
 .\scripts\windows\setup.cmd
 ```
 
-Or skip the terminal: open File Explorer → go into the `OFFLINERICH` folder → `scripts` → `windows` → double-click `setup.cmd`.
-
 ## 0) Install once
 
-1. Install **Node.js LTS**: https://nodejs.org  
-2. Install **Git**: https://git-scm.com  
-3. Clone this repo, then open that folder (not `C:\Users\Dell`)
+1. Install **Node.js LTS**: https://nodejs.org (required)  
+2. Get the project via **ZIP** (above) or install **Git**: https://git-scm.com  
+3. Work inside that project folder — not bare `C:\Users\Dell`
 
 ## 1) One-click setup
 
@@ -55,9 +59,9 @@ Edit with Notepad:
 
 Or merge a file of keys:
 
-```bat
-scripts\windows\import-wallets.cmd incoming.txt wallets.txt
-scripts\windows\import-wallets.cmd incoming-evm.txt wallets-evm.txt
+```powershell
+.\scripts\windows\import-wallets.cmd incoming.txt wallets.txt
+.\scripts\windows\import-wallets.cmd incoming-evm.txt wallets-evm.txt
 ```
 
 ## 3) Dry-run demo (safe)
