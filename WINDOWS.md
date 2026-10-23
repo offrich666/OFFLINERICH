@@ -16,12 +16,28 @@ Git is not installed. **Easiest: download ZIP (no Git):**
 Or install Git, reopen PowerShell, then clone:
 https://git-scm.com/download/win
 
+### `npm : ... npm.ps1 cannot be loaded` / `PSSecurityException`
+PowerShell is blocking npm. Use **`npm.cmd`** (not `npm`):
+
+```powershell
+npm.cmd install
+npm.cmd run chains
+npm.cmd run snipe -- --chain solana --token EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --amount 0.01 --wallets .\wallets.txt
+```
+
+Or open **Command Prompt** (`cmd`) instead of PowerShell — plain `npm` works there.
+
+Optional permanent fix for PowerShell (run once):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
 ### `The module 'scripts' could not be loaded`
 You are in `C:\Users\Dell`, not the project folder. `cd` into the extracted/cloned folder first, then:
 
 ```powershell
-cd C:\Users\Dell\OFFLINERICH
-# folder name may be OFFLINERICH-cursor-personal-solana-trader-2789 if from ZIP
+cd C:\Users\Dell\Downloads\OFFLINERICH-cursor-personal-solana-trader-2789\OFFLINERICH-cursor-personal-solana-trader-2789
 .\scripts\windows\setup.cmd
 ```
 
