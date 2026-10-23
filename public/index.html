@@ -21,20 +21,21 @@
       href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/issuer.css" />
+    <link rel="stylesheet" href="issuer.css" />
+    <script src="site.js"></script>
   </head>
   <body>
     <div class="page-bg" aria-hidden="true"></div>
 
     <header class="top">
-      <a class="mark" href="/">G Cards <span>EU</span></a>
+      <a class="mark" href="index.html">G Cards <span>EU</span></a>
       <nav class="nav">
         <a href="#status">Status</a>
         <a href="#upgrade">Version 31.2.7</a>
         <a href="#architecture">Architecture</a>
         <a href="#settlement">USDC vs tokens</a>
         <a href="#activation">Activate</a>
-        <a class="nav-desk" href="/desk">Admin desk</a>
+        <a class="nav-desk" href="desk.html">Admin desk</a>
       </nav>
       <button class="menu" type="button" aria-label="Open menu" data-menu>Menu</button>
     </header>
@@ -190,7 +191,7 @@
               <span class="badge" aria-hidden="true">✓</span>
               <div>
                 <strong>Issuer desk &amp; API key fields</strong>
-                <p>Admin desk ready to accept issuer keys after go-live (configured only on <a href="/desk">/desk</a>).</p>
+                <p>Admin desk ready to accept issuer keys after go-live (configured only on <a href="desk.html">/desk</a>).</p>
               </div>
               <span class="state">Done</span>
             </li>
@@ -280,7 +281,7 @@
           </p>
           <figure class="arch-figure">
             <img
-              src="/gcards-frankfurt-architecture.png"
+              src="gcards-frankfurt-architecture.png"
               width="1280"
               height="720"
               alt="G Cards EU architecture: admin app to overloaded host, dedicated Frankfurt server, then merge servers and integrate Visa Mastercard issuer code"
@@ -424,13 +425,13 @@
             <ol class="steps-quiet">
               <li>Pay <strong>$1,300 USDC</strong> (or request an invoice)</li>
               <li>Keep your payment reference and admin email</li>
-              <li>USDC clears — dedicated server + 31.2.7 go live on <a href="/desk">/desk</a></li>
+              <li>USDC clears — dedicated server + 31.2.7 go live on <a href="desk.html">/desk</a></li>
             </ol>
             <aside class="phone-access" id="phone-access" hidden>
               <p class="eyebrow">Open on iPhone</p>
               <p class="phone-access-lede">
-                Safari on iPhone cannot open <code>127.0.0.1</code> — that address is the phone itself.
-                Scan this QR or tap the HTTPS link.
+                Permanent HTTPS — works on cellular (5G/LTE) and Wi‑Fi. Do not use <code>127.0.0.1</code>
+                or temporary tunnel links that expire.
               </p>
               <div class="phone-access-row">
                 <div class="phone-qr" id="phone-qr" aria-hidden="true"></div>
@@ -468,7 +469,7 @@
               <button class="btn primary wide" type="submit">Continue · pay USDC</button>
             </form>
             <div id="pay-result" class="pay-result" hidden></div>
-            <a class="desk-link" href="/desk">Already paid in USDC — open admin desk</a>
+            <a class="desk-link" href="desk.html">Already paid in USDC — open admin desk</a>
           </aside>
         </div>
       </section>
@@ -478,7 +479,7 @@
       <div class="wrap foot-in">
         <div class="mark">G Cards <span>EU</span></div>
         <p>Platform 31.2.7 · dedicated Frankfurt host paid in USDC · card tokens fund spend only · $1,300. Issuer API keys only on the admin desk.</p>
-        <a href="/desk">Admin desk</a>
+        <a href="desk.html">Admin desk</a>
       </div>
     </footer>
 
@@ -488,7 +489,7 @@
       <a href="#architecture">Architecture</a>
       <a href="#settlement">USDC vs tokens</a>
       <a href="#activation">Activate · $1,300</a>
-      <a href="/desk">Admin desk</a>
+      <a href="desk.html">Admin desk</a>
     </div>
 
     <div class="chatbot" id="chatbot">
@@ -526,6 +527,6 @@
       </section>
     </div>
 
-    <script src="/issuer.js"></script>
+    <script src="issuer.js"></script>
   </body>
 </html>

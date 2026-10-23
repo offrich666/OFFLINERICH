@@ -171,7 +171,7 @@ function hostBlockedHtml() {
         </p>
       </div>
       <p class="muted host-note">Recommended path: dedicated Frankfurt host · <strong>$1,300 USDC</strong> · then merge &amp; issuer integrate.</p>
-      <a class="primary wide host-cta" href="/#activation">Get dedicated Frankfurt server · $1,300 USDC</a>
+      <a class="primary wide host-cta" href="index.html#activation">Get dedicated Frankfurt server · $1,300 USDC</a>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },
@@ -1129,7 +1129,24 @@ async function loadDesk() {
 }
 
 async function boot() {
-  state.config = await api('/api/config');
+  // Static CDN hosts (jsDelivr / GitHub) have no API — still show the desk login gate.
+  if (window.GCARDS_SITE && !window.GCARDS_SITE.hasApi()) {
+    state.config = {
+      product: 'G Cards EU',
+      links: [window.GCARDS_SITE.permanentIndex, window.GCARDS_SITE.permanentDesk],
+    };
+    state.admin = null;
+    render();
+    return;
+  }
+  try {
+    state.config = await api('/api/config');
+  } catch {
+    state.config = { product: 'G Cards EU', links: [location.origin] };
+    state.admin = null;
+    render();
+    return;
+  }
   try {
     const me = await api('/api/me', { noClient: true });
     if (me.user?.role !== 'admin') throw new Error('not admin');
@@ -1142,5 +1159,11 @@ async function boot() {
 }
 
 boot().catch((error) => {
-  document.getElementById('app').textContent = error.message || 'The card app failed to load.';
+  state.admin = null;
+  state.config = state.config || { product: 'G Cards EU', links: [] };
+  try {
+    render();
+  } catch {
+    document.getElementById('app').textContent = error.message || 'The card app failed to load.';
+  }
 });

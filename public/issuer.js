@@ -395,35 +395,38 @@ function bindChatbot() {
   });
 }
 
-async function bindPhoneAccess() {
+function showPhoneAccess(url, hintText, qrSvg) {
   const root = document.getElementById('phone-access');
   const qr = document.getElementById('phone-qr');
   const link = document.getElementById('phone-url');
   const hint = document.getElementById('phone-hint');
   if (!root || !qr || !link || !hint) return;
-  try {
-    const res = await fetch('/api/phone-access', { headers: { Accept: 'application/json' } });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (!data?.ok || !data.url) {
-      if (data?.hint) {
-        root.hidden = false;
-        hint.textContent = data.hint;
-        link.hidden = true;
-        qr.hidden = true;
-      }
-      return;
-    }
-    root.hidden = false;
-    link.hidden = false;
-    qr.hidden = false;
-    link.href = data.url;
-    link.textContent = data.url;
-    hint.textContent = data.hint || 'Open this HTTPS link in Safari on iPhone.';
-    if (data.qrSvg) qr.innerHTML = data.qrSvg;
-  } catch {
-    /* optional panel */
+  root.hidden = false;
+  link.hidden = false;
+  qr.hidden = false;
+  link.href = url;
+  link.textContent = url;
+  hint.textContent =
+    hintText ||
+    'Works on Wi‑Fi and cellular. This HTTPS link stays online — not a temporary tunnel.';
+  if (qrSvg) {
+    qr.innerHTML = qrSvg;
+  } else if (window.GCARDS_SITE?.qrImageUrl) {
+    qr.innerHTML = `<img src="${window.GCARDS_SITE.qrImageUrl(url)}" width="144" height="144" alt="QR code for iPhone" />`;
   }
+}
+
+async function bindPhoneAccess() {
+  const site = window.GCARDS_SITE;
+  // Always advertise the permanent CDN URL — tunnels die on cellular / over time.
+  const permanent = site?.permanentIndex;
+  if (permanent) {
+    showPhoneAccess(
+      permanent,
+      'Permanent HTTPS for iPhone (Wi‑Fi or cellular 5G/LTE). Bookmark this link — temporary tunnels are not required.',
+    );
+  }
+  if (!site?.hasApi()) return;
 }
 
 bindDeck(document);

@@ -895,7 +895,8 @@ input:focus, select:focus { border-color: rgba(196,164,106,0.45); outline: none;
   border: 1px solid var(--line);
   flex: 0 0 auto;
 }
-.phone-qr svg { display: block; width: 100%; height: 100%; }
+.phone-qr svg,
+.phone-qr img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .phone-access-copy { min-width: 0; flex: 1; }
 .phone-url {
   display: inline-block;
