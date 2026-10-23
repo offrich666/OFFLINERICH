@@ -184,6 +184,7 @@ strong { font-weight: 600; color: var(--ink); }
   color: var(--ink);
   line-height: 1.25;
 }
+.spec-row .v.fault { color: #e08a8a; }
 
 /* —— Metal cards —— */
 .scene {
