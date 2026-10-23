@@ -263,6 +263,8 @@ button.ghost.light:hover { background: rgba(255, 255, 255, 0.1); }
 .login.is-fault .login-hero { filter: saturate(0.85) brightness(0.92); }
 .kicker.warn { color: #8a5a18; }
 .kicker.fault { color: #8d2f2f; }
+.fault-issue { color: #6a2424; }
+.fault-issue strong { color: #8d2f2f; }
 .host-gate .lede { margin-bottom: 4px; }
 .host-live-line { min-height: 1.4em; font-weight: 600; color: var(--navy); }
 .host-spinner {

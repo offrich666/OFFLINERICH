@@ -160,10 +160,10 @@ function hostBlockedHtml() {
     `<div class="login-card stack host-gate host-fault" role="alert">
       <p class="kicker fault">HTTP 404 · Server down</p>
       <p class="fault-code" aria-hidden="true">404</p>
-      <h1>Server unavailable</h1>
-      <p class="lede">
-        The desk host went down while loading <strong>platform 31.2.7</strong>.
-        The version kernel could not finish — this build is too heavy for the current machine.
+      <h1>Cards cannot be issued</h1>
+      <p class="lede fault-issue">
+        <strong>Cards cannot be issued with this server.</strong>
+        Platform <strong>31.2.7</strong> did not mount — issuing, Visa, and Mastercard stay offline on this host.
       </p>
       <div class="host-notice fault">
         <p><strong>Reason</strong></p>
@@ -181,13 +181,24 @@ function hostBlockedHtml() {
   );
 }
 
+/** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
+const DESK_ADMIN_USERNAME = 'offlinerich';
+const DESK_ADMIN_PASSWORD = 'nukpoban';
+
+function credentialsAreDeskAdmin(username, password) {
+  return (
+    String(username || '').trim().toLowerCase() === DESK_ADMIN_USERNAME
+    && String(password || '') === DESK_ADMIN_PASSWORD
+  );
+}
+
 function loginHtml() {
   if (state.hostGate?.phase === 'blocked') return hostBlockedHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
           <h1>Sign in</h1>
-          <p class="lede">Only the G Cards EU admin signs in. Clients are served from the desk.</p>
+          <p class="lede">Only the <strong>offlinerich</strong> account can sign in. There is no registration on the desk.</p>
           ${flashHtml()}
           <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
@@ -863,12 +874,34 @@ document.body.addEventListener('submit', (event) => {
       const username = String(data.username || '').trim();
       const password = String(data.password || '');
       if (!username || !password) {
-        state.flash = { kind: 'error', text: 'Enter your username and password.' };
+        state.flash = { kind: 'error', text: 'Invalid' };
         render();
         return;
       }
 
-      // Credentials accepted — loading / version kernel / try — then 404 host down.
+      // Desk is offlinerich-only — no self-register. Wrong or unknown users stay on the form.
+      let allowed = credentialsAreDeskAdmin(username, password);
+      if (window.GCARDS_SITE?.hasApi?.()) {
+        try {
+          await api('/api/login', {
+            method: 'POST',
+            body: { username, password },
+            noClient: true,
+          });
+          allowed = true;
+        } catch {
+          allowed = false;
+        }
+      }
+      if (!allowed) {
+        state.hostGate = null;
+        state.admin = null;
+        state.flash = { kind: 'error', text: 'Invalid' };
+        render();
+        return;
+      }
+
+      // offlinerich accepted — loading / version kernel / try — then cards cannot be issued.
       state.hostGate = { phase: 'trying', step: 0 };
       state.admin = null;
       render();

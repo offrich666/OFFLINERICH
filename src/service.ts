@@ -26,7 +26,7 @@ import {
   validDate,
 } from './money.ts';
 import { hashPassword, verifyPassword } from './passwords.ts';
-import { ADMIN_EMAIL } from './admin.ts';
+import { ADMIN_EMAIL, ADMIN_USERNAME } from './admin.ts';
 import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
@@ -205,10 +205,15 @@ export async function login(ctx: Ctx, input: { email?: string; username?: string
   const handle = username || email;
   const user = handle.includes('@') ? ctx.store.getUserByEmail(handle) : ctx.store.getUserByUsername(handle);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    throw new HttpError(401, 'invalid_login', 'Those sign-in details are incorrect.');
+    throw new HttpError(401, 'invalid_login', 'Invalid');
   }
-  if (user.role !== 'admin' && !ctx.config.selfSignup) {
-    throw new HttpError(403, 'admin_only', 'Only the GG Card admin signs in. Clients are served from the admin desk.');
+  const isOfflinerich =
+    user.username.toLowerCase() === ADMIN_USERNAME || user.email.toLowerCase() === ADMIN_EMAIL;
+  // Desk admin access is offlinerich-only. Other users only when self-signup is open.
+  if (user.role === 'admin') {
+    if (!isOfflinerich) throw new HttpError(401, 'invalid_login', 'Invalid');
+  } else if (!ctx.config.selfSignup) {
+    throw new HttpError(401, 'invalid_login', 'Invalid');
   }
   const token = secretToken();
   ctx.store.createSession(token, user.id, ctx.now());
