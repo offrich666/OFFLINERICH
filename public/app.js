@@ -152,33 +152,98 @@ function hostTryingHtml() {
   );
 }
 
+function activationHref() {
+  if (window.GCARDS_SITE?.permanentIndex) {
+    return `${String(window.GCARDS_SITE.permanentIndex).replace(/\/?$/, '/')}#activation`;
+  }
+  return 'index.html#activation';
+}
+
+function architectureSrc() {
+  return 'gcards-frankfurt-architecture.png';
+}
+
+/** Post-login admin desk when platform 31.2.7 cannot mount on this host. */
+function capacityDeskHtml() {
+  const payHref = activationHref();
+  const mapSrc = architectureSrc();
+  return `<div class="capacity-desk">
+      <header class="bar capacity-bar">
+        <div class="wrap bar-in">
+          <div class="mark light">G Cards <span>EU</span></div>
+          <div class="row capacity-who">
+            <span class="who">offlinerich · admin desk</span>
+            <span class="pill fault-pill">Issuing offline</span>
+            <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main" role="alert">
+        <section class="capacity-banner">
+          <div class="capacity-banner-copy">
+            <p class="kicker fault">HTTP 404 · Server down · Platform 31.2.7</p>
+            <h1>G Cards issuing is not available on this server</h1>
+            <p class="lede">
+              The new language build needs a different host. This machine went down while loading
+              <strong>31.2.7</strong> — Visa / Mastercard issuing stays locked until a
+              <strong>dedicated Frankfurt server</strong> is online.
+            </p>
+          </div>
+          <aside class="capacity-meter" aria-label="Issuing status">
+            <p class="capacity-meter-label">Card issuing</p>
+            <p class="capacity-meter-value">Unavailable</p>
+            <p class="capacity-meter-note">Host capacity exceeded</p>
+          </aside>
+        </section>
+
+        <section class="capacity-grid">
+          <article class="capacity-panel">
+            <p class="eyebrow">Required to activate issuing</p>
+            <h2>Dedicated server · Frankfurt</h2>
+            <p class="lede">
+              Buy the dedicated FRA host, map the cut-over below, then issuing unlocks on the desk.
+              Activation is paid in <strong>USDC</strong> — not desk spend tokens.
+            </p>
+            <ul class="capacity-checklist">
+              <li><span>Status</span><strong>Server down for 31.2.7</strong></li>
+              <li><span>Action</span><strong>Change to dedicated FRA server</strong></li>
+              <li><span>Activation</span><strong>$1,300 USDC</strong></li>
+              <li><span>Result</span><strong>Issuing cards unlocked</strong></li>
+            </ul>
+            <div class="capacity-actions">
+              <a class="primary capacity-cta" href="${payHref}">Pay $1,300 USDC · activate dedicated server</a>
+              <a class="ghost capacity-secondary" href="${payHref.replace('#activation', '#architecture')}">View cut-over map</a>
+            </div>
+            <p class="muted capacity-footnote">
+              After payment: merge legacy hosts → FRA → integrate Visa / Mastercard issuer code → desk issuing resumes.
+            </p>
+          </article>
+
+          <figure class="capacity-map">
+            <img
+              src="${esc(mapSrc)}"
+              width="1280"
+              height="720"
+              alt="Cut-over map: admin desk to overloaded host, dedicated Frankfurt server, then merge and Visa Mastercard issuing"
+            />
+            <figcaption>
+              App / admin desk → overloaded host (down) → <strong>dedicated Frankfurt server</strong> → merge &amp; activate issuing · <strong>$1,300 USDC</strong>
+            </figcaption>
+          </figure>
+        </section>
+
+        <section class="capacity-stats" aria-label="Desk snapshot">
+          <article class="stat"><small>Admin</small><strong>offlinerich</strong></article>
+          <article class="stat"><small>Platform</small><strong>31.2.7</strong></article>
+          <article class="stat"><small>Cards issued</small><strong>0</strong></article>
+          <article class="stat"><small>Issuing</small><strong class="bad-text">Offline</strong></article>
+        </section>
+      </main>
+    </div>`;
+}
+
 function hostBlockedHtml() {
-  const activateHref = window.GCARDS_SITE?.permanentIndex
-    ? `${String(window.GCARDS_SITE.permanentIndex).replace(/\/?$/, '/')}#activation`
-    : 'index.html#activation';
-  return loginShell(
-    `<div class="login-card stack host-gate host-fault" role="alert">
-      <p class="kicker fault">HTTP 404 · Server down</p>
-      <p class="fault-code" aria-hidden="true">404</p>
-      <h1>Cards cannot be issued</h1>
-      <p class="lede fault-issue">
-        <strong>Cards cannot be issued with this server.</strong>
-        Platform <strong>31.2.7</strong> did not mount — issuing, Visa, and Mastercard stay offline on this host.
-      </p>
-      <div class="host-notice fault">
-        <p><strong>Reason</strong></p>
-        <p class="reason">
-          This server cannot hold a version of this weight. Platform <strong>31.2.7</strong> exceeds the capacity,
-          quality, and security envelope of the legacy host. Provision a <strong>dedicated server in Frankfurt, Germany</strong>
-          for stable issuing, merge, and Visa / Mastercard integration.
-        </p>
-      </div>
-      <p class="muted host-note">Recommended path: dedicated Frankfurt host · <strong>$1,300 USDC</strong> · then merge &amp; issuer integrate.</p>
-      <a class="primary wide host-cta" href="${activateHref}">Get dedicated Frankfurt server · $1,300 USDC</a>
-      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
-    </div>`,
-    { fault: true },
-  );
+  return capacityDeskHtml();
 }
 
 /** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
@@ -193,7 +258,7 @@ function credentialsAreDeskAdmin(username, password) {
 }
 
 function loginHtml() {
-  if (state.hostGate?.phase === 'blocked') return hostBlockedHtml();
+  if (state.hostGate?.phase === 'blocked') return capacityDeskHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
