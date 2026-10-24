@@ -173,7 +173,7 @@ function capacityDeskHtml() {
         <div class="wrap bar-in">
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
-            <span class="who">offlinerich · admin desk</span>
+            <span class="who">Administrative panel · offlinerich</span>
             <span class="pill fault-pill">Issuing offline</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
@@ -182,18 +182,18 @@ function capacityDeskHtml() {
       <main class="wrap capacity-main" role="alert">
         <section class="capacity-banner">
           <div class="capacity-banner-copy">
-            <p class="kicker fault">HTTP 404 · Server down · Platform 31.2.7</p>
-            <h1>G Cards issuing is not available on this server</h1>
+            <p class="kicker fault">Admin desk · Platform 31.2.7 · host fault</p>
+            <h1>Issuing locked — dedicated Frankfurt server required</h1>
             <p class="lede">
-              The new language build needs a different host. This machine went down while loading
-              <strong>31.2.7</strong> — Visa / Mastercard issuing stays locked until a
-              <strong>dedicated Frankfurt server</strong> is online.
+              Client accounts stay online. Card <strong>issuing</strong> is blocked on this host after the
+              <strong>31.2.7</strong> cut-over failed. Activate a
+              <strong>dedicated Frankfurt server</strong> to resume Visa / Mastercard issuance.
             </p>
           </div>
           <aside class="capacity-meter" aria-label="Issuing status">
             <p class="capacity-meter-label">Card issuing</p>
             <p class="capacity-meter-value">Unavailable</p>
-            <p class="capacity-meter-note">Host capacity exceeded</p>
+            <p class="capacity-meter-note">Clients can register · issuing offline</p>
           </aside>
         </section>
 
