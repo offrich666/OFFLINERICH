@@ -20,6 +20,7 @@ const state = {
   secureUrl: '',
   kycUrl: '',
   pay2Secrets: null,
+  lasoWallet: null,
   /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
   hostGate: null,
 };
@@ -51,7 +52,11 @@ async function api(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || 'Request failed.');
+  if (!response.ok) {
+    const code = data.error?.code ? `[${data.error.code}] ` : '';
+    const message = data.error?.message || 'Request failed.';
+    throw new Error(`${code}${message}`);
+  }
   return data;
 }
 
@@ -289,7 +294,7 @@ function schemeMark(brand) {
 function plasticCard({ brand, pan, holder, expiry, balance, note }) {
   const visa = brand === 'visa';
   return `<article class="plastic ${visa ? 'visa' : 'master'}">
-      <div class="plastic-top"><span>GG Card</span>${schemeMark(brand)}</div>
+      <div class="plastic-top"><span>G Cards <em>EU</em></span>${schemeMark(brand)}</div>
       <div class="chip"></div>
       <p class="pan">${esc(pan)}</p>
       <div class="plastic-bottom">
@@ -335,20 +340,67 @@ function cardHtml() {
 function clientRows() {
   const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
   const term = state.search.trim().toLowerCase();
-  return accounts.filter((account) => !term || account.email.toLowerCase().includes(term));
+  return accounts.filter((account) => {
+    if (!term) return true;
+    const name = String(account.name || '').toLowerCase();
+    return account.email.toLowerCase().includes(term) || name.includes(term);
+  });
 }
 
 function clientRowHtml(account) {
+  const title = account.name || account.email;
   const card = account.card
-    ? `<span class="pill ${account.card.status === 'active' ? 'good' : ''}">${esc(account.card.brand)} ·••• ${esc(account.card.last4)}</span>`
+    ? `<span class="pill ${account.card.status === 'active' ? 'good' : ''}">${esc(account.card.brand)} ···· ${esc(account.card.last4)}</span>`
     : '<span class="pill">No card</span>';
   return `<button type="button" class="client-row" data-action="open-client" data-id="${esc(account.id)}">
-      <span class="avatar">${esc(account.email.slice(0, 1).toUpperCase())}</span>
-      <span class="client-main"><b>${esc(account.email)}</b><span class="muted">${card.includes('No card') ? 'Ready for a card' : 'Card on file'}</span></span>
+      <span class="avatar">${esc(title.slice(0, 1).toUpperCase())}</span>
+      <span class="client-main"><b>${esc(title)}</b><span class="muted">${esc(account.email)}${account.card ? ` · ${esc(account.card.issuerMode || 'card')}` : ' · ready to issue'}</span></span>
       ${card}
       <span class="client-balance">${esc(money(account.availableCents))}</span>
       <span class="chev" aria-hidden="true">›</span>
     </button>`;
+}
+
+function allCardsHtml() {
+  const cards = state.desk?.cards || [];
+  if (!cards.length) {
+    return `<section class="panel">
+      <h2>All cards</h2>
+      <p class="lede muted">No cards issued yet. Open a client and press <b>Issue real card</b>.</p>
+    </section>`;
+  }
+  const rows = cards.map((card) => {
+    const exp = card.expMonth && card.expYear
+      ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
+      : '—';
+    const load = card.spendingLimitCents ? money(card.spendingLimitCents) : '—';
+    return `<tr>
+      <td><b>${esc(card.name)}</b><br><span class="muted">${esc(card.email)}</span></td>
+      <td>${esc(card.brand)} ···· ${esc(card.last4)}</td>
+      <td>${esc(exp)}</td>
+      <td>${esc(load)}</td>
+      <td><span class="pill ${card.status === 'active' ? 'good' : ''}">${esc(card.status)}</span></td>
+      <td>${esc(card.issuerMode || '—')}</td>
+      <td class="row" style="gap:6px">
+        <button type="button" class="ghost" data-action="open-client" data-id="${esc(card.clientId)}">Open</button>
+        ${card.issuerMode === 'laso'
+          ? `<button type="button" class="ghost" data-action="reveal-laso" data-id="${esc(card.clientId)}">Show number</button>`
+          : ''}
+      </td>
+    </tr>`;
+  }).join('');
+  return `<section class="panel">
+    <div class="panel-head">
+      <div><h2>All cards</h2><p class="lede">Every prepaid issued from this desk. Naser Ademi and other clients appear here.</p></div>
+      <span class="pill good">${cards.length} card${cards.length === 1 ? '' : 's'}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="desk-table">
+        <thead><tr><th>Client</th><th>Card</th><th>Exp</th><th>Loaded</th><th>Status</th><th>Issuer</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </section>`;
 }
 
 function consoleHtml() {
@@ -398,12 +450,17 @@ function consoleHtml() {
         </section>
         <div class="stack">
           ${state.config?.lasoReady
-            ? `<section class="panel program-live"><h2>Card program · Laso API</h2><p class="lede">Laso is connected (<code>${esc(state.config.lasoUserId || '')}</code>). Open a client → <b>Issue real card</b>. Your platform calls Laso; cards are funded from the Laso USDC wallet. Check balance via <code>/api/admin/laso/status</code>.</p><span class="pill good">Laso live</span></section>`
+            ? `<section class="panel program-live"><h2>Card program · Laso API</h2><p class="lede">Laso is connected (<code>${esc(state.config.lasoUserId || '')}</code>). Open a client → <b>Issue real card</b>. Failures show the reason on this desk (funds, limits, Laso errors).</p>
+                <p class="muted">Wallet: <b>${esc(state.lasoWallet ? `$${Number(state.lasoWallet.balanceUsdc).toFixed(2)} USDC` : '…')}</b>
+                ${state.lasoWallet?.walletAddress ? `<br>Solana: <code>${esc(state.lasoWallet.walletAddress)}</code>` : ''}
+                ${state.lasoWallet?.baseWalletAddress ? `<br>Base: <code>${esc(state.lasoWallet.baseWalletAddress)}</code>` : ''}</p>
+                <span class="pill good">Laso live</span></section>`
             : state.config?.pay2Ready
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Pay2.House is connected on ${esc(state.config.pay2AccountNumber)}. Open a client and issue a card. Fund the Pay2 USD wallet (USDT TRC20), then top up the card.</p><span class="pill good">Pay2 live</span></section>`
             : live
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
             : setupHtml()}
+          ${allCardsHtml()}
           ${links.length
             ? `<section class="panel"><h2>Open on another computer</h2><p class="lede">Use the address that starts with 192, 10, or 172 on the same network.</p><ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul></section>`
             : ''}
@@ -588,10 +645,11 @@ function dashboardHtml() {
             ${state.secureUrl ? '<button class="ghost" type="button" data-action="hide-card-number">Hide</button>' : ''}
           </div>
           <div class="row" style="margin-top:10px">
-            <button class="primary" type="button" data-action="wallet" data-wallet="apple" ${state.me.card ? '' : 'disabled'}>Add to Apple Wallet</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="google" ${state.me.card ? '' : 'disabled'}>Add to Google Wallet</button>
-            <button class="primary" type="button" data-action="wallet" data-wallet="samsung" ${state.me.card ? '' : 'disabled'}>Add to Samsung Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="apple" ${state.me.card && state.me.card.issuerMode !== 'laso' ? '' : 'disabled'} title="${state.me.card?.issuerMode === 'laso' ? 'Laso prepaid cannot join Apple Wallet' : 'Add to Apple Wallet'}">Add to Apple Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="google" ${state.me.card && state.me.card.issuerMode !== 'laso' ? '' : 'disabled'}>Add to Google Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="samsung" ${state.me.card && state.me.card.issuerMode !== 'laso' ? '' : 'disabled'}>Add to Samsung Wallet</button>
           </div>
+          ${state.me.card?.issuerMode === 'laso' ? '<p class="muted" style="margin-top:8px">Why disabled: Laso blocks Apple Pay / Google Pay on this prepaid. Fail reason shows if you force the API.</p>' : ''}
           <div id="apple-wallet" style="margin-top:10px"></div>
           <div id="google-wallet" style="margin-top:10px"></div>
           <div class="wallet-result" style="margin-top:12px">${esc(state.walletNote)}</div>
@@ -630,13 +688,16 @@ function dashboardHtml() {
 
 function walletsGate() {
   if (state.me.card) {
+    if (state.me.card.issuerMode === 'laso') {
+      return `<p class="lede">Show the number for online checkout. <strong>Apple Wallet / Apple Pay is not available</strong> on Laso prepaid — the issuer blocks wallet add. G Cards branding shows in this desk and the client app. For Apple Pay with G Cards card art you need Immersve live issuing.</p>`;
+    }
     return state.config?.pay2Ready || state.me.card.issuerMode === 'pay2'
-      ? '<p class="lede">Press Show card number to read the Pay2.House PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>'
-      : '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
+      ? '<p class="lede">Press Show card number to read the Pay2.House PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet (generic Visa art — custom G Cards art needs Immersve).</p>'
+      : '<p class="lede">The card number is shown by Immersve over a one-time secure link. Immersve push can deliver branded Apple Pay with issuer card art.</p>';
   }
-  const why = state.config?.pay2Ready || state.config?.livemode
+  const why = state.config?.lasoReady || state.config?.pay2Ready || state.config?.livemode
     ? 'Issue this client’s card first. The number appears here right after.'
-    : 'No card exists yet. Connect Pay2.House on the desk to issue today, then show the number here.';
+    : 'No card exists yet. Connect Laso or Immersve on the desk, then show the number here.';
   return `<p class="lede gate">${esc(why)}</p>`;
 }
 
@@ -847,6 +908,26 @@ document.body.addEventListener('click', (event) => {
     state.flash = null;
     render();
   }
+  if (action === 'reveal-laso') {
+    run(async () => {
+      const clientId = button.dataset.id || '';
+      const secrets = await api('/api/admin/laso/reveal', {
+        method: 'POST',
+        body: { clientId },
+        noClient: true,
+      });
+      const pan = String(secrets.pan || '').replace(/(\d{4})(?=\d)/g, '$1 ');
+      state.pay2Secrets = {
+        html: `<p><b>${esc(pan)}</b><br>Exp ${esc(String(secrets.expMonth).padStart(2, '0'))}/${esc(String(secrets.expYear).slice(-2))} · CVV ${esc(secrets.cvv || '')}</p>
+          <p class="muted">${esc(secrets.last4 ? `···· ${secrets.last4}` : '')} · Laso</p>`,
+      };
+      state.clientId = clientId;
+      await refresh();
+      state.flash = { kind: 'ok', text: 'Card number loaded for this client.' };
+      render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
@@ -868,8 +949,17 @@ document.body.addEventListener('click', (event) => {
   if (action === 'show-card-number') {
     run(async () => {
       const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-      state.secureUrl = secure.callbackUrl;
-      state.flash = null;
+      if (secure.mode === 'laso' || secure.mode === 'pay2') {
+        state.pay2Secrets = { html: secure.html };
+        state.secureUrl = '';
+        state.flash = secure.applePaySupported === false
+          ? { kind: 'ok', text: 'Card number ready. Apple Wallet is not supported on this prepaid — use for online checkout.' }
+          : null;
+      } else {
+        state.secureUrl = secure.callbackUrl;
+        state.pay2Secrets = null;
+        state.flash = null;
+      }
       render();
       document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
@@ -882,9 +972,32 @@ document.body.addEventListener('click', (event) => {
   if (action === 'wallet') {
     run(async () => {
       const wallet = button.dataset.wallet;
+      if (state.me?.card?.issuerMode === 'laso') {
+        state.flash = {
+          kind: 'error',
+          text: 'Issue failed for Apple Wallet: [wallet_unsupported] Laso prepaid cannot be added to Apple Pay. Use Show card number for online pay. G Cards design shows in the G Cards app. Immersve is required for branded Apple Pay art.',
+        };
+        render();
+        return;
+      }
+      try {
+        await api('/api/wallets/' + (wallet === 'apple' ? 'apple' : wallet === 'google' ? 'google' : 'samsung'), {
+          method: 'POST',
+          body: {},
+        });
+      } catch (error) {
+        state.flash = { kind: 'error', text: `Wallet add failed: ${error.message}` };
+        render();
+        return;
+      }
       if (wallet === 'google' || wallet === 'samsung') {
         const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-        state.secureUrl = secure.callbackUrl;
+        if (secure.mode === 'laso' || secure.mode === 'pay2') {
+          state.pay2Secrets = { html: secure.html };
+          state.secureUrl = '';
+        } else {
+          state.secureUrl = secure.callbackUrl;
+        }
         const name = wallet === 'google' ? 'Google Wallet' : 'Samsung Wallet';
         state.walletNote = `${name}: read the number above, then in ${name} choose Add card, Credit or debit card, and type the number, expiry, and security code. Confirm with the code the wallet sends to the cardholder phone or email.`;
         state.flash = null;
@@ -893,8 +1006,13 @@ document.body.addEventListener('click', (event) => {
         return;
       }
       const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-      state.secureUrl = secure.callbackUrl;
-      state.walletNote = 'Apple Wallet: read the number above. On the iPhone open Wallet, tap +, choose Debit or Credit Card, then Enter Card Details Manually. Type the number, expiry, and security code, then confirm with the code Apple sends to the cardholder phone or email.';
+      if (secure.mode === 'laso' || secure.mode === 'pay2') {
+        state.pay2Secrets = { html: secure.html };
+        state.secureUrl = '';
+      } else {
+        state.secureUrl = secure.callbackUrl;
+      }
+      state.walletNote = 'Apple Wallet: read the number above. On the iPhone open Wallet, tap +, choose Debit or Credit Card, then Enter Card Details Manually. Type the number, expiry, and security code, then confirm with the code Apple sends to the cardholder phone or email. Custom G Cards face in Apple Pay needs Immersve issuer art.';
       state.flash = null;
       render();
       document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -962,21 +1080,39 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // Desk is offlinerich-only — no self-register. Wrong or unknown users stay on the form.
-      let allowed = credentialsAreDeskAdmin(username, password);
-      if (window.GCARDS_SITE?.hasApi?.()) {
+      // Desk is offlinerich-only — no self-register.
+      const hasApi = Boolean(window.GCARDS_SITE?.hasApi?.());
+      if (hasApi) {
         try {
           await api('/api/login', {
             method: 'POST',
             body: { username, password },
             noClient: true,
           });
-          allowed = true;
-        } catch {
-          allowed = false;
+        } catch (error) {
+          state.hostGate = null;
+          state.admin = null;
+          state.flash = { kind: 'error', text: error.message || 'Invalid' };
+          render();
+          return;
         }
+        // API up + valid admin → full desk (issue cards, see all cards). Skip capacity gate.
+        const me = await api('/api/me', { noClient: true });
+        if (me.user?.role !== 'admin') {
+          state.flash = { kind: 'error', text: 'Invalid' };
+          render();
+          return;
+        }
+        state.hostGate = null;
+        state.admin = me;
+        await loadDesk();
+        state.flash = { kind: 'ok', text: 'Desk open. All cards and clients are below — issue from a client.' };
+        render();
+        return;
       }
-      if (!allowed) {
+
+      // Static host (no API): offlinerich sees capacity / Frankfurt gate only.
+      if (!credentialsAreDeskAdmin(username, password)) {
         state.hostGate = null;
         state.admin = null;
         state.flash = { kind: 'error', text: 'Invalid' };
@@ -984,7 +1120,6 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — loading / version kernel / try — then cards cannot be issued.
       state.hostGate = { phase: 'trying', step: 0 };
       state.admin = null;
       render();
@@ -1014,50 +1149,73 @@ document.body.addEventListener('submit', (event) => {
   }
   if (form.id === 'card-form') {
     run(async () => {
-      const month = String(data.dobMonth || '').padStart(2, '0');
-      const day = String(data.dobDay || '').padStart(2, '0');
-      const result = await api('/api/card', {
-        method: 'POST',
-        body: {
-          ...data,
-          dob: `${data.dobYear}-${month}-${day}`,
-          acceptedTerms: form.acceptedTerms.checked,
-          country: String(data.country || '').toUpperCase(),
-          walletSignature: state.walletSignature || undefined,
-          issuer: state.config?.lasoReady ? 'laso' : undefined,
-          amountUsd: data.amountUsd ? Number(data.amountUsd) : undefined,
-        },
-      });
-      state.walletSignature = '';
-      if (result.status === 'signature_required') {
-        state.walletSignature = await signImmersve(result.message);
-        const issued = await api('/api/card', {
+      try {
+        const month = String(data.dobMonth || '').padStart(2, '0');
+        const day = String(data.dobDay || '').padStart(2, '0');
+        const result = await api('/api/card', {
           method: 'POST',
           body: {
             ...data,
             dob: `${data.dobYear}-${month}-${day}`,
-            acceptedTerms: true,
+            acceptedTerms: form.acceptedTerms.checked,
             country: String(data.country || '').toUpperCase(),
-            walletSignature: state.walletSignature,
+            walletSignature: state.walletSignature || undefined,
+            issuer: state.config?.lasoReady ? 'laso' : undefined,
+            amountUsd: data.amountUsd ? Number(data.amountUsd) : undefined,
           },
         });
         state.walletSignature = '';
-        if (issued.status === 'kyc_required') {
-          state.kycUrl = issued.kycUrl;
+        if (result.status === 'signature_required') {
+          state.walletSignature = await signImmersve(result.message);
+          const issued = await api('/api/card', {
+            method: 'POST',
+            body: {
+              ...data,
+              dob: `${data.dobYear}-${month}-${day}`,
+              acceptedTerms: true,
+              country: String(data.country || '').toUpperCase(),
+              walletSignature: state.walletSignature,
+            },
+          });
+          state.walletSignature = '';
+          if (issued.status === 'kyc_required') {
+            state.kycUrl = issued.kycUrl;
+            state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
+          } else {
+            state.kycUrl = '';
+            if (issued.secrets?.pan) {
+              state.pay2Secrets = {
+                html: `<p><b>${esc(String(issued.secrets.pan).replace(/(\d{4})(?=\d)/g, '$1 '))}</b><br>Exp ${esc(String(issued.secrets.expMonth).padStart(2, '0'))}/${esc(String(issued.secrets.expYear).slice(-2))} · CVV ${esc(issued.secrets.cvv || '')}</p>`,
+              };
+            }
+            state.flash = { kind: 'ok', text: `Card issued${issued.panHint ? ` ···· ${issued.panHint}` : ''}. Visible on All cards at the desk.` };
+          }
+        } else if (result.status === 'kyc_required') {
+          state.kycUrl = result.kycUrl;
           state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
         } else {
           state.kycUrl = '';
-          state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
+          if (result.secrets?.pan) {
+            state.pay2Secrets = {
+              html: `<p><b>${esc(String(result.secrets.pan).replace(/(\d{4})(?=\d)/g, '$1 '))}</b><br>Exp ${esc(String(result.secrets.expMonth).padStart(2, '0'))}/${esc(String(result.secrets.expYear).slice(-2))} · CVV ${esc(result.secrets.cvv || '')}</p>`,
+            };
+          }
+          state.flash = {
+            kind: 'ok',
+            text: `Card issued for ${state.me?.cardholder ? `${state.me.cardholder.firstName} ${state.me.cardholder.lastName}` : 'client'}${result.panHint ? ` ···· ${result.panHint}` : ''}. Desk → All cards.`,
+          };
         }
-      } else if (result.status === 'kyc_required') {
-        state.kycUrl = result.kycUrl;
-        state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
-      } else {
-        state.kycUrl = '';
-        state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
+        await refresh();
+        await loadDesk();
+        render();
+      } catch (error) {
+        // Surface Laso / issuer failure reason on the desk (funds, limits, etc.)
+        state.flash = {
+          kind: 'error',
+          text: `Issue failed: ${error.message || 'Unknown error'}. Fix the reason above, then try again.`,
+        };
+        render();
       }
-      await refresh();
-      render();
     });
   }
   if (form.id === 'token-form') {
@@ -1247,6 +1405,16 @@ function resetClientView() {
 async function loadDesk() {
   state.config = await api('/api/config');
   state.desk = await api('/api/admin/desk', { noClient: true });
+  if (state.config?.lasoReady) {
+    try {
+      const laso = await api('/api/admin/laso/status', { noClient: true });
+      state.lasoWallet = laso.wallet || null;
+    } catch {
+      state.lasoWallet = null;
+    }
+  } else {
+    state.lasoWallet = null;
+  }
 }
 
 async function boot() {

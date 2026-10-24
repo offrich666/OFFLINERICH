@@ -427,3 +427,18 @@ button.portal-open-dash {
 }
 .dash-secrets p { margin: 0 0 4px; }
 .dash-secrets small { color: #6b7788; }
+
+.dash-card.gcards-face { min-width: 240px; padding-bottom: 18px; }
+.dash-card-brand { font-family: "Source Serif 4", Georgia, serif; letter-spacing: 0.06em; font-weight: 650; }
+.dash-card-brand em { font-style: normal; color: #e7d3a4; }
+.dash-chip {
+  width: 38px; height: 28px; margin: 14px 0 8px; border-radius: 6px;
+  background: linear-gradient(135deg, #d7c089, #a68446 45%, #efe0b8);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+.dash-card-pan {
+  margin: 0 0 14px; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.12em; font-size: 0.95rem;
+}
+.dash-card-bot span small { display: block; opacity: 0.75; font-size: 0.65rem; text-transform: uppercase; }
+.dash-card-bot span b { font-size: 0.8rem; }
