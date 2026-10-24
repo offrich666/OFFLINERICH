@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Tether USD Bridged ZED20 (USDT.z) — ZEDX Neobanking</title>
+  <meta name="description" content="USDT.z bridged BEP-20 on BNB Smart Chain for the ZEDX neobanking / ZED20 network."/>
+  <link rel="icon" href="logo.png"/>
+  <style>
+    :root {
+      --ink:#0a1628; --card:#0f2138; --line:#1e3a5f; --text:#e9f2ff; --muted:#9db0c9;
+      --mint:#2bb673; --gold:#c9a227;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; color:var(--text);
+      font-family:"Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      background:
+        radial-gradient(900px 480px at 10% -10%, #163d2e 0%, transparent 55%),
+        radial-gradient(800px 420px at 90% 0%, #1a2f55 0%, transparent 50%),
+        linear-gradient(180deg, #07101c, #0a1628 40%, #07101c);
+      min-height:100vh;
+    }
+    main { max-width:880px; margin:0 auto; padding:48px 20px 72px; }
+    .hero {
+      display:flex; gap:20px; align-items:center; flex-wrap:wrap;
+      padding:28px; border:1px solid var(--line); border-radius:22px;
+      background:linear-gradient(145deg, rgba(15,33,56,.95), rgba(10,22,40,.9));
+      box-shadow:0 20px 60px rgba(0,0,0,.35);
+    }
+    .hero img { width:72px; height:72px; border-radius:50%; border:2px solid rgba(43,182,115,.55); }
+    h1 { margin:0 0 6px; font-size:clamp(1.4rem, 3vw, 1.9rem); letter-spacing:-.02em; }
+    .sym { color:var(--mint); font-weight:800; }
+    .badge {
+      display:inline-flex; gap:8px; align-items:center; margin-top:10px;
+      padding:6px 12px; border-radius:999px; font-size:.8rem; color:#d9ffe9;
+      background:rgba(43,182,115,.15); border:1px solid rgba(43,182,115,.35);
+    }
+    .grid { display:grid; gap:16px; margin-top:18px; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); }
+    .card {
+      padding:18px 18px 16px; border-radius:16px; border:1px solid var(--line);
+      background:rgba(15,33,56,.78);
+    }
+    h2 { margin:0 0 8px; font-size:1rem; color:#fff; }
+    p, li { color:var(--muted); line-height:1.55; font-size:.95rem; }
+    code, a { color:#9fe3c2; word-break:break-all; }
+    a { text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    dl { display:grid; grid-template-columns:120px 1fr; gap:8px 10px; margin:0; }
+    dt { color:var(--muted); font-size:.85rem; } dd { margin:0; font-size:.9rem; }
+    .note { margin-top:18px; font-size:.85rem; color:#8fa3bf; }
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <img src="logo.png" alt="USDT.z"/>
+    <div>
+      <h1>Tether USD Bridged ZED20 <span class="sym">USDT.z</span></h1>
+      <p style="margin:0;max-width:52ch">BEP-20 bridged USD token on <strong>BNB Smart Chain</strong> for the <strong>ZEDX neobanking / ZED20</strong> network. Fixed supply at deployment via blackhole → ZEDCHAIN bridge custody.</p>
+      <div class="badge">Network: BNB Chain · Type: BEP-20 / ERC-20</div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h2>Official links</h2>
+      <p><a href="https://bscscan.com/token/0x46eba1eaed34b6d73fa32a99ddfaa1286017e45f">BscScan Token</a></p>
+      <p><a href="https://bscscan.com/address/0x46eba1eaed34b6d73fa32a99ddfaa1286017e45f#code">Verified Contract</a></p>
+      <p><a href="https://bscscan.com/address/0xc8917d1ab2d005242da3c3bb20fe854212753d25#code">Implementation</a></p>
+    </article>
+    <article class="card">
+      <h2>Token facts</h2>
+      <dl>
+        <dt>Name</dt><dd>Tether USD Bridged ZED20</dd>
+        <dt>Symbol</dt><dd>USDT.z</dd>
+        <dt>Decimals</dt><dd>6</dd>
+        <dt>Supply</dt><dd>27,500,000,000</dd>
+        <dt>Standard</dt><dd>BEP-20 (ERC-20)</dd>
+      </dl>
+    </article>
+    <article class="card">
+      <h2>ZEDCHAIN bridge</h2>
+      <p>Bridge custody wallet receives full supply at deploy (after blackhole path).</p>
+      <p><code>0xAe3CBe9671316957865D68b281362Dc1AF1413D7</code></p>
+    </article>
+  </section>
+
+  <p class="note">Overview: USDT.z is a bridged stablecoin-style BEP-20 for ZEDX / ZED20 neobanking use cases on BNB Smart Chain. Not issued by Tether Limited. On-chain data prevails over any off-chain text.</p>
+</main>
+</body>
+</html>
