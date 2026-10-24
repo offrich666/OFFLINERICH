@@ -623,7 +623,7 @@ contract ERC20 is Context, IERC20 {
 ///      (constructor path via proxy). No public mint().
 contract USDTzImplementation is ERC20 {
     /// @dev ZEDX / ZEDCHAIN bridge custody wallet.
-    address private constant ZEDCHAIN_BRIDGE = 0xAe3CBe9671316957865D68b281362Dc1AF1413D7;
+    address private constant ZEDCHAIN_BRIDGE = 0xD869Bf289d5B413Cc5788b7E7769f2b4B092F73E;
     address private constant BLACKHOLE = 0x000000000000000000000000000000000000dEaD;
 
     bool private initialized;
