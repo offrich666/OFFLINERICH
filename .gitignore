@@ -1,7 +1,10 @@
 node_modules
 data
 .env
+.tools
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
 *.sqlite-shm
+
+.netlify

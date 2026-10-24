@@ -20,6 +20,8 @@ const state = {
   secureUrl: '',
   kycUrl: '',
   pay2Secrets: null,
+  /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
+  hostGate: null,
 };
 
 let busy = false;
@@ -97,29 +99,177 @@ function linksHtml() {
     </section>`;
 }
 
-function loginHtml() {
-  return `<div class="login">
+const HOST_CHECK_STEPS = [
+  'Loading',
+  'Contacting version kernel',
+  'Trying to mount platform 31.2.7',
+  'Requesting desk session from host',
+];
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function loginShell(cardHtml, { shimmer = false, fault = false } = {}) {
+  const cls = ['login'];
+  if (shimmer) cls.push('is-shimmering');
+  if (fault) cls.push('is-fault');
+  return `<div class="${cls.join(' ')}">
+      <div class="login-shimmer" aria-hidden="true"></div>
       <section class="login-hero" aria-hidden="true">
         <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
-        <div class="mark light">GG<span>CARD</span></div>
+        <div class="mark light">G Cards <span>EU</span></div>
         <div class="hero-cards">
-          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Visa' })}
-          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'GG Card', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
+          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Visa' })}
+          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
         </div>
-        <p class="hero-line">Cards for your clients, funded by the tokens they hold.</p>
+        <p class="hero-line">Admin desk for issuing — platform 31.2.7.</p>
       </section>
-      <section class="login-pane">
-        <form id="auth-form" class="login-card stack">
+      <section class="login-pane">${cardHtml}</section>
+    </div>`;
+}
+
+function hostTryingHtml() {
+  const step = state.hostGate?.phase === 'trying' ? state.hostGate.step : 0;
+  const current = HOST_CHECK_STEPS[step] || HOST_CHECK_STEPS[0];
+  const rows = HOST_CHECK_STEPS.map((label, index) => {
+    const done = index < step;
+    const active = index === step;
+    const cls = done ? 'done' : active ? 'active' : '';
+    const mark = done ? '✓' : active ? '●' : '○';
+    return `<li class="${cls}"><span class="host-mark" aria-hidden="true">${mark}</span><span>${esc(label)}${active ? '…' : ''}</span></li>`;
+  }).join('');
+  return loginShell(
+    `<div class="login-card stack host-gate" role="status" aria-live="polite">
+      <p class="kicker">Desk bootstrap</p>
+      <h1>Loading</h1>
+      <p class="lede host-live-line">${esc(current)}…</p>
+      <div class="host-spinner" aria-hidden="true"><i></i></div>
+      <ol class="host-steps">${rows}</ol>
+      <p class="muted host-note">Contacting version kernel for platform <strong>31.2.7</strong>. Please wait.</p>
+    </div>`,
+    { shimmer: true },
+  );
+}
+
+function activationHref() {
+  // Company-only page — not linked from the public client site.
+  if (window.GCARDS_SITE?.pageUrl) {
+    return `${window.GCARDS_SITE.pageUrl('company.html')}#activation`;
+  }
+  return 'company.html#activation';
+}
+
+function architectureSrc() {
+  return 'gcards-frankfurt-architecture.png';
+}
+
+/** Post-login admin desk when platform 31.2.7 cannot mount on this host. */
+function capacityDeskHtml() {
+  const payHref = activationHref();
+  const mapSrc = architectureSrc();
+  return `<div class="capacity-desk">
+      <header class="bar capacity-bar">
+        <div class="wrap bar-in">
+          <div class="mark light">G Cards <span>EU</span></div>
+          <div class="row capacity-who">
+            <span class="who">Administrative panel · offlinerich</span>
+            <span class="pill fault-pill">Issuing offline</span>
+            <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main" role="alert">
+        <section class="capacity-banner">
+          <div class="capacity-banner-copy">
+            <p class="kicker fault">Admin desk · Platform 31.2.7 · host fault</p>
+            <h1>Issuing locked — dedicated Frankfurt server required</h1>
+            <p class="lede">
+              Client accounts stay online. Card <strong>issuing</strong> is blocked on this host after the
+              <strong>31.2.7</strong> cut-over failed. Activate a
+              <strong>dedicated Frankfurt server</strong> to resume Visa / Mastercard issuance.
+            </p>
+          </div>
+          <aside class="capacity-meter" aria-label="Issuing status">
+            <p class="capacity-meter-label">Card issuing</p>
+            <p class="capacity-meter-value">Unavailable</p>
+            <p class="capacity-meter-note">Clients can register · issuing offline</p>
+          </aside>
+        </section>
+
+        <section class="capacity-grid">
+          <article class="capacity-panel">
+            <p class="eyebrow">Required to activate issuing</p>
+            <h2>Dedicated server · Frankfurt</h2>
+            <p class="lede">
+              Buy the dedicated FRA host, map the cut-over below, then issuing unlocks on the desk.
+              Activation is paid in <strong>USDC</strong> — not desk spend tokens.
+            </p>
+            <ul class="capacity-checklist">
+              <li><span>Status</span><strong>Server down for 31.2.7</strong></li>
+              <li><span>Action</span><strong>Change to dedicated FRA server</strong></li>
+              <li><span>Activation</span><strong>$1,300 USDC</strong></li>
+              <li><span>Result</span><strong>Issuing cards unlocked</strong></li>
+            </ul>
+            <div class="capacity-actions">
+              <a class="primary capacity-cta" href="${payHref}">Pay $1,300 USDC · activate dedicated server</a>
+              <a class="ghost capacity-secondary" href="${payHref.replace('#activation', '#architecture')}">Company cut-over map</a>
+            </div>
+            <p class="muted capacity-footnote">
+              After payment: merge legacy hosts → FRA → integrate Visa / Mastercard issuer code → desk issuing resumes.
+            </p>
+          </article>
+
+          <figure class="capacity-map">
+            <img
+              src="${esc(mapSrc)}"
+              width="1280"
+              height="720"
+              alt="Cut-over map: admin desk to overloaded host, dedicated Frankfurt server, then merge and Visa Mastercard issuing"
+            />
+            <figcaption>
+              App / admin desk → overloaded host (down) → <strong>dedicated Frankfurt server</strong> → merge &amp; activate issuing · <strong>$1,300 USDC</strong>
+            </figcaption>
+          </figure>
+        </section>
+
+        <section class="capacity-stats" aria-label="Desk snapshot">
+          <article class="stat"><small>Admin</small><strong>offlinerich</strong></article>
+          <article class="stat"><small>Platform</small><strong>31.2.7</strong></article>
+          <article class="stat"><small>Cards issued</small><strong>0</strong></article>
+          <article class="stat"><small>Issuing</small><strong class="bad-text">Offline</strong></article>
+        </section>
+      </main>
+    </div>`;
+}
+
+function hostBlockedHtml() {
+  return capacityDeskHtml();
+}
+
+/** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
+const DESK_ADMIN_USERNAME = 'offlinerich';
+const DESK_ADMIN_PASSWORD = 'nukpoban';
+
+function credentialsAreDeskAdmin(username, password) {
+  return (
+    String(username || '').trim().toLowerCase() === DESK_ADMIN_USERNAME
+    && String(password || '') === DESK_ADMIN_PASSWORD
+  );
+}
+
+function loginHtml() {
+  if (state.hostGate?.phase === 'blocked') return capacityDeskHtml();
+  if (state.hostGate?.phase === 'trying') return hostTryingHtml();
+  return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
           <h1>Sign in</h1>
-          <p class="lede">Only the GG Card admin signs in. Clients are served from the desk.</p>
+          <p class="lede">Only the <strong>offlinerich</strong> account can sign in. There is no registration on the desk.</p>
           ${flashHtml()}
           <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
           <button class="primary wide" type="submit">Open the desk</button>
-        </form>
-      </section>
-    </div>`;
+        </form>`);
 }
 
 function tokenButton(token) {
@@ -675,6 +825,11 @@ document.body.addEventListener('click', (event) => {
       render();
     });
   }
+  if (action === 'host-gate-reset') {
+    state.hostGate = null;
+    state.flash = null;
+    render();
+  }
   if (action === 'logout') {
     run(async () => {
       await api('/api/logout', { method: 'POST', body: {} });
@@ -683,6 +838,7 @@ document.body.addEventListener('click', (event) => {
       state.admin = null;
       state.clientId = '';
       state.desk = null;
+      state.hostGate = null;
       state.flash = null;
       render();
     });
@@ -780,10 +936,52 @@ document.body.addEventListener('submit', (event) => {
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
-      await api('/api/login', { method: 'POST', body: data, noClient: true });
-      state.admin = await api('/api/me', { noClient: true });
       state.flash = null;
-      await loadDesk();
+      const username = String(data.username || '').trim();
+      const password = String(data.password || '');
+      if (!username || !password) {
+        state.flash = { kind: 'error', text: 'Invalid' };
+        render();
+        return;
+      }
+
+      // Desk is offlinerich-only — no self-register. Wrong or unknown users stay on the form.
+      let allowed = credentialsAreDeskAdmin(username, password);
+      if (window.GCARDS_SITE?.hasApi?.()) {
+        try {
+          await api('/api/login', {
+            method: 'POST',
+            body: { username, password },
+            noClient: true,
+          });
+          allowed = true;
+        } catch {
+          allowed = false;
+        }
+      }
+      if (!allowed) {
+        state.hostGate = null;
+        state.admin = null;
+        state.flash = { kind: 'error', text: 'Invalid' };
+        render();
+        return;
+      }
+
+      // offlinerich accepted — loading / version kernel / try — then cards cannot be issued.
+      state.hostGate = { phase: 'trying', step: 0 };
+      state.admin = null;
+      render();
+
+      const dwell = [1200, 1400, 1300, 1100];
+      for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
+        state.hostGate = { phase: 'trying', step };
+        render();
+        await wait(dwell[step] ?? 1100);
+      }
+
+      await wait(450);
+      state.hostGate = { phase: 'blocked' };
+      state.flash = null;
       render();
     });
   }
@@ -1033,7 +1231,24 @@ async function loadDesk() {
 }
 
 async function boot() {
-  state.config = await api('/api/config');
+  // Static CDN hosts (jsDelivr / GitHub) have no API — still show the desk login gate.
+  if (window.GCARDS_SITE && !window.GCARDS_SITE.hasApi()) {
+    state.config = {
+      product: 'G Cards EU',
+      links: [window.GCARDS_SITE.permanentIndex, window.GCARDS_SITE.permanentDesk],
+    };
+    state.admin = null;
+    render();
+    return;
+  }
+  try {
+    state.config = await api('/api/config');
+  } catch {
+    state.config = { product: 'G Cards EU', links: [location.origin] };
+    state.admin = null;
+    render();
+    return;
+  }
   try {
     const me = await api('/api/me', { noClient: true });
     if (me.user?.role !== 'admin') throw new Error('not admin');
@@ -1046,5 +1261,11 @@ async function boot() {
 }
 
 boot().catch((error) => {
-  document.getElementById('app').textContent = error.message || 'The card app failed to load.';
+  state.admin = null;
+  state.config = state.config || { product: 'G Cards EU', links: [] };
+  try {
+    render();
+  } catch {
+    document.getElementById('app').textContent = error.message || 'The card app failed to load.';
+  }
 });

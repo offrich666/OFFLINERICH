@@ -239,6 +239,278 @@ button.ghost.light:hover { background: rgba(255, 255, 255, 0.1); }
 .login-card h1 { font-family: Fraunces, Georgia, serif; font-weight: 560; letter-spacing: -0.03em; margin: 0 0 4px; color: var(--navy); font-size: 34px; }
 .wide { width: 100%; padding: 13px 16px; }
 
+/* desk host gate after password — loading shimmer → 404 server down */
+.login { position: relative; }
+.login-shimmer {
+  display: none;
+  pointer-events: none;
+  position: absolute; inset: 0; z-index: 5;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.08) 48%,
+    rgba(231, 211, 164, 0.14) 52%,
+    transparent 65%
+  );
+  background-size: 220% 100%;
+  animation: page-shimmer 1.35s ease-in-out infinite;
+}
+.login.is-shimmering .login-shimmer { display: block; }
+.login.is-shimmering .login-card {
+  position: relative; z-index: 6;
+  box-shadow: 0 0 0 1px rgba(166, 132, 70, 0.25), var(--shadow);
+}
+.login.is-fault .login-hero { filter: saturate(0.85) brightness(0.92); }
+.kicker.warn { color: #8a5a18; }
+.kicker.fault { color: #8d2f2f; }
+.fault-issue { color: #6a2424; }
+.fault-issue strong { color: #8d2f2f; }
+.host-gate .lede { margin-bottom: 4px; }
+.host-live-line { min-height: 1.4em; font-weight: 600; color: var(--navy); }
+.host-spinner {
+  width: 42px; height: 42px; margin: 6px 0 4px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--navy);
+  animation: host-spin 0.85s linear infinite;
+  display: grid; place-items: center;
+}
+.host-spinner i { display: none; }
+.host-steps {
+  list-style: none; margin: 8px 0 0; padding: 0;
+  display: grid; gap: 10px;
+}
+.host-steps li {
+  display: grid; grid-template-columns: 1.25rem 1fr; gap: 10px; align-items: start;
+  color: var(--muted); font-size: 14px; line-height: 1.35;
+}
+.host-steps li.active { color: var(--navy); font-weight: 600; }
+.host-steps li.done { color: var(--good); }
+.host-mark { font-size: 12px; line-height: 1.45; text-align: center; }
+.host-notice {
+  margin: 4px 0 0; padding: 14px 14px 12px;
+  background: #fff8ee; border: 1px solid #e6d3a8; border-radius: 14px;
+}
+.host-notice.fault {
+  background: #f8eeee; border-color: #e2bcbc;
+}
+.host-notice p { margin: 0 0 8px; color: var(--navy); font-size: 13px; letter-spacing: 0.02em; }
+.host-notice .reason {
+  margin: 0; color: #5c3030; font-size: 13.5px; line-height: 1.55;
+}
+.host-notice ul { margin: 0; padding-left: 18px; color: #5c4a28; font-size: 13.5px; line-height: 1.5; }
+.host-notice li + li { margin-top: 4px; }
+.host-note { margin: 2px 0 8px; font-size: 13px; line-height: 1.45; }
+.fault-code {
+  margin: 0;
+  font-family: Fraunces, Georgia, serif;
+  font-size: 64px;
+  font-weight: 640;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+  color: #8d2f2f;
+  opacity: 0.88;
+}
+.host-fault h1 { margin-top: 2px; }
+a.host-cta {
+  display: inline-flex; justify-content: center; align-items: center;
+  text-decoration: none; text-align: center;
+  background: var(--navy); color: #f6f1e6; border-radius: 12px;
+  font-weight: 650; border: 1px solid transparent;
+}
+a.host-cta:hover { background: var(--navy-2); color: #fff; }
+
+/* post-login capacity desk — issuing offline / dedicated FRA server */
+.capacity-desk {
+  min-height: 100dvh;
+  background:
+    radial-gradient(900px 420px at 12% -10%, rgba(166, 132, 70, 0.14), transparent 55%),
+    radial-gradient(700px 380px at 100% 0%, rgba(27, 51, 92, 0.1), transparent 50%),
+    linear-gradient(180deg, #eef1f6 0%, var(--paper) 42%, #e8ebe3 100%);
+}
+.capacity-bar { border-bottom: 1px solid rgba(246, 241, 230, 0.12); }
+.capacity-who { gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.fault-pill {
+  background: #f0d5d5 !important;
+  color: #8d2f2f !important;
+  border-radius: 999px;
+  font-weight: 650;
+}
+.capacity-main {
+  display: grid;
+  gap: 22px;
+  padding: 28px 0 48px;
+}
+.capacity-banner {
+  display: grid;
+  grid-template-columns: 1.6fr 0.9fr;
+  gap: 18px;
+  align-items: stretch;
+  animation: rise 0.55s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.capacity-banner-copy {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 28px 28px 26px;
+  box-shadow: var(--shadow);
+}
+.capacity-banner-copy h1 {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  font-size: clamp(28px, 3.4vw, 40px);
+  line-height: 1.12;
+  margin: 0 0 12px;
+  color: var(--navy);
+  max-width: 18ch;
+}
+.capacity-banner-copy .lede { margin: 0; max-width: 52ch; }
+.capacity-meter {
+  background: linear-gradient(160deg, #1b335c 0%, #101f38 100%);
+  color: #f6f1e6;
+  border-radius: 22px;
+  padding: 26px 24px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  box-shadow: var(--shadow);
+}
+.capacity-meter-label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+.capacity-meter-value {
+  margin: 0;
+  font-family: Fraunces, Georgia, serif;
+  font-size: 34px;
+  font-weight: 560;
+  color: #f0b4b4;
+}
+.capacity-meter-note { margin: 0; font-size: 14px; opacity: 0.75; }
+.capacity-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  gap: 18px;
+  align-items: start;
+  animation: rise 0.65s 0.08s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.capacity-panel {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 26px 26px 22px;
+  box-shadow: var(--shadow);
+}
+.capacity-panel .eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a5a18;
+  font-weight: 650;
+}
+.capacity-panel h2 {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  font-size: 28px;
+  margin: 0 0 10px;
+  color: var(--navy);
+}
+.capacity-checklist {
+  list-style: none;
+  margin: 18px 0 20px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.capacity-checklist li {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.capacity-checklist span { color: var(--muted); }
+.capacity-checklist strong { color: var(--navy); font-weight: 650; }
+.capacity-actions {
+  display: grid;
+  gap: 10px;
+}
+a.capacity-cta,
+a.capacity-secondary {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
+  text-align: center;
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-weight: 650;
+}
+a.capacity-cta {
+  background: var(--navy);
+  color: #f6f1e6;
+  border: 1px solid transparent;
+}
+a.capacity-cta:hover { background: var(--navy-2); color: #fff; }
+a.capacity-secondary {
+  background: transparent;
+  color: var(--navy);
+  border: 1px solid var(--line);
+}
+a.capacity-secondary:hover { background: rgba(16, 32, 60, 0.05); }
+.capacity-footnote { margin: 14px 0 0; font-size: 13px; line-height: 1.45; }
+.capacity-map {
+  margin: 0;
+  background: #0f1724;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid #1c2a40;
+  box-shadow: var(--shadow);
+}
+.capacity-map img {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+.capacity-map figcaption {
+  padding: 14px 18px 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #d7d0c2;
+  background: linear-gradient(180deg, #152033, #101824);
+}
+.capacity-map figcaption strong { color: #e7d3a4; font-weight: 650; }
+.capacity-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  animation: rise 0.7s 0.14s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.capacity-stats .bad-text { color: #8d2f2f; }
+@keyframes host-spin { to { transform: rotate(360deg); } }
+@keyframes page-shimmer {
+  0% { background-position: 120% 0; opacity: 0.35; }
+  40% { opacity: 0.9; }
+  100% { background-position: -40% 0; opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .host-spinner { animation: none; border-top-color: var(--gold); }
+  .login-shimmer { animation: none; opacity: 0.25; }
+}
+@media (max-width: 960px) {
+  .capacity-banner,
+  .capacity-grid { grid-template-columns: 1fr; }
+  .capacity-stats { grid-template-columns: 1fr 1fr; }
+  .capacity-banner-copy h1 { max-width: none; }
+}
+
 button.primary { transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s; }
 button.primary:hover { transform: translateY(-1px); background: var(--navy-2); box-shadow: 0 8px 18px rgba(16, 32, 60, 0.25); }
 button.primary:active { transform: translateY(0); }

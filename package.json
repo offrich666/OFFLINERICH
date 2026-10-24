@@ -11,7 +11,9 @@
     "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/index.ts",
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test test/*.ts",
     "typecheck": "tsc --noEmit",
-    "build:wallet": "npx --yes esbuild src/gg-wallet.ts --bundle --format=iife --outfile=public/gg-wallet.js --platform=browser"
+    "build:wallet": "npx --yes esbuild src/gg-wallet.ts --bundle --format=iife --outfile=public/gg-wallet.js --platform=browser",
+    "phone:tunnel": "bash scripts/phone-tunnel.sh",
+    "publish:live": "bash scripts/publish-live-site.sh"
   },
   "repository": {
     "type": "git",
