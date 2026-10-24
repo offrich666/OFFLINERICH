@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Add USDT.z to MetaMask — BNB Smart Chain</title>
+  <meta name="description" content="Add Tether USD Bridged ZED20 (USDT.z) to MetaMask on BNB Smart Chain with logo."/>
+  <link rel="icon" href="logo.png"/>
+  <style>
+    :root {
+      --ink:#0a1628; --line:#1e3a5f; --text:#e9f2ff; --muted:#9db0c9;
+      --mint:#2bb673; --fox:#e2761b;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; color:var(--text);
+      font-family:"Segoe UI", ui-sans-serif, system-ui, sans-serif;
+      background:
+        radial-gradient(800px 420px at 12% -8%, #163d2e 0%, transparent 55%),
+        radial-gradient(700px 380px at 90% 0%, #1a2f55 0%, transparent 50%),
+        linear-gradient(180deg, #07101c, #0a1628 45%, #07101c);
+      min-height:100vh;
+    }
+    main { max-width:560px; margin:0 auto; padding:48px 20px 72px; }
+    .card {
+      padding:28px; border:1px solid var(--line); border-radius:22px;
+      background:linear-gradient(145deg, rgba(15,33,56,.95), rgba(10,22,40,.9));
+    }
+    .row { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+    img.logo { width:72px; height:72px; border-radius:50%; border:2px solid rgba(43,182,115,.55); }
+    h1 { margin:0 0 6px; font-size:1.45rem; }
+    .sym { color:var(--mint); font-weight:800; }
+    p { color:var(--muted); line-height:1.55; }
+    code { color:#9fe3c2; word-break:break-all; font-size:.85rem; }
+    button {
+      appearance:none; border:0; cursor:pointer; width:100%;
+      margin-top:18px; padding:14px 18px; border-radius:14px;
+      font-weight:700; font-size:1rem; color:#0a1628;
+      background:linear-gradient(180deg, #f5a962, var(--fox));
+    }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    button.secondary {
+      background:transparent; color:var(--mint);
+      border:1px solid rgba(43,182,115,.45); margin-top:10px;
+    }
+    #status { margin-top:14px; font-size:.9rem; color:var(--muted); min-height:1.4em; }
+    #status.ok { color:#9fe3c2; }
+    #status.err { color:#ff9b9b; }
+    dl { display:grid; grid-template-columns:110px 1fr; gap:8px 10px; margin:18px 0 0; }
+    dt { color:var(--muted); font-size:.85rem; } dd { margin:0; font-size:.9rem; }
+    a { color:#9fe3c2; }
+  </style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <div class="row">
+      <img class="logo" src="logo.png" alt="USDT.z"/>
+      <div>
+        <h1>Add <span class="sym">USDT.z</span> to MetaMask</h1>
+        <p style="margin:0">Tether USD Bridged ZED20 on <strong>BNB Smart Chain</strong> (bridged to ZEDCHAIN).</p>
+      </div>
+    </div>
+
+    <dl>
+      <dt>Contract</dt><dd><code id="addr">0x8a025A26E41B13CD6E575479F25b7083E01D0c2f</code></dd>
+      <dt>Symbol</dt><dd>USDT.z</dd>
+      <dt>Decimals</dt><dd>6</dd>
+      <dt>Chain</dt><dd>BNB Smart Chain (56)</dd>
+    </dl>
+
+    <button id="addBtn" type="button">Add USDT.z to MetaMask</button>
+    <button id="switchBtn" class="secondary" type="button">Switch / add BNB Smart Chain</button>
+    <p id="status">Open this page in a browser with MetaMask (desktop extension or MetaMask mobile in-app browser).</p>
+    <p style="font-size:.85rem;margin-top:16px"><a href="index.html">← Token overview</a> · <a href="https://bscscan.com/token/0x8a025A26E41B13CD6E575479F25b7083E01D0c2f">BscScan</a></p>
+  </section>
+</main>
+<script>
+(function () {
+  const TOKEN = {
+    address: "0x8a025A26E41B13CD6E575479F25b7083E01D0c2f",
+    symbol: "USDT.z",
+    decimals: 6,
+    // Absolute logo URL so MetaMask can fetch it
+    image: "https://raw.githubusercontent.com/offrich666/OFFLINERICH/cursor/usdtz-metamask-coingecko-069a/bscscan/logo-usdtz-trustwallet-256.png",
+  };
+  const BSC = {
+    chainId: "0x38",
+    chainName: "BNB Smart Chain",
+    nativeCurrency: { name: "BNB", symbol: "BNB", decimals: 18 },
+    rpcUrls: ["https://bsc-dataseed.binance.org/"],
+    blockExplorerUrls: ["https://bscscan.com"],
+  };
+
+  const statusEl = document.getElementById("status");
+  const addBtn = document.getElementById("addBtn");
+  const switchBtn = document.getElementById("switchBtn");
+
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = kind || "";
+  }
+
+  function eth() {
+    return window.ethereum;
+  }
+
+  async function ensureBsc() {
+    const provider = eth();
+    if (!provider) throw new Error("MetaMask not found. Install the extension or open in MetaMask browser.");
+    try {
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: BSC.chainId }] });
+    } catch (e) {
+      if (e && (e.code === 4902 || e.code === -32603)) {
+        await provider.request({ method: "wallet_addEthereumChain", params: [BSC] });
+      } else if (e && e.code === 4001) {
+        throw new Error("Network switch rejected in MetaMask.");
+      } else {
+        throw e;
+      }
+    }
+  }
+
+  async function addToken() {
+    const provider = eth();
+    if (!provider) {
+      setStatus("MetaMask not found. Use Chrome/Brave with MetaMask, or MetaMask mobile browser.", "err");
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      setStatus("Switching to BNB Smart Chain…");
+      await ensureBsc();
+      setStatus("Confirm Add Token in MetaMask…");
+      const wasAdded = await provider.request({
+        method: "wallet_watchAsset",
+        params: {
+          type: "ERC20",
+          options: {
+            address: TOKEN.address,
+            symbol: TOKEN.symbol,
+            decimals: TOKEN.decimals,
+            image: TOKEN.image,
+          },
+        },
+      });
+      if (wasAdded) setStatus("USDT.z added to MetaMask with logo.", "ok");
+      else setStatus("Add Token was cancelled.", "err");
+    } catch (e) {
+      setStatus((e && e.message) ? e.message : String(e), "err");
+    } finally {
+      addBtn.disabled = false;
+    }
+  }
+
+  async function switchOnly() {
+    switchBtn.disabled = true;
+    try {
+      await ensureBsc();
+      setStatus("BNB Smart Chain is active.", "ok");
+    } catch (e) {
+      setStatus((e && e.message) ? e.message : String(e), "err");
+    } finally {
+      switchBtn.disabled = false;
+    }
+  }
+
+  addBtn.addEventListener("click", addToken);
+  switchBtn.addEventListener("click", switchOnly);
+})();
+</script>
+</body>
+</html>
