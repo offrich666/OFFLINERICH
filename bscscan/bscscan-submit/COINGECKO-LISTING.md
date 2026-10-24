@@ -26,3 +26,9 @@ If there is no pool yet, use **Preview Listing** or create a PancakeSwap liquidi
 
 ## After submit
 Save Request ID from confirmation email. Verification may require a social post with GeckoTerminal URL once a pool exists.
+
+## Status (2026-10-24)
+CoinGecko form **blocks submit** without Exchange Name + Trade URL, even on Preview Listing.
+Action required before listing: create a PancakeSwap (or other CG-tracked) liquidity pair for
+`0x8a025A26E41B13CD6E575479F25b7083E01D0c2f`, then resubmit with that pair link (e.g. GeckoTerminal / Pancake info URL).
+Account used: richoffline666@gmail.com (Regular Pass / free).
