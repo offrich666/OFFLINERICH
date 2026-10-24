@@ -2,10 +2,13 @@
 pragma solidity ^0.6.12;
 
 /// @title ProxyShell
-/// @notice Empty EIP-1967 shell pointing at {USDTzImplementation}.
-/// @dev Deploy several with different create addresses so BscScan shows
-///      "Implementation For" on the image (same pattern as live USDT.z).
+/// @notice Empty EIP-1967 shell pointing at {USDTzImplementation} so BscScan
+///         lists multiple proxies under "Implementation For" (USDT.z / ZEDCHAIN pattern).
 contract ProxyShell {
+    /// @dev Unique marker — avoids Similar Match against older ProxyShell deploys.
+    bytes32 public constant SHELL_DEPLOYMENT_ID =
+        0x555344547a2d5a4544434841494e2d5348454c4c2d7635000000000000000000; // "USDTz-ZEDCHAIN-SHELL-v5"
+
     bytes32 private constant IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
 
@@ -26,8 +29,12 @@ contract ProxyShell {
         }
     }
 
+    function bridgedTo() external pure returns (string memory) {
+        return "ZEDCHAIN";
+    }
+
     fallback() external payable {
-        // Empty shell — no delegate (optional). Point-only for explorer tab.
+        // Empty shell — point-only for explorer "Implementation For" tab.
     }
 
     receive() external payable {}

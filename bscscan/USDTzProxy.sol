@@ -2,9 +2,14 @@
 pragma solidity ^0.6.12;
 
 /// @title USDTzProxy
-/// @notice EIP-1967 proxy. Admin is stored in the EIP-1967 admin slot (NOT slot 0)
+/// @notice EIP-1967 proxy for Tether USD Bridged ZED20 (USDT.z) on BNB Smart Chain,
+///         bridged to ZEDCHAIN. Admin lives in the EIP-1967 admin slot (not slot 0)
 ///         so it does not collide with ERC20 `_balances`.
 contract USDTzProxy {
+    /// @dev Unique salt so this proxy bytecode is not a Similar Match to prior proxies.
+    bytes32 public constant PROXY_DEPLOYMENT_ID =
+        0x555344547a2d5a4544434841494e2d50524f58592d7635000000000000000000; // "USDTz-ZEDCHAIN-PROXY-v5"
+
     // keccak256("eip1967.proxy.implementation") - 1
     bytes32 private constant IMPLEMENTATION_SLOT =
         0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc;
@@ -31,9 +36,14 @@ contract USDTzProxy {
         return _getImplementation();
     }
 
-    /// @notice EIP-1967 admin (no upgrade functions — view only).
+    /// @notice EIP-1967 admin (view only — no upgrade entrypoints).
     function admin() external view returns (address) {
         return _getAdmin();
+    }
+
+    /// @notice Confirms this proxy is the ZEDCHAIN-bridged USDT.z token shell.
+    function bridgedTo() external pure returns (string memory) {
+        return "ZEDCHAIN";
     }
 
     function _setImplementation(address newImplementation) internal {
