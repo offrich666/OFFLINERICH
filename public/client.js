@@ -1,10 +1,29 @@
 /** G Cards EU client platform — login, dashboard, requests, notifications. */
 (function () {
-  const SESSION_KEY = 'gcards_eu_session_v2';
-  const STORE_KEY = 'gcards_eu_store_v2';
+  const SESSION_KEY = 'gcards_eu_session_v3';
+  const STORE_KEY = 'gcards_eu_store_v3';
 
   const DEMO_EMAIL = 'naserademi26@gmail.com';
   const DEMO_PASS = 'nanajote';
+
+  /** Real prepaid issued via G Cards → Laso API (platform-issued). */
+  const PLATFORM_LASO_CARD = {
+    id: 'O-01M5QSK63WPQS8RX8C3JEBTTJN',
+    brand: 'visa',
+    label: 'G Cards · Prepaid',
+    last4: '9408',
+    balance: 5,
+    status: 'active',
+    theme: 'teal',
+    issuer: 'laso',
+    holder: 'Naser Ademi',
+    pan: '4343405855389408',
+    expMonth: 4,
+    expYear: 2027,
+    cvv: '523',
+    billing: '440 N Barranca Ave #4496, Covina, CA 91723',
+    applePay: false,
+  };
 
   const merchants = [
     { name: 'Starbucks', amount: -14.99, logo: 'S', tone: '#00704a' },
@@ -53,59 +72,60 @@
   function ensureDemoAccount(store) {
     const email = DEMO_EMAIL;
     if (!store.accounts) store.accounts = {};
-    const existing = store.accounts[email];
-    if (existing?.password === DEMO_PASS && existing.cards?.length) return store;
+    const existing = store.accounts[email] || {};
+    const laso = { ...PLATFORM_LASO_CARD };
+    const hasLaso = (existing.cards || []).some((c) => c.id === laso.id);
 
-    const last4 = String(1000 + Math.floor(Math.random() * 9000));
-    const last4b = String(1000 + Math.floor(Math.random() * 9000));
+    // Always attach the platform-issued Laso card to this G Cards account.
+    if (existing.password === DEMO_PASS && hasLaso && existing.platformCardSynced === 'laso-v1') {
+      return store;
+    }
+
+    const otherCards = (existing.cards || []).filter((c) => c.id !== laso.id && c.issuer !== 'demo');
     store.accounts[email] = {
       email,
       password: DEMO_PASS,
-      name: 'Naser Ademi',
-      createdAt: Date.now(),
-      balance: 10524.15,
-      cards: [
+      name: existing.name || 'Naser Ademi',
+      createdAt: existing.createdAt || Date.now(),
+      balance: 5,
+      platformCardSynced: 'laso-v1',
+      cards: [laso, ...otherCards],
+      transactions: [
         {
-          id: 'card_mc',
-          brand: 'mastercard',
-          label: 'Debit Card',
-          last4,
-          balance: 4556.15,
-          status: 'active',
-          theme: 'noir',
+          id: 'tx_load',
+          name: 'Card load · Laso',
+          logo: 'G',
+          tone: '#1a3a6e',
+          amount: 5,
+          last4: laso.last4,
+          at: Date.now() - 600_000,
         },
-        {
-          id: 'card_visa',
-          brand: 'visa',
-          label: 'Debit Card',
-          last4: last4b,
-          balance: 5968.0,
-          status: 'active',
-          theme: 'teal',
-        },
+        ...(existing.transactions || []).filter((t) => t.id !== 'tx_load').slice(0, 4),
       ],
-      transactions: demoTransactions(last4),
       requests: [
         {
-          id: 'req_1',
-          type: 'Card request',
-          detail: 'Virtual Visa',
-          status: 'In review',
-          at: Date.now() - 86400_000,
+          id: 'req_laso',
+          type: 'Card issued',
+          detail: 'G Cards Visa prepaid ···· 9408',
+          status: 'Active',
+          at: Date.now() - 600_000,
         },
       ],
       notifications: [
-        { id: 'n1', text: 'Your Mastercard ···· ' + last4 + ' is active.', unread: true, at: Date.now() - 7200_000 },
-        { id: 'n2', text: 'Card request received — in review.', unread: true, at: Date.now() - 86400_000 },
-        { id: 'n3', text: 'Welcome to G Cards EU.', unread: false, at: Date.now() - 172800_000 },
+        {
+          id: 'n_laso',
+          text: 'Your G Cards Visa ···· 9408 is active — $5 prepaid (issued on platform via Laso).',
+          unread: true,
+          at: Date.now() - 300_000,
+        },
+        ...(existing.notifications || []).filter((n) => n.id !== 'n_laso').slice(0, 4),
       ],
-      goals: [
+      goals: existing.goals || [
         { name: 'Travel fund', saved: 500, goal: 1099 },
         { name: 'New laptop', saved: 320, goal: 1400 },
-        { name: 'Emergency', saved: 900, goal: 2000 },
       ],
-      income: 3762.11,
-      spending: 1934.67,
+      income: existing.income || 0,
+      spending: existing.spending || 0,
     };
     saveStore(store);
     return store;
@@ -150,17 +170,28 @@
   }
 
   function cardFace(card) {
-    return `<article class="dash-card ${esc(card.theme)}">
+    const reveal = card.pan
+      ? `<button type="button" class="dash-reveal" data-dash="reveal-card" data-id="${esc(card.id)}">Show number</button>`
+      : '';
+    const holder = card.holder || 'Naser Ademi';
+    const exp = card.expMonth && card.expYear
+      ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
+      : '';
+    return `<article class="dash-card ${esc(card.theme)} gcards-face" data-card-id="${esc(card.id)}">
       <div class="dash-card-top">
-        <span>${esc(card.label)}</span>
+        <span class="dash-card-brand">G Cards <em>EU</em></span>
         ${brandMark(card.brand)}
       </div>
+      <div class="dash-chip" aria-hidden="true"></div>
       <p class="dash-card-bal">${esc(money(card.balance))}</p>
+      <p class="dash-card-pan">···· ···· ···· ${esc(card.last4)}</p>
       <div class="dash-card-bot">
-        <span>···· ${esc(card.last4)}</span>
+        <span><small>Cardholder</small><b>${esc(holder)}</b></span>
+        <span><small>Valid</small><b>${esc(exp || '—')}</b></span>
         <span class="dash-contactless" aria-hidden="true"></span>
       </div>
       <span class="dash-card-status">${esc(card.status)}</span>
+      ${reveal}
     </article>`;
   }
 
@@ -246,6 +277,7 @@
         <section class="dash-panel dash-balance-panel">
           <p class="dash-kicker">Total balance</p>
           <p class="dash-balance">${esc(money(account.balance))}</p>
+          <p class="dash-platform-note">Issued on <strong>G Cards EU</strong> · prepaid via platform API · Apple Wallet not supported on this card (issuer block) — G Cards design shows here when you pay online with the number</p>
           <div class="dash-cards-row">
             ${cards.map(cardFace).join('')}
             <button type="button" class="dash-add-card" data-dash="goto-request" aria-label="Request card">
@@ -253,6 +285,7 @@
               <small>Request card</small>
             </button>
           </div>
+          <div class="dash-secrets" id="dash-secrets" hidden></div>
         </section>
 
         <section class="dash-panel">
@@ -403,6 +436,19 @@
         setMarketingVisible(true);
         document.getElementById('order')?.scrollIntoView({ behavior: 'smooth' });
         paintMarketing();
+        return;
+      }
+      if (action === 'reveal-card') {
+        const id = btn.getAttribute('data-id');
+        const card = (account.cards || []).find((c) => c.id === id);
+        const box = document.getElementById('dash-secrets');
+        if (!card?.pan || !box) return;
+        const pan = String(card.pan).replace(/(\d{4})(?=\d)/g, '$1 ');
+        box.hidden = false;
+        box.innerHTML = `<p class="dash-kicker">Card details · G Cards</p>
+          <p><b>${esc(pan)}</b></p>
+          <p>Exp ${esc(String(card.expMonth).padStart(2, '0'))}/${esc(String(card.expYear).slice(-2))} · CVV ${esc(card.cvv || '—')}</p>
+          <small>${esc(card.billing || 'U.S. prepaid')}</small>`;
       }
     });
   }

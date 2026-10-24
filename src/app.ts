@@ -9,6 +9,7 @@ import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
 import { createImmersveIssuer, createUnavailableIssuer } from './issuer.ts';
 import { createPay2Client } from './pay2.ts';
+import { LasoClient, loadLasoCredentials } from './laso.ts';
 import { createPriceClient, type PriceClient } from './prices.ts';
 import { qrSvg } from './qr.ts';
 import * as service from './service.ts';
@@ -108,8 +109,16 @@ export function createApp(options: CreateAppOptions = {}) {
           fetchImpl,
         })
       : null,
+    laso: null,
     now: options.now ?? (() => Date.now()),
   };
+  const lasoCreds = loadLasoCredentials(env, config.lasoCredentialsPath);
+  if (lasoCreds) {
+    ctx.laso = new LasoClient(lasoCreds, config.lasoCredentialsPath);
+    ctx.config.lasoReady = true;
+    ctx.config.lasoUserId = lasoCreds.userId;
+    ctx.config.lasoRefreshToken = lasoCreds.refreshToken;
+  }
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy ? 1 : false);
@@ -157,13 +166,21 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/api/config', (_req, res) => {
-    const issuer = config.pay2Ready ? 'pay2' : config.livemode ? 'immersve' : 'unconfigured';
+    const issuer = config.lasoReady
+      ? 'laso'
+      : config.pay2Ready
+        ? 'pay2'
+        : config.livemode
+          ? 'immersve'
+          : 'unconfigured';
     res.json({
       issuer,
       livemode: config.livemode,
       pay2Ready: config.pay2Ready,
       pay2AccountNumber: config.pay2Ready ? config.pay2AccountNumber : '',
       pay2BinNumber: config.pay2Ready ? config.pay2BinNumber : '',
+      lasoReady: config.lasoReady,
+      lasoUserId: config.lasoReady ? config.lasoUserId : '',
       currency: 'usd',
       feeBps: config.feeBps,
       treasuryAddress: config.treasuryAddress,
@@ -287,6 +304,31 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get('/api/admin/desk', asyncRoute((req, res) => {
     res.json(service.adminDesk(ctx, sessionUser(req)));
+  }));
+
+  app.get('/api/admin/laso/status', asyncRoute(async (req, res) => {
+    res.json(await service.lasoStatus(ctx, sessionUser(req)));
+  }));
+
+  app.get('/api/admin/laso/cards/:id', asyncRoute(async (req, res) => {
+    res.json(await service.lasoCardData(ctx, sessionUser(req), req.params.id));
+  }));
+
+  app.post('/api/admin/laso/reveal', asyncRoute(async (req, res) => {
+    const body = req.body ?? {};
+    res.json(await service.revealLasoCard(ctx, sessionUser(req), String(body.clientId || '')));
+  }));
+
+  app.post('/api/admin/laso/issue', asyncRoute(async (req, res) => {
+    const adminId = sessionUser(req);
+    service.requireAdmin(ctx, adminId);
+    const body = req.body ?? {};
+    const clientId = String(body.clientId || '').trim();
+    if (!clientId) throw new HttpError(400, 'client_required', 'Pass clientId of the client to receive the card.');
+    const client = store.getUser(clientId);
+    if (!client || client.role === 'admin') throw new HttpError(404, 'client_not_found', 'That client is not on the desk.');
+    const result = await service.issueCard(ctx, client.id, { ...body, issuer: 'laso', acceptedTerms: true }, '127.0.0.1');
+    res.status(result.status === 'issued' ? 201 : 200).json(result);
   }));
 
   app.get('/api/wallet/message', asyncRoute((req, res) => {

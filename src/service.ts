@@ -28,6 +28,7 @@ import {
 import { hashPassword, verifyPassword } from './passwords.ts';
 import { ADMIN_EMAIL, ADMIN_USERNAME } from './admin.ts';
 import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
+import type { LasoClient } from './laso.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
 import type { CardRow, ImmersveSession, Store } from './store.ts';
@@ -40,6 +41,7 @@ export type Ctx = {
   prices: PriceClient;
   issuer: ImmersveIssuer;
   pay2: Pay2Client | null;
+  laso: LasoClient | null;
   fetchImpl: typeof fetch;
   now: () => number;
 };
@@ -255,19 +257,81 @@ export async function createClient(ctx: Ctx, userId: string, input: { email?: st
 export function adminDesk(ctx: Ctx, userId: string) {
   requireAdmin(ctx, userId);
   const totals = ctx.store.totals();
-  return {
-    accounts: ctx.store.listAccounts().map((account) => ({
+  const accounts = ctx.store.listAccounts().map((account) => {
+    const name = `${account.firstName} ${account.lastName}`.trim();
+    return {
       id: account.id,
       email: account.email,
       username: account.username,
       role: account.role,
       createdAt: account.createdAt,
       availableCents: account.availableCents,
+      name: name || null,
+      firstName: account.firstName || null,
+      lastName: account.lastName || null,
       card: account.last4
-        ? { brand: account.brand, last4: account.last4, status: account.cardStatus, type: account.cardType }
+        ? {
+            id: account.cardId,
+            brand: account.brand,
+            last4: account.last4,
+            status: account.cardStatus,
+            type: account.cardType,
+            issuerMode: account.issuerMode,
+            issuerCardId: account.issuerCardId,
+            expMonth: account.expMonth,
+            expYear: account.expYear,
+            spendingLimitCents: account.spendingLimitCents,
+          }
         : null,
-    })),
+    };
+  });
+  const cards = accounts
+    .filter((account) => account.card && account.role !== 'admin')
+    .map((account) => ({
+      clientId: account.id,
+      email: account.email,
+      name: account.name || account.email,
+      ...account.card!,
+    }));
+  return {
+    accounts,
+    cards,
     totals: { creditedCents: totals.credits, availableCents: totals.available, currency: 'usd' },
+    issuer: activeIssuer(ctx),
+    lasoReady: Boolean(ctx.config.lasoReady && ctx.laso),
+  };
+}
+
+export async function revealLasoCard(ctx: Ctx, adminUserId: string, clientId: string) {
+  requireAdmin(ctx, adminUserId);
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    throw new HttpError(400, 'laso_required', 'Laso is not connected on this server.');
+  }
+  const card = ctx.store.getCardByUser(clientId);
+  if (!card || card.issuerMode !== 'laso') {
+    throw new HttpError(404, 'card_not_found', 'No Laso card on that client.');
+  }
+  const data = await ctx.laso.getCardData(card.issuerCardId);
+  const details = (data.card_details || null) as Record<string, unknown> | null;
+  if (!details) {
+    throw new HttpError(
+      409,
+      'details_unavailable',
+      String(data.details_error || 'Card details are not available yet. Try again shortly.'),
+    );
+  }
+  const pan = String(details.card_number || details.number || details.pan || '').replace(/\D/g, '');
+  return {
+    cardId: card.id,
+    lasoCardId: card.issuerCardId,
+    brand: card.brand,
+    last4: card.last4,
+    pan,
+    cvv: String(details.cvv || details.cvc || ''),
+    expMonth: Number(details.exp_month || card.expMonth),
+    expYear: Number(details.exp_year || card.expYear),
+    availableBalance: details.available_balance ?? null,
+    billingAddress: details.billing_address || null,
   };
 }
 
@@ -682,14 +746,140 @@ export function requireLive(ctx: Ctx): void {
 }
 
 export function requireIssuer(ctx: Ctx): void {
+  if (ctx.config.lasoReady && ctx.laso) return;
   if (ctx.config.pay2Ready && ctx.pay2) return;
   requireLive(ctx);
 }
 
-export function activeIssuer(ctx: Ctx): 'pay2' | 'immersve' | 'none' {
+export function activeIssuer(ctx: Ctx): 'laso' | 'pay2' | 'immersve' | 'none' {
+  if (ctx.config.lasoReady && ctx.laso) return 'laso';
   if (ctx.config.pay2Ready && ctx.pay2) return 'pay2';
   if (ctx.config.livemode) return 'immersve';
   return 'none';
+}
+
+export async function lasoStatus(ctx: Ctx, adminUserId: string) {
+  requireAdmin(ctx, adminUserId);
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    return {
+      ready: false,
+      userId: null as string | null,
+      wallet: null as Awaited<ReturnType<LasoClient['wallet']>> | null,
+      hint: 'Save Laso credentials to data/laso-credentials.json or set LASO_USER_ID + LASO_REFRESH_TOKEN.',
+    };
+  }
+  const wallet = await ctx.laso.wallet();
+  return {
+    ready: true,
+    userId: ctx.laso.userId,
+    wallet,
+    minUsaPrepaidUsd: 5,
+    docs: 'https://docs.laso.finance/api-reference/introduction',
+  };
+}
+
+export async function lasoCardData(ctx: Ctx, adminUserId: string, cardId: string) {
+  requireAdmin(ctx, adminUserId);
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    throw new HttpError(400, 'laso_required', 'Laso is not connected on this server.');
+  }
+  return ctx.laso.getCardData(cardId);
+}
+
+async function issueLasoCard(
+  ctx: Ctx,
+  userId: string,
+  input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    dobYear: number;
+    dobMonth: number;
+    dobDay: number;
+    line1: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    type: string;
+    termsIp: string;
+    amountUsd: number;
+  },
+) {
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    throw new HttpError(400, 'laso_required', 'Connect Laso credentials on the server first.');
+  }
+  const issued = await ctx.laso.issueUsaPrepaid(input.amountUsd);
+  const termsAcceptedAt = ctx.now();
+  const existing = ctx.store.getCardholder(userId);
+  ctx.store.saveCardholder({
+    userId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    phone: input.phone,
+    dobDay: input.dobDay,
+    dobMonth: input.dobMonth,
+    dobYear: input.dobYear,
+    line1: input.line1,
+    city: input.city,
+    state: input.state,
+    postalCode: input.postalCode,
+    country: input.country,
+    termsAcceptedAt,
+    termsIp: input.termsIp || '127.0.0.1',
+    issuerCardholderId: ctx.laso.userId,
+    issuerMode: 'laso',
+    createdAt: existing?.createdAt ?? termsAcceptedAt,
+  });
+  const cardId = id('card_');
+  ctx.store.insertCard({
+    id: cardId,
+    userId,
+    issuerCardId: issued.cardId,
+    issuerMode: 'laso',
+    type: input.type,
+    currency: 'usd',
+    status: issued.status === 'ready' ? 'active' : 'pending',
+    brand: issued.brand.includes('master') ? 'mastercard' : 'visa',
+    last4: issued.last4,
+    expMonth: issued.expMonth,
+    expYear: issued.expYear,
+    vCardId: '',
+    spendingLimitCents: Math.round(issued.usdAmount * 100),
+    syncError: '',
+    createdAt: ctx.now(),
+  });
+  ctx.store.addWalletEvent({
+    id: id('wal_'),
+    userId,
+    cardId,
+    wallet: 'laso_issue',
+    status: 'issued',
+    detail: `Laso ${issued.cardId} · $${issued.usdAmount}${issued.txHash ? ` · ${issued.txHash}` : ''}`,
+    createdAt: ctx.now(),
+  });
+  const card = ctx.store.getCardByUser(userId);
+  return {
+    status: 'issued' as const,
+    issuer: 'laso' as const,
+    card: card ? publicCard(card) : null,
+    depositAddress: null,
+    panHint: issued.last4,
+    secrets: issued.pan
+      ? {
+          pan: issued.pan,
+          cvv: issued.cvv || null,
+          expMonth: issued.expMonth,
+          expYear: issued.expYear,
+          note: 'Shown once — store securely; clients see last4 on the dashboard.',
+        }
+      : null,
+    lasoCardId: issued.cardId,
+    fundedUsd: issued.usdAmount,
+    txHash: issued.txHash || null,
+  };
 }
 
 function blankSession(userId: string, now: number): ImmersveSession {
@@ -1049,6 +1239,8 @@ export async function issueCard(
     acceptedTerms?: boolean;
     walletSignature?: string;
     binNumber?: string;
+    issuer?: string;
+    amountUsd?: number;
   },
   termsIp: string,
 ) {
@@ -1086,6 +1278,27 @@ export async function issueCard(
   }
   if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country', 'Enter the country as two letters, such as US.');
   const type = input.type === 'physical' ? 'physical' : 'virtual';
+  const wantLaso = String(input.issuer || '').toLowerCase() === 'laso' || activeIssuer(ctx) === 'laso';
+  if (wantLaso && ctx.laso && ctx.config.lasoReady) {
+    const amountUsd = Math.max(5, Math.min(1000, Math.round(Number(input.amountUsd) || 5)));
+    return issueLasoCard(ctx, userId, {
+      firstName,
+      lastName,
+      email,
+      phone,
+      dobYear,
+      dobMonth,
+      dobDay,
+      line1,
+      city,
+      state,
+      postalCode,
+      country: country === 'US' ? 'US' : country,
+      type,
+      termsIp,
+      amountUsd,
+    });
+  }
   if (activeIssuer(ctx) === 'pay2') {
     return issuePay2Card(ctx, userId, {
       firstName,
@@ -1199,6 +1412,22 @@ export function describeWallet(
 ) {
   const card = requireCard(ctx, userId);
   const holder = ctx.store.getCardholder(userId);
+  if (card.issuerMode === 'laso') {
+    ctx.store.addWalletEvent({
+      id: id('wal_'),
+      userId,
+      cardId: card.id,
+      wallet,
+      status: 'unsupported',
+      detail: 'laso_no_wallet_push',
+      createdAt: ctx.now(),
+    });
+    throw new HttpError(
+      400,
+      'wallet_unsupported',
+      'This G Cards prepaid (Laso) cannot be added to Apple Wallet / Google Pay / Samsung Pay. The issuer blocks wallet push. Use the card number online, or switch to Immersve for branded Apple Pay with G Cards art.',
+    );
+  }
   const pushReady =
     (card.issuerMode === 'immersve' && ctx.config.livemode) || (card.issuerMode === 'pay2' && ctx.config.pay2Ready);
   ctx.store.addWalletEvent({
@@ -1226,9 +1455,9 @@ export function describeWallet(
       endpoint: '/api/wallets/ephemeral-key',
       note: pushReady
         ? wallet === 'apple_pay'
-          ? 'The iPhone app sends the PassKit certificate chain to POST /api/wallets/apple. Immersve returns the Apple Pay payload.'
+          ? 'The iPhone app sends the PassKit certificate chain to POST /api/wallets/apple. Immersve returns the Apple Pay payload with issuer card art.'
           : 'Open the one-time secure card link and type the card into the wallet.'
-        : 'Issue this card with live Immersve. Apple Pay, Google Pay, and Samsung Pay add that card.',
+        : 'Branded Apple Pay (G Cards design) needs live Immersve issuing — not Laso prepaid.',
     },
   };
 }
@@ -1254,6 +1483,37 @@ export async function secureCardLink(ctx: Ctx, userId: string) {
       html: `<div style="font:20px/1.4 ui-monospace,monospace;padding:16px">${grouped}<br>${details.expirationDate} · CVV ${details.cvv}${
         details.password ? `<br>3DS ${details.password}` : ''
       }</div>`,
+    };
+  }
+  if (card.issuerMode === 'laso') {
+    if (!ctx.laso || !ctx.config.lasoReady) {
+      throw new HttpError(409, 'laso_required', 'Laso is not connected on this server.');
+    }
+    const data = await ctx.laso.getCardData(card.issuerCardId);
+    const details = (data.card_details || null) as Record<string, unknown> | null;
+    if (!details) {
+      throw new HttpError(409, 'details_unavailable', 'Card details are not available yet.');
+    }
+    const pan = String(details.card_number || details.number || details.pan || '').replace(/\D/g, '');
+    const grouped = pan.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+    const expMonth = String(details.exp_month || card.expMonth).padStart(2, '0');
+    const expYear = String(details.exp_year || card.expYear).slice(-2);
+    const cvv = String(details.cvv || details.cvc || '');
+    const holder = cardholderName(ctx, userId) || 'G Cards';
+    return {
+      mode: 'laso' as const,
+      cardId: card.id,
+      pan: grouped,
+      cvv,
+      expirationDate: `${expMonth}/${expYear}`,
+      applePaySupported: false,
+      note: 'Laso prepaid cannot join Apple Wallet. Use this number for online checkout; G Cards branding shows in the G Cards app.',
+      html: `<div class="gcards-secure-face">
+        <div class="gcards-secure-mark">G Cards <span>EU</span></div>
+        <div class="gcards-secure-pan">${grouped}</div>
+        <div class="gcards-secure-meta"><span>${holder}</span><span>${expMonth}/${expYear}</span><span>CVV ${cvv}</span></div>
+        <p class="gcards-secure-note">Not addable to Apple Wallet · use online or in-app</p>
+      </div>`,
     };
   }
   if (card.issuerMode !== 'immersve' || !ctx.config.livemode) {

@@ -21,6 +21,14 @@ export type AccountListRow = {
   cardStatus: string;
   cardType: string;
   availableCents: number;
+  firstName: string;
+  lastName: string;
+  issuerMode: string;
+  issuerCardId: string;
+  cardId: string;
+  expMonth: number;
+  expYear: number;
+  spendingLimitCents: number;
 };
 export type CardholderRow = {
   userId: string;
@@ -173,16 +181,25 @@ export class Store {
     return this.db
       .prepare(
         `SELECT u.id, u.email, u.username, u.role, u.created_at,
+            COALESCE(c.id, '') AS card_id,
             COALESCE(c.brand, '') AS brand,
             COALESCE(c.last4, '') AS last4,
             COALESCE(c.status, '') AS card_status,
             COALESCE(c.type, '') AS card_type,
+            COALESCE(c.issuer_mode, '') AS issuer_mode,
+            COALESCE(c.issuer_card_id, '') AS issuer_card_id,
+            COALESCE(c.exp_month, 0) AS exp_month,
+            COALESCE(c.exp_year, 0) AS exp_year,
+            COALESCE(c.spending_limit_cents, 0) AS spending_limit_cents,
+            COALESCE(h.first_name, '') AS first_name,
+            COALESCE(h.last_name, '') AS last_name,
             COALESCE((
               SELECT SUM(CASE WHEN direction = 'credit' THEN amount_cents ELSE -amount_cents END)
               FROM ledger WHERE user_id = u.id
             ), 0) AS available_cents
          FROM users u
          LEFT JOIN cards c ON c.user_id = u.id
+         LEFT JOIN cardholders h ON h.user_id = u.id
          ORDER BY u.created_at ASC`,
       )
       .all()
@@ -197,6 +214,14 @@ export class Store {
         cardStatus: str(row, 'card_status'),
         cardType: str(row, 'card_type'),
         availableCents: num(row, 'available_cents'),
+        firstName: str(row, 'first_name'),
+        lastName: str(row, 'last_name'),
+        issuerMode: str(row, 'issuer_mode'),
+        issuerCardId: str(row, 'issuer_card_id'),
+        cardId: str(row, 'card_id'),
+        expMonth: num(row, 'exp_month'),
+        expYear: num(row, 'exp_year'),
+        spendingLimitCents: num(row, 'spending_limit_cents'),
       }));
   }
 
