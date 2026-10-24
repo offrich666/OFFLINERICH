@@ -16,11 +16,13 @@
     status: 'active',
     theme: 'teal',
     issuer: 'laso',
+    holder: 'Naser Ademi',
     pan: '4343405855389408',
     expMonth: 4,
     expYear: 2027,
     cvv: '523',
     billing: '440 N Barranca Ave #4496, Covina, CA 91723',
+    applePay: false,
   };
 
   const merchants = [
@@ -171,14 +173,21 @@
     const reveal = card.pan
       ? `<button type="button" class="dash-reveal" data-dash="reveal-card" data-id="${esc(card.id)}">Show number</button>`
       : '';
-    return `<article class="dash-card ${esc(card.theme)}" data-card-id="${esc(card.id)}">
+    const holder = card.holder || 'Naser Ademi';
+    const exp = card.expMonth && card.expYear
+      ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
+      : '';
+    return `<article class="dash-card ${esc(card.theme)} gcards-face" data-card-id="${esc(card.id)}">
       <div class="dash-card-top">
-        <span>${esc(card.label)}</span>
+        <span class="dash-card-brand">G Cards <em>EU</em></span>
         ${brandMark(card.brand)}
       </div>
+      <div class="dash-chip" aria-hidden="true"></div>
       <p class="dash-card-bal">${esc(money(card.balance))}</p>
+      <p class="dash-card-pan">···· ···· ···· ${esc(card.last4)}</p>
       <div class="dash-card-bot">
-        <span>···· ${esc(card.last4)}</span>
+        <span><small>Cardholder</small><b>${esc(holder)}</b></span>
+        <span><small>Valid</small><b>${esc(exp || '—')}</b></span>
         <span class="dash-contactless" aria-hidden="true"></span>
       </div>
       <span class="dash-card-status">${esc(card.status)}</span>
@@ -268,7 +277,7 @@
         <section class="dash-panel dash-balance-panel">
           <p class="dash-kicker">Total balance</p>
           <p class="dash-balance">${esc(money(account.balance))}</p>
-          <p class="dash-platform-note">Issued on <strong>G Cards EU</strong> · prepaid via platform API</p>
+          <p class="dash-platform-note">Issued on <strong>G Cards EU</strong> · prepaid via platform API · Apple Wallet not supported on this card (issuer block) — G Cards design shows here when you pay online with the number</p>
           <div class="dash-cards-row">
             ${cards.map(cardFace).join('')}
             <button type="button" class="dash-add-card" data-dash="goto-request" aria-label="Request card">

@@ -314,6 +314,11 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json(await service.lasoCardData(ctx, sessionUser(req), req.params.id));
   }));
 
+  app.post('/api/admin/laso/reveal', asyncRoute(async (req, res) => {
+    const body = req.body ?? {};
+    res.json(await service.revealLasoCard(ctx, sessionUser(req), String(body.clientId || '')));
+  }));
+
   app.post('/api/admin/laso/issue', asyncRoute(async (req, res) => {
     const adminId = sessionUser(req);
     service.requireAdmin(ctx, adminId);
