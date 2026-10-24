@@ -354,9 +354,16 @@ function clientRowHtml(account) {
 function consoleHtml() {
   const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
   const issued = accounts.filter((account) => account.card).length;
-  const live = Boolean(state.config?.livemode || state.config?.pay2Ready);
+  const live = Boolean(state.config?.livemode || state.config?.pay2Ready || state.config?.lasoReady);
   const rows = clientRows();
   const links = state.config?.links || [];
+  const programLabel = state.config?.lasoReady
+    ? 'Laso'
+    : state.config?.pay2Ready
+      ? 'Pay2'
+      : state.config?.livemode
+        ? 'Immersve'
+        : 'Not connected';
   return `<header class="bar">
       <div class="wrap bar-in">
         <div class="mark light">GG<span>CARD</span></div>
@@ -372,7 +379,7 @@ function consoleHtml() {
         <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
         <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
         <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
-        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${state.config?.pay2Ready ? 'Pay2' : state.config?.livemode ? 'Immersve' : 'Not connected'}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${esc(programLabel)}</strong></article>
       </section>
       <div class="console-grid">
         <section class="panel">
@@ -390,7 +397,9 @@ function consoleHtml() {
           <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
         </section>
         <div class="stack">
-          ${state.config?.pay2Ready
+          ${state.config?.lasoReady
+            ? `<section class="panel program-live"><h2>Card program · Laso API</h2><p class="lede">Laso is connected (<code>${esc(state.config.lasoUserId || '')}</code>). Open a client → <b>Issue real card</b>. Your platform calls Laso; cards are funded from the Laso USDC wallet. Check balance via <code>/api/admin/laso/status</code>.</p><span class="pill good">Laso live</span></section>`
+            : state.config?.pay2Ready
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Pay2.House is connected on ${esc(state.config.pay2AccountNumber)}. Open a client and issue a card. Fund the Pay2 USD wallet (USDT TRC20), then top up the card.</p><span class="pill good">Pay2 live</span></section>`
             : live
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
@@ -405,10 +414,14 @@ function consoleHtml() {
 }
 
 function setupHtml() {
-  if (state.config?.pay2Ready || state.config?.livemode) return '';
+  if (state.config?.pay2Ready || state.config?.livemode || state.config?.lasoReady) return '';
   const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
   return `<section class="panel partner">
-    <h2>Issue cards today — Pay2.House</h2>
+    <h2>Issue cards via Laso API</h2>
+    <p class="lede">Put Laso credentials on the server (<code>data/laso-credentials.json</code> or <code>LASO_*</code> env), fund the Laso USDC wallet, then issue prepaid cards from this desk — your platform calls Laso.</p>
+    <p class="muted">API: <code>POST /api/card</code> with <code>issuer: "laso"</code>, or <code>POST /api/admin/laso/issue</code>.</p>
+    <hr style="border:0;border-top:1px solid var(--line);margin:16px 0" />
+    <h2>Or Pay2.House</h2>
     <p class="lede">Immersve partner approval takes time. Pay2.House already has BINs. Sign up, fund USDT TRC20, paste the API credentials, and this desk can issue a real virtual card for a client today.</p>
     <ol class="steps">
       <li>Create an account at <a href="https://pay2.house/" target="_blank" rel="noopener">pay2.house</a>.</li>
@@ -447,10 +460,10 @@ function setupHtml() {
 
 function issueForm() {
   if (state.me.card) return '';
-  if (!state.config?.livemode && !state.config?.pay2Ready) {
+  if (!state.config?.livemode && !state.config?.pay2Ready && !state.config?.lasoReady) {
     return `<section class="panel">
       <h2>Issue the card</h2>
-      <p class="lede gate">Connect Pay2.House on the desk to issue a card today, or Immersve when you have partner keys.</p>
+      <p class="lede gate">Connect Laso (USDC prepaid API), Pay2.House, or Immersve on the desk to issue.</p>
       <button class="primary" type="button" data-action="back-to-desk">Connect on the desk</button>
     </section>`;
   }
@@ -464,9 +477,12 @@ function issueForm() {
       </div>
     </section>`;
   }
+  const laso = Boolean(state.config?.lasoReady);
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">${state.config?.pay2Ready
+    <p class="lede">${laso
+      ? 'Your platform calls the Laso API and issues a USA prepaid card funded from your Laso USDC wallet (min $5). U.S. merchants only.'
+      : state.config?.pay2Ready
       ? 'Pay2.House creates a real virtual card for this client from your funded Pay2 account. Wallet link is optional for Pay2.'
       : 'Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.'}</p>
     <form id="card-form" class="grid-2">
@@ -477,7 +493,8 @@ function issueForm() {
       <label>Birth year <input name="dobYear" inputmode="numeric" placeholder="1990" required /></label>
       <label>Birth month <input name="dobMonth" inputmode="numeric" placeholder="1" required /></label>
       <label>Birth day <input name="dobDay" inputmode="numeric" placeholder="2" required /></label>
-      <label>Country <input name="country" maxlength="2" placeholder="US" autocapitalize="characters" required /></label>
+      <label>Country <input name="country" maxlength="2" placeholder="US" autocapitalize="characters" required value="${laso ? 'US' : ''}" /></label>
+      ${laso ? '<label>Load USD <input name="amountUsd" type="number" min="5" max="1000" step="1" value="5" required /></label>' : ''}
       <label class="full">Address <input name="line1" autocomplete="address-line1" required /></label>
       <label>City <input name="city" autocomplete="address-level2" required /></label>
       <label>State <input name="state" autocomplete="address-level1" required /></label>
@@ -1007,6 +1024,8 @@ document.body.addEventListener('submit', (event) => {
           acceptedTerms: form.acceptedTerms.checked,
           country: String(data.country || '').toUpperCase(),
           walletSignature: state.walletSignature || undefined,
+          issuer: state.config?.lasoReady ? 'laso' : undefined,
+          amountUsd: data.amountUsd ? Number(data.amountUsd) : undefined,
         },
       });
       state.walletSignature = '';

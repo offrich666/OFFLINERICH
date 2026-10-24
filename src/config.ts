@@ -45,6 +45,10 @@ export type Config = {
   pay2AccountNumber: string;
   pay2BinNumber: string;
   pay2Ready: boolean;
+  lasoUserId: string;
+  lasoRefreshToken: string;
+  lasoCredentialsPath: string;
+  lasoReady: boolean;
   upgradeUsdcAddress: string;
   upgradePriceUsd: number;
   publicBaseUrl: string;
@@ -79,6 +83,9 @@ export function loadConfig(env: Env): Config {
   const pay2PrivateKeyPem = (env.PAY2_PRIVATE_KEY_PEM ?? '').replace(/\\n/g, '\n').trim();
   const pay2AccountNumber = env.PAY2_ACCOUNT_NUMBER?.trim() ?? '';
   const pay2BinNumber = env.PAY2_BIN_NUMBER?.trim() ?? '';
+  const lasoUserId = env.LASO_USER_ID?.trim() ?? '';
+  const lasoRefreshToken = env.LASO_REFRESH_TOKEN?.trim() ?? '';
+  const lasoCredentialsPath = env.LASO_CREDENTIALS_PATH?.trim() || './data/laso-credentials.json';
   return {
     port: integer(env.PORT, 8787),
     databasePath: env.DATABASE_PATH?.trim() || './data/offlinerich.sqlite',
@@ -121,6 +128,10 @@ export function loadConfig(env: Env): Config {
     pay2AccountNumber,
     pay2BinNumber,
     pay2Ready: Boolean(pay2ApiKey && pay2KeyId && pay2PrivateKeyPem && pay2AccountNumber),
+    lasoUserId,
+    lasoRefreshToken,
+    lasoCredentialsPath,
+    lasoReady: false, // set in createApp after loading credentials file / env
     upgradeUsdcAddress: env.UPGRADE_USDC_ADDRESS?.trim() || env.UPGRADE_USDT_ADDRESS?.trim() || '',
     upgradePriceUsd: Math.max(1, integer(env.UPGRADE_PRICE_USD, 1300)),
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? '').trim().replace(/\/$/, ''),
@@ -195,7 +206,8 @@ export function overlaySaved(config: Config, saved: Record<string, string>, env:
 export function readiness(config: Config): ReadinessItem[] {
   const live = config.livemode;
   const pay2 = config.pay2Ready;
-  const canIssue = live || pay2;
+  const laso = config.lasoReady;
+  const canIssue = live || pay2 || laso;
   const visa = Boolean(config.visaApiKey && config.visaSharedSecret);
   const issuerDetail = live
     ? 'Live Immersve keys are connected. Immersve issues the Mastercard and checks the on-chain deposit before a merchant charge.'
@@ -203,6 +215,14 @@ export function readiness(config: Config): ReadinessItem[] {
       ? 'A test key is present. Replace it with the live Immersve key pair. Test keys cannot be spent at a merchant or added to Apple Pay.'
       : 'Connect the live Immersve API key, API secret, partner account, card program, and funding channel. That account issues the card.';
   return [
+    {
+      id: 'laso_issuer',
+      ready: laso,
+      title: 'Laso prepaid cards (this platform)',
+      detail: laso
+        ? `Laso agent ${config.lasoUserId} is connected. Issue USA prepaid cards from the desk via POST /api/card (issuer=laso). Fund the Laso wallet with USDC first.`
+        : 'Claim a Laso agent account, save data/laso-credentials.json (or LASO_USER_ID + LASO_REFRESH_TOKEN), then issue from this API.',
+    },
     {
       id: 'pay2_issuer',
       ready: pay2,
@@ -221,13 +241,15 @@ export function readiness(config: Config): ReadinessItem[] {
       id: 'treasury',
       ready: canIssue,
       title: 'Card funding',
-      detail: pay2
-        ? 'Fund the Pay2.House USD wallet (USDT TRC20 address from wallets), then top up each issued card from that account.'
-        : live
-          ? config.immersveFundsStorageAddress
-            ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
-            : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
-          : 'Connect Pay2.House to issue today, or Immersve Universal EVM for wallet-native funding.',
+      detail: laso
+        ? 'Fund the Laso managed wallet with USDC (Solana or Base), then issue prepaid cards. Each USA card costs the face value in USDC (min $5).'
+        : pay2
+          ? 'Fund the Pay2.House USD wallet (USDT TRC20 address from wallets), then top up each issued card from that account.'
+          : live
+            ? config.immersveFundsStorageAddress
+              ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
+              : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
+            : 'Connect Laso (USDC), Pay2.House, or Immersve Universal EVM to issue.',
     },
     {
       id: 'prices',

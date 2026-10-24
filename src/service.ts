@@ -28,6 +28,7 @@ import {
 import { hashPassword, verifyPassword } from './passwords.ts';
 import { ADMIN_EMAIL, ADMIN_USERNAME } from './admin.ts';
 import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
+import type { LasoClient } from './laso.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
 import type { CardRow, ImmersveSession, Store } from './store.ts';
@@ -40,6 +41,7 @@ export type Ctx = {
   prices: PriceClient;
   issuer: ImmersveIssuer;
   pay2: Pay2Client | null;
+  laso: LasoClient | null;
   fetchImpl: typeof fetch;
   now: () => number;
 };
@@ -682,14 +684,140 @@ export function requireLive(ctx: Ctx): void {
 }
 
 export function requireIssuer(ctx: Ctx): void {
+  if (ctx.config.lasoReady && ctx.laso) return;
   if (ctx.config.pay2Ready && ctx.pay2) return;
   requireLive(ctx);
 }
 
-export function activeIssuer(ctx: Ctx): 'pay2' | 'immersve' | 'none' {
+export function activeIssuer(ctx: Ctx): 'laso' | 'pay2' | 'immersve' | 'none' {
+  if (ctx.config.lasoReady && ctx.laso) return 'laso';
   if (ctx.config.pay2Ready && ctx.pay2) return 'pay2';
   if (ctx.config.livemode) return 'immersve';
   return 'none';
+}
+
+export async function lasoStatus(ctx: Ctx, adminUserId: string) {
+  requireAdmin(ctx, adminUserId);
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    return {
+      ready: false,
+      userId: null as string | null,
+      wallet: null as Awaited<ReturnType<LasoClient['wallet']>> | null,
+      hint: 'Save Laso credentials to data/laso-credentials.json or set LASO_USER_ID + LASO_REFRESH_TOKEN.',
+    };
+  }
+  const wallet = await ctx.laso.wallet();
+  return {
+    ready: true,
+    userId: ctx.laso.userId,
+    wallet,
+    minUsaPrepaidUsd: 5,
+    docs: 'https://docs.laso.finance/api-reference/introduction',
+  };
+}
+
+export async function lasoCardData(ctx: Ctx, adminUserId: string, cardId: string) {
+  requireAdmin(ctx, adminUserId);
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    throw new HttpError(400, 'laso_required', 'Laso is not connected on this server.');
+  }
+  return ctx.laso.getCardData(cardId);
+}
+
+async function issueLasoCard(
+  ctx: Ctx,
+  userId: string,
+  input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    dobYear: number;
+    dobMonth: number;
+    dobDay: number;
+    line1: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    type: string;
+    termsIp: string;
+    amountUsd: number;
+  },
+) {
+  if (!ctx.laso || !ctx.config.lasoReady) {
+    throw new HttpError(400, 'laso_required', 'Connect Laso credentials on the server first.');
+  }
+  const issued = await ctx.laso.issueUsaPrepaid(input.amountUsd);
+  const termsAcceptedAt = ctx.now();
+  const existing = ctx.store.getCardholder(userId);
+  ctx.store.saveCardholder({
+    userId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    phone: input.phone,
+    dobDay: input.dobDay,
+    dobMonth: input.dobMonth,
+    dobYear: input.dobYear,
+    line1: input.line1,
+    city: input.city,
+    state: input.state,
+    postalCode: input.postalCode,
+    country: input.country,
+    termsAcceptedAt,
+    termsIp: input.termsIp || '127.0.0.1',
+    issuerCardholderId: ctx.laso.userId,
+    issuerMode: 'laso',
+    createdAt: existing?.createdAt ?? termsAcceptedAt,
+  });
+  const cardId = id('card_');
+  ctx.store.insertCard({
+    id: cardId,
+    userId,
+    issuerCardId: issued.cardId,
+    issuerMode: 'laso',
+    type: input.type,
+    currency: 'usd',
+    status: issued.status === 'ready' ? 'active' : 'pending',
+    brand: issued.brand.includes('master') ? 'mastercard' : 'visa',
+    last4: issued.last4,
+    expMonth: issued.expMonth,
+    expYear: issued.expYear,
+    vCardId: '',
+    spendingLimitCents: Math.round(issued.usdAmount * 100),
+    syncError: '',
+    createdAt: ctx.now(),
+  });
+  ctx.store.addWalletEvent({
+    id: id('wal_'),
+    userId,
+    cardId,
+    wallet: 'laso_issue',
+    status: 'issued',
+    detail: `Laso ${issued.cardId} · $${issued.usdAmount}${issued.txHash ? ` · ${issued.txHash}` : ''}`,
+    createdAt: ctx.now(),
+  });
+  const card = ctx.store.getCardByUser(userId);
+  return {
+    status: 'issued' as const,
+    issuer: 'laso' as const,
+    card: card ? publicCard(card) : null,
+    depositAddress: null,
+    panHint: issued.last4,
+    secrets: issued.pan
+      ? {
+          pan: issued.pan,
+          cvv: issued.cvv || null,
+          expMonth: issued.expMonth,
+          expYear: issued.expYear,
+          note: 'Shown once — store securely; clients see last4 on the dashboard.',
+        }
+      : null,
+    lasoCardId: issued.cardId,
+    fundedUsd: issued.usdAmount,
+    txHash: issued.txHash || null,
+  };
 }
 
 function blankSession(userId: string, now: number): ImmersveSession {
@@ -1049,6 +1177,8 @@ export async function issueCard(
     acceptedTerms?: boolean;
     walletSignature?: string;
     binNumber?: string;
+    issuer?: string;
+    amountUsd?: number;
   },
   termsIp: string,
 ) {
@@ -1086,6 +1216,27 @@ export async function issueCard(
   }
   if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country', 'Enter the country as two letters, such as US.');
   const type = input.type === 'physical' ? 'physical' : 'virtual';
+  const wantLaso = String(input.issuer || '').toLowerCase() === 'laso' || activeIssuer(ctx) === 'laso';
+  if (wantLaso && ctx.laso && ctx.config.lasoReady) {
+    const amountUsd = Math.max(5, Math.min(1000, Math.round(Number(input.amountUsd) || 5)));
+    return issueLasoCard(ctx, userId, {
+      firstName,
+      lastName,
+      email,
+      phone,
+      dobYear,
+      dobMonth,
+      dobDay,
+      line1,
+      city,
+      state,
+      postalCode,
+      country: country === 'US' ? 'US' : country,
+      type,
+      termsIp,
+      amountUsd,
+    });
+  }
   if (activeIssuer(ctx) === 'pay2') {
     return issuePay2Card(ctx, userId, {
       firstName,
