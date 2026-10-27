@@ -53,7 +53,7 @@
     const card = { ...PLATFORM_CARD };
     const hasCard = (existing.cards || []).some((c) => c.id === card.id);
 
-    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v3') {
+    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v4') {
       return store;
     }
 
@@ -64,7 +64,7 @@
       name: existing.name || 'Naser Ademi',
       createdAt: existing.createdAt || Date.now(),
       balance: 5,
-      platformCardSynced: 'laso-v3',
+      platformCardSynced: 'laso-v4',
       cards: [card, ...otherCards],
       transactions: [
         {
@@ -151,23 +151,30 @@
       card.expMonth && card.expYear
         ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
         : '—';
-    return `<article class="dash-card ${esc(card.theme)} gcards-face" data-card-id="${esc(card.id)}">
+    const product = card.label || (card.brand === 'visa' ? 'Virtual Visa' : 'Virtual Mastercard');
+    return `<article class="dash-card ${esc(card.theme || 'navy')} gcards-face" data-card-id="${esc(card.id)}">
       <div class="dash-card-sheen" aria-hidden="true"></div>
-      <div class="dash-card-top">
+      <div class="dash-card-edge" aria-hidden="true"></div>
+      <header class="dash-card-top">
         <span class="dash-card-brand">
-          <img src="logo.svg" width="26" height="26" alt="" />
-          <span>G Cards <em>EU</em></span>
+          <img class="dash-card-logo" src="logo.svg" width="36" height="36" alt="G Cards EU" />
+          <span class="dash-card-wordmark">
+            <strong>G Cards <em>EU</em></strong>
+            <small>${esc(product)}</small>
+          </span>
         </span>
-        ${brandMark(card.brand)}
-      </div>
-      <div class="dash-chip" aria-hidden="true"></div>
-      <p class="dash-card-bal">${esc(money(card.balance))}</p>
-      <p class="dash-card-pan">···· ···· ···· ${esc(card.last4)}</p>
-      <div class="dash-card-bot">
-        <span><small>Cardholder</small><b>${esc(holder)}</b></span>
-        <span><small>Valid</small><b>${esc(exp)}</b></span>
+        <span class="dash-card-network">${brandMark(card.brand)}</span>
+      </header>
+      <div class="dash-card-mid">
+        <div class="dash-chip" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
         <span class="dash-contactless" aria-hidden="true"></span>
       </div>
+      <p class="dash-card-pan">···· ···· ···· ${esc(card.last4)}</p>
+      <footer class="dash-card-bot">
+        <span><small>Cardholder</small><b>${esc(holder)}</b></span>
+        <span><small>Valid thru</small><b>${esc(exp)}</b></span>
+        <span><small>Balance</small><b>${esc(money(card.balance))}</b></span>
+      </footer>
       <span class="dash-card-status">${esc(card.status)}</span>
       ${reveal}
     </article>`;
