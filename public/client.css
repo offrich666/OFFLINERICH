@@ -227,6 +227,7 @@ body.dash-open {
   font-family: "Source Serif 4", Georgia, serif;
   letter-spacing: 0.04em;
   font-size: 1.15rem;
+  color: #132033;
 }
 .dash-brand em { font-style: normal; color: #9a7b3c; }
 .dash-logo {
@@ -382,8 +383,9 @@ button.portal-open-dash {
   pointer-events: none;
 }
 .dash-card.navy .dash-card-sheen {
-  background: linear-gradient(118deg, transparent 30%, rgba(255,255,255,0.35) 48%, transparent 64%);
-  opacity: 0.85;
+  background: linear-gradient(118deg, transparent 32%, rgba(255,255,255,0.22) 48%, transparent 62%);
+  opacity: 1;
+  mix-blend-mode: normal;
 }
 .dash-card.navy .dash-card-brand,
 .dash-card.navy .dash-card-brand em,
