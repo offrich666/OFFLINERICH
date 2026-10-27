@@ -223,9 +223,22 @@ strong { font-weight: 600; color: var(--ink); }
   touch-action: none;
   cursor: grab;
 }
+.scene::before {
+  content: "";
+  position: absolute;
+  inset: 8% 4% 12%;
+  border-radius: 40% 40% 36% 36%;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(196, 164, 106, 0.18), transparent 58%),
+    radial-gradient(ellipse at 60% 60%, rgba(90, 208, 200, 0.12), transparent 55%);
+  filter: blur(8px);
+  pointer-events: none;
+  z-index: 0;
+}
 .scene:active { cursor: grabbing; }
 .deck {
   position: relative;
+  z-index: 1;
   width: min(400px, 92%);
   height: 300px;
   transform-style: preserve-3d;

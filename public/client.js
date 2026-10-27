@@ -53,7 +53,7 @@
     const card = { ...PLATFORM_CARD };
     const hasCard = (existing.cards || []).some((c) => c.id === card.id);
 
-    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v2') {
+    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v3') {
       return store;
     }
 
@@ -64,7 +64,7 @@
       name: existing.name || 'Naser Ademi',
       createdAt: existing.createdAt || Date.now(),
       balance: 5,
-      platformCardSynced: 'laso-v2',
+      platformCardSynced: 'laso-v3',
       cards: [card, ...otherCards],
       transactions: [
         {

@@ -367,16 +367,21 @@ button.portal-open-dash {
     radial-gradient(circle at 80% 80%, rgba(255,255,255,0.12), transparent 35%);
 }
 .dash-card.navy {
+  color: #f4efe6;
   background:
-    radial-gradient(110% 80% at 100% 0%, rgba(90, 208, 200, 0.22), transparent 46%),
-    radial-gradient(90% 70% at 0% 100%, rgba(196, 164, 106, 0.28), transparent 42%),
-    linear-gradient(155deg, #9bb0cf 0%, #45648a 28%, #1a3a6e 60%, #0a1628 100%);
+    radial-gradient(110% 80% at 100% 0%, rgba(90, 208, 200, 0.28), transparent 46%),
+    radial-gradient(90% 70% at 0% 100%, rgba(196, 164, 106, 0.35), transparent 42%),
+    linear-gradient(155deg, #6f8ab0 0%, #2f5280 32%, #163868 62%, #0a1628 100%);
 }
 .dash-card.navy::before {
   content: ""; position: absolute; inset: 0;
-  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px);
-  mix-blend-mode: soft-light; opacity: 0.7;
+  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 3px);
+  mix-blend-mode: soft-light; opacity: 0.75;
 }
+.dash-card.navy .dash-card-brand em { color: #e8d5a8; }
+.dash-card.navy .dash-card-pan,
+.dash-card.navy .dash-card-bal,
+.dash-card.navy .dash-card-bot b { color: #f7f3ea; }
 .dash-card-sheen {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
   background: linear-gradient(118deg, transparent 28%, rgba(255,255,255,0.28) 46%, transparent 62%);
