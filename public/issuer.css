@@ -63,6 +63,33 @@ strong { font-weight: 600; color: var(--ink); }
   text-decoration: none;
 }
 .mark span { color: var(--gold); }
+.mark.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  text-decoration: none;
+}
+.mark.brand:hover { text-decoration: none; }
+.brand-logo {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(196, 164, 106, 0.4), 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+.brand-text {
+  font-family: var(--display);
+  font-weight: 650;
+  font-size: 1.12rem;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  line-height: 1;
+}
+.brand-text em {
+  font-style: normal;
+  color: var(--gold);
+  margin-left: 0.15em;
+}
 .nav { display: flex; align-items: center; gap: 22px; }
 .nav a {
   color: var(--muted);
@@ -196,9 +223,22 @@ strong { font-weight: 600; color: var(--ink); }
   touch-action: none;
   cursor: grab;
 }
+.scene::before {
+  content: "";
+  position: absolute;
+  inset: 8% 4% 12%;
+  border-radius: 40% 40% 36% 36%;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(196, 164, 106, 0.18), transparent 58%),
+    radial-gradient(ellipse at 60% 60%, rgba(90, 208, 200, 0.12), transparent 55%);
+  filter: blur(8px);
+  pointer-events: none;
+  z-index: 0;
+}
 .scene:active { cursor: grabbing; }
 .deck {
   position: relative;
+  z-index: 1;
   width: min(400px, 92%);
   height: 300px;
   transform-style: preserve-3d;
@@ -211,10 +251,13 @@ strong { font-weight: 600; color: var(--ink); }
   position: absolute;
   width: 100%;
   aspect-ratio: 1.586 / 1;
-  border-radius: 14px;
+  border-radius: 16px;
   color: #f4efe6;
   transform-style: preserve-3d;
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.22);
+  box-shadow:
+    0 28px 50px rgba(0, 0, 0, 0.55),
+    0 10px 18px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255,255,255,0.28);
   cursor: pointer;
   user-select: none;
 }
@@ -235,7 +278,7 @@ strong { font-weight: 600; color: var(--ink); }
 .metal.flipped .face.back { transform: rotateY(0deg); }
 
 .face {
-  position: absolute; inset: 0; border-radius: 14px; padding: 1.15rem 1.25rem;
+  position: absolute; inset: 0; border-radius: 16px; padding: 1.2rem 1.3rem 1.15rem;
   backface-visibility: hidden; -webkit-backface-visibility: hidden;
   overflow: hidden;
   transition: transform 0.5s var(--ease);
@@ -247,47 +290,90 @@ strong { font-weight: 600; color: var(--ink); }
 }
 
 .brush {
-  position: absolute; inset: 0; border-radius: 14px; pointer-events: none; opacity: 0.45;
-  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 3px);
+  position: absolute; inset: 0; border-radius: 16px; pointer-events: none; opacity: 0.5;
+  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.045) 0 1px, transparent 1px 3px);
   mix-blend-mode: soft-light;
 }
 .sheen {
-  position: absolute; inset: 0; border-radius: 14px; pointer-events: none;
-  background: linear-gradient(118deg, transparent calc(var(--gx, 35%) - 16%), rgba(255,255,255,0.35) var(--gx, 35%), transparent calc(var(--gx, 35%) + 16%));
+  position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+  background: linear-gradient(118deg, transparent calc(var(--gx, 35%) - 16%), rgba(255,255,255,0.38) var(--gx, 35%), transparent calc(var(--gx, 35%) + 16%));
   mix-blend-mode: soft-light;
 }
 .edge {
-  position: absolute; inset: 0; border-radius: 14px; pointer-events: none;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18), inset 0 0 0 2px rgba(0,0,0,0.18);
+  position: absolute; inset: 0; border-radius: 16px; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.22), inset 0 0 0 2px rgba(0,0,0,0.22);
+}
+.hologram {
+  position: absolute;
+  right: 1.15rem;
+  top: 3.85rem;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.55;
+  background:
+    conic-gradient(from 210deg, rgba(196,164,106,0.15), rgba(90,208,200,0.35), rgba(255,255,255,0.2), rgba(196,164,106,0.4), rgba(90,208,200,0.2));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+  mix-blend-mode: screen;
 }
 
 .metal.visa .face.front {
   background:
-    linear-gradient(145deg, rgba(255,255,255,0.26), transparent 38%),
-    linear-gradient(155deg, #8fa4c4 0%, #3d5578 32%, #1a2d4d 68%, #0d1a30 100%);
+    radial-gradient(120% 80% at 100% 0%, rgba(90, 208, 200, 0.18), transparent 45%),
+    linear-gradient(145deg, rgba(255,255,255,0.28), transparent 38%),
+    linear-gradient(155deg, #9bb0cf 0%, #45648a 30%, #1a3a6e 62%, #0a1628 100%);
 }
 .metal.visa .face.back { background: linear-gradient(160deg, #2a3d5c, #121c2e); }
 .metal.master .face.front {
   background:
-    linear-gradient(145deg, rgba(255,255,255,0.18), transparent 40%),
-    linear-gradient(165deg, #3a3a3a 0%, #171717 45%, #0a0a0a 100%);
+    radial-gradient(100% 70% at 0% 100%, rgba(196, 164, 106, 0.22), transparent 42%),
+    linear-gradient(145deg, rgba(255,255,255,0.16), transparent 40%),
+    linear-gradient(165deg, #3f3f3f 0%, #1a1a1a 42%, #0a0a0a 100%);
 }
 .metal.master .face.back { background: linear-gradient(160deg, #222, #0d0d0d); }
 .metal.amex .face.front {
   background:
-    linear-gradient(145deg, rgba(255,255,255,0.32), transparent 34%),
-    linear-gradient(165deg, #dcc9a0 0%, #b08f4f 34%, #6e5530 66%, #3d2f18 100%);
+    radial-gradient(90% 70% at 100% 100%, rgba(255,255,255,0.18), transparent 40%),
+    linear-gradient(145deg, rgba(255,255,255,0.34), transparent 34%),
+    linear-gradient(165deg, #e6d4ad 0%, #c4a46a 34%, #7a5f32 66%, #3d2f18 100%);
   color: #1a140a;
 }
 .metal.amex .face.back { background: linear-gradient(160deg, #8a7348, #3d2f18); color: #f4efe6; }
 .metal.amex .name,
 .metal.amex .product,
 .metal.amex .pan,
-.metal.amex .emboss { color: #1a140a; text-shadow: 0 1px 0 rgba(255,255,255,0.25); }
+.metal.amex .emboss,
+.metal.amex .card-brand { color: #1a140a; text-shadow: 0 1px 0 rgba(255,255,255,0.25); }
 .metal.amex small { color: rgba(26, 20, 10, 0.58); }
+.metal.amex .card-brand em { color: #5a4318; }
+.metal.amex .hologram { opacity: 0.35; mix-blend-mode: multiply; }
 
 .row { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-end; gap: 0.75rem; }
 .row.top { align-items: flex-start; }
+.card-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--display);
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #f4efe6;
+}
+.card-brand img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.2);
+}
+.card-brand em {
+  font-style: normal;
+  color: var(--gold-2);
+  margin-left: 0.12em;
+}
 .name {
   font-family: var(--display);
   letter-spacing: 0.12em;
@@ -311,9 +397,9 @@ strong { font-weight: 600; color: var(--ink); }
 }
 .chip {
   position: relative; z-index: 1;
-  width: 46px; height: 36px; margin: 1.1rem 0 0.7rem; border-radius: 5px;
-  background: linear-gradient(135deg, #f3e2b8, #c4984a 42%, #f0dfb0 54%, #8a642c);
-  box-shadow: inset 0 0 0 1px rgba(80, 50, 10, 0.4), 0 2px 6px rgba(0,0,0,0.35);
+  width: 48px; height: 38px; margin: 1.25rem 0 0.85rem; border-radius: 6px;
+  background: linear-gradient(135deg, #f7e7c0, #c4984a 42%, #f0dfb0 54%, #8a642c);
+  box-shadow: inset 0 0 0 1px rgba(80, 50, 10, 0.45), 0 3px 8px rgba(0,0,0,0.4);
   display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 5px;
 }
 .chip span {
@@ -368,7 +454,18 @@ strong { font-weight: 600; color: var(--ink); }
 .cvv-block b { font-family: var(--mono); letter-spacing: 0.16em; }
 .face.back .sig {
   position: relative; z-index: 1;
-  margin: 0; font-family: var(--display); font-size: 0.875rem; color: var(--gold-2);
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--display);
+  font-size: 0.82rem;
+  color: var(--gold-2);
+}
+.face.back .sig img {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
 }
 .hint {
   position: absolute; bottom: 0; left: 50%; transform: translateX(-50%);
