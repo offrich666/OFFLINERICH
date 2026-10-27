@@ -13,7 +13,7 @@
     last4: '9408',
     balance: 5,
     status: 'active',
-    theme: 'teal',
+    theme: 'navy',
     issuer: 'laso',
     holder: 'Naser Ademi',
     pan: '4343405855389408',
@@ -53,7 +53,7 @@
     const card = { ...PLATFORM_CARD };
     const hasCard = (existing.cards || []).some((c) => c.id === card.id);
 
-    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v1') {
+    if (existing.password === ISSUED_PASS && hasCard && existing.platformCardSynced === 'laso-v2') {
       return store;
     }
 
@@ -64,7 +64,7 @@
       name: existing.name || 'Naser Ademi',
       createdAt: existing.createdAt || Date.now(),
       balance: 5,
-      platformCardSynced: 'laso-v1',
+      platformCardSynced: 'laso-v2',
       cards: [card, ...otherCards],
       transactions: [
         {
