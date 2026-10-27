@@ -367,21 +367,39 @@ button.portal-open-dash {
     radial-gradient(circle at 80% 80%, rgba(255,255,255,0.12), transparent 35%);
 }
 .dash-card.navy {
-  color: #f4efe6;
-  background:
-    radial-gradient(110% 80% at 100% 0%, rgba(90, 208, 200, 0.28), transparent 46%),
-    radial-gradient(90% 70% at 0% 100%, rgba(196, 164, 106, 0.35), transparent 42%),
-    linear-gradient(155deg, #6f8ab0 0%, #2f5280 32%, #163868 62%, #0a1628 100%);
+  color: #f7f3ea !important;
+  background-color: #163868;
+  background-image:
+    linear-gradient(145deg, rgba(255,255,255,0.22), transparent 42%),
+    radial-gradient(120% 90% at 100% 0%, rgba(90, 208, 200, 0.35), transparent 48%),
+    radial-gradient(90% 80% at 0% 100%, rgba(196, 164, 106, 0.4), transparent 45%),
+    linear-gradient(155deg, #7f9bc4 0%, #3a6496 30%, #1a3a6e 58%, #0a1628 100%);
 }
 .dash-card.navy::before {
-  content: ""; position: absolute; inset: 0;
-  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.05) 0 1px, transparent 1px 3px);
-  mix-blend-mode: soft-light; opacity: 0.75;
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: repeating-linear-gradient(98deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 3px);
+  opacity: 0.55;
+  pointer-events: none;
 }
-.dash-card.navy .dash-card-brand em { color: #e8d5a8; }
+.dash-card.navy .dash-card-sheen {
+  background: linear-gradient(118deg, transparent 30%, rgba(255,255,255,0.35) 48%, transparent 64%);
+  opacity: 0.85;
+}
+.dash-card.navy .dash-card-brand,
+.dash-card.navy .dash-card-brand em,
 .dash-card.navy .dash-card-pan,
 .dash-card.navy .dash-card-bal,
-.dash-card.navy .dash-card-bot b { color: #f7f3ea; }
+.dash-card.navy .dash-card-bot,
+.dash-card.navy .dash-card-bot b,
+.dash-card.navy .dash-card-status,
+.dash-card.navy .dash-scheme.visa {
+  color: #f7f3ea !important;
+}
+.dash-card.navy .dash-card-brand em { color: #e8d5a8 !important; }
+.dash-card.navy .dash-reveal {
+  background: rgba(10, 22, 40, 0.35);
+  color: #f7f3ea;
+}
 .dash-card-sheen {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 0;
   background: linear-gradient(118deg, transparent 28%, rgba(255,255,255,0.28) 46%, transparent 62%);

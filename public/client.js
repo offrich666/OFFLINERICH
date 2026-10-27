@@ -320,9 +320,10 @@
   function setMarketingVisible(on) {
     document.body.classList.toggle('dash-open', !on);
     document
-      .querySelectorAll('.client-site > .top, .client-site > main, .client-site > footer, .client-site > .drawer, .client-site > .page-bg')
+      .querySelectorAll('body.client-site > .top, body.client-site > main, body.client-site > footer, body.client-site > .drawer, body.client-site > .page-bg')
       .forEach((el) => {
         el.hidden = !on;
+        el.style.display = on ? '' : 'none';
       });
   }
 
