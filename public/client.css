@@ -1,7 +1,20 @@
 /* Public client site — cards, register, order (no company ops) */
 .client-site .nav-desk { display: none; }
 
-.client-hero .headline { max-width: 16ch; }
+.client-hero .headline { max-width: 18ch; }
+.client-hero .eyebrow { display: none; }
+.client-hero h1 {
+  margin: 0 0 0.35rem;
+  font-family: var(--display);
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+.client-hero h1 + .headline {
+  margin-top: 0.15rem;
+  color: var(--gold-2);
+}
 
 .cards-offer {
   padding: 4.5rem 0;
@@ -187,7 +200,8 @@ body.dash-open {
 .dash-top-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
 .dash-currency, .dash-bell {
   background: #fff; border: 1px solid #d5dde8; border-radius: 12px;
-  padding: 0.5rem 0.75rem; font-weight: 600; position: relative;
+  padding: 0.5rem 0.85rem; font-weight: 600; position: relative;
+  font-size: 0.875rem; color: #132033;
 }
 .dash-bell i {
   position: absolute; top: -6px; right: -6px;
@@ -228,12 +242,35 @@ button.portal-open-dash {
   grid-template-columns: 1.1fr 1.4fr 0.95fr;
   gap: 14px;
 }
+.dash-grid-pro {
+  grid-template-columns: 1.4fr 1fr;
+}
 .dash-panel {
   background: #fff; border: 1px solid #d5dde8; border-radius: 18px;
   padding: 16px 16px 18px;
   box-shadow: 0 12px 32px rgba(19, 32, 51, 0.05);
 }
 .dash-span-2 { grid-column: span 2; }
+.dash-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.dash-summary > div {
+  background: #f4f7fb;
+  border-radius: 14px;
+  padding: 12px;
+}
+.dash-empty-card {
+  min-width: 220px;
+  flex: 1;
+  border: 1px dashed #b7c3d4;
+  border-radius: 16px;
+  background: #f8fafc;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
 .dash-panel-head {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 12px;
@@ -389,9 +426,11 @@ button.portal-open-dash {
 }
 
 @media (max-width: 1020px) {
-  .dash-grid { grid-template-columns: 1fr; }
+  .dash-grid,
+  .dash-grid-pro { grid-template-columns: 1fr; }
   .dash-span-2 { grid-column: auto; }
   .dash-break { grid-template-columns: 1fr; }
+  .dash-summary { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .dash-top-actions { width: 100%; }
