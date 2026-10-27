@@ -152,8 +152,12 @@
         ? `${String(card.expMonth).padStart(2, '0')}/${String(card.expYear).slice(-2)}`
         : '—';
     return `<article class="dash-card ${esc(card.theme)} gcards-face" data-card-id="${esc(card.id)}">
+      <div class="dash-card-sheen" aria-hidden="true"></div>
       <div class="dash-card-top">
-        <span class="dash-card-brand">G Cards <em>EU</em></span>
+        <span class="dash-card-brand">
+          <img src="logo.svg" width="26" height="26" alt="" />
+          <span>G Cards <em>EU</em></span>
+        </span>
         ${brandMark(card.brand)}
       </div>
       <div class="dash-chip" aria-hidden="true"></div>
@@ -185,7 +189,7 @@
     return `<div class="dash" id="client-dashboard">
       <header class="dash-top">
         <div class="dash-brand">
-          <span class="dash-logo" aria-hidden="true"></span>
+          <img class="dash-logo-img" src="logo.svg" width="36" height="36" alt="" />
           <strong>G Cards <em>EU</em></strong>
         </div>
         <div class="dash-top-actions">
