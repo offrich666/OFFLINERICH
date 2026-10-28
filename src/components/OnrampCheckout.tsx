@@ -8,6 +8,7 @@ import {
   useCrossmintCheckout,
 } from "@crossmint/client-sdk-react-ui";
 import { createOnrampOrder } from "@/app/actions/createOnrampOrder";
+import { CheckoutErrorBoundary } from "@/components/CheckoutErrorBoundary";
 import {
   checkoutAppearance,
   type OnrampChain,
@@ -58,36 +59,50 @@ function EmbeddedOnramp({
   order: ActiveOrder;
   apiKey: string;
 }) {
+  const [ready, setReady] = useState(false);
+  const [mountKey, setMountKey] = useState(0);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setReady(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  if (!ready) {
+    return <div className="setup-panel">Preparing secure checkout…</div>;
+  }
+
   return (
-    <CrossmintProvider apiKey={apiKey}>
-      <CrossmintCheckoutProvider>
-        <div className="checkout-shell onramp-embed">
-          <OrderPhaseBanner />
-          <p className="wallet-chip">
-            Delivering to <code>{order.walletAddress}</code>
-          </p>
-          <CrossmintEmbeddedCheckout
-            orderId={order.orderId}
-            clientSecret={order.clientSecret}
-            appearance={checkoutAppearance}
-            payment={{
-              receiptEmail: order.email,
-              defaultMethod: "fiat",
-              crypto: { enabled: false },
-              fiat: {
-                enabled: true,
-                defaultCurrency: "usd",
-                allowedMethods: {
-                  card: true,
-                  applePay: true,
-                  googlePay: true,
+    <CheckoutErrorBoundary onReset={() => setMountKey((k) => k + 1)}>
+      <CrossmintProvider key={mountKey} apiKey={apiKey}>
+        <CrossmintCheckoutProvider>
+          <div className="checkout-shell onramp-embed">
+            <OrderPhaseBanner />
+            <p className="wallet-chip">
+              Delivering to <code>{order.walletAddress}</code>
+            </p>
+            <CrossmintEmbeddedCheckout
+              orderId={order.orderId}
+              clientSecret={order.clientSecret}
+              appearance={checkoutAppearance}
+              payment={{
+                receiptEmail: order.email,
+                defaultMethod: "fiat",
+                crypto: { enabled: false },
+                fiat: {
+                  enabled: true,
+                  defaultCurrency: "usd",
+                  allowedMethods: {
+                    card: true,
+                    applePay: true,
+                    googlePay: true,
+                  },
                 },
-              },
-            }}
-          />
-        </div>
-      </CrossmintCheckoutProvider>
-    </CrossmintProvider>
+              }}
+            />
+          </div>
+        </CrossmintCheckoutProvider>
+      </CrossmintProvider>
+    </CheckoutErrorBoundary>
   );
 }
 

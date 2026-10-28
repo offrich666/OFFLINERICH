@@ -1,32 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  CrossmintCheckoutProvider,
-  CrossmintEmbeddedCheckout,
-  CrossmintProvider,
-  useCrossmintCheckout,
-} from "@crossmint/client-sdk-react-ui";
-import { checkoutAppearance } from "@/lib/crossmint";
-
-function OrderStatus() {
-  const { order } = useCrossmintCheckout();
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!order) return;
-    if (order.phase === "completed") {
-      setMessage("Payment complete. Delivery is in progress.");
-    } else if (order.phase === "payment") {
-      setMessage("Pay with card, Apple Pay, or Google Pay.");
-    } else if (order.phase === "delivery") {
-      setMessage("Payment received. Finalizing delivery…");
-    }
-  }, [order]);
-
-  if (!message) return null;
-  return <p className="status-line">{message}</p>;
-}
+import { EmbeddedCheckoutMount } from "@/components/EmbeddedCheckoutMount";
 
 type Props = {
   apiKey: string;
@@ -67,9 +41,13 @@ export function PaymentCheckout({
     );
   }
 
-  return (
-    <div className="payment-stack">
-      {verificationBlocked ? (
+  // Do NOT mount the Crossmint iframe while production verification is blocked.
+  // Mounting it in Next.js 16 / React 19.2 DEV triggers:
+  //   SecurityError: Blocked a frame with origin ... cross-origin frame
+  //   Error: Should not already be working.
+  if (verificationBlocked) {
+    return (
+      <div className="payment-stack">
         <div className="blocked-hint">
           <strong>Crossmint still has to unlock this project.</strong>
           <p>
@@ -112,42 +90,21 @@ export function PaymentCheckout({
             </li>
           </ol>
         </div>
-      ) : null}
+        <p className="fineprint">
+          Embedded checkout stays unloaded until Crossmint unlocks the project,
+          which also avoids a React development-mode iframe crash on localhost.
+        </p>
+      </div>
+    );
+  }
 
-      <CrossmintProvider apiKey={apiKey}>
-        <CrossmintCheckoutProvider>
-          <div className="checkout-shell onramp-embed">
-            <OrderStatus />
-            <CrossmintEmbeddedCheckout
-              appearance={checkoutAppearance}
-              lineItems={{
-                collectionLocator: `crossmint:${collectionId}`,
-                callData: {
-                  totalPrice: price,
-                  quantity: 1,
-                },
-              }}
-              payment={{
-                defaultMethod: "fiat",
-                crypto: {
-                  enabled: true,
-                  defaultChain: "polygon",
-                  defaultCurrency: "usdc",
-                },
-                fiat: {
-                  enabled: true,
-                  defaultCurrency: "usd",
-                  allowedMethods: {
-                    card: true,
-                    applePay: true,
-                    googlePay: true,
-                  },
-                },
-              }}
-            />
-          </div>
-        </CrossmintCheckoutProvider>
-      </CrossmintProvider>
+  return (
+    <div className="payment-stack">
+      <EmbeddedCheckoutMount
+        apiKey={apiKey}
+        collectionId={collectionId}
+        price={price}
+      />
     </div>
   );
 }
