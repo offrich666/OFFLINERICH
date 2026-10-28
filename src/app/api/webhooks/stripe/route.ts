@@ -49,20 +49,28 @@ export async function POST(request: Request) {
   }
 
   try {
-    switch (event.type) {
-      case "checkout.session.completed":
-      case "checkout.session.async_payment_succeeded": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        await fulfillCheckoutSession(session);
-        break;
+    if (event.type === "checkout.session.completed" ||
+        event.type === "checkout.session.async_payment_succeeded") {
+      await fulfillCheckoutSession(event.data.object as Stripe.Checkout.Session);
+    } else if (event.type === "checkout.session.async_payment_failed") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      console.warn("[stripe webhook] async payment failed", session.id);
+    } else if ((event.type as string) === "crypto.onramp_session.updated") {
+      const onramp = event.data.object as {
+        id?: string;
+        status?: string;
+        transaction_details?: Record<string, unknown>;
+        metadata?: Record<string, string>;
+      };
+      console.info("[stripe webhook] onramp updated", {
+        id: onramp.id,
+        status: onramp.status,
+        details: onramp.transaction_details,
+        metadata: onramp.metadata,
+      });
+      if (onramp.status === "fulfillment_complete") {
+        console.info("[stripe webhook] treasury crypto delivered", onramp.id);
       }
-      case "checkout.session.async_payment_failed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        console.warn("[stripe webhook] async payment failed", session.id);
-        break;
-      }
-      default:
-        break;
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Handler error";

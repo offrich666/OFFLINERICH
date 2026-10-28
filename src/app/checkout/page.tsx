@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { StripeCheckout } from "@/components/StripeCheckout";
+import { StripeOnrampCheckout } from "@/components/StripeOnrampCheckout";
+import { TREASURY } from "@/lib/treasury";
 
 export const instant = false;
 
@@ -16,14 +17,13 @@ function priceLabel() {
 function modeLabel() {
   const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
   if (key.includes("_live_")) return "live";
-  if (key.includes("_test_")) return "test";
+  if (key.includes("_test_")) return "test (swap to pk_live_)";
   return "—";
 }
 
 export default function CheckoutPage() {
   const price = priceLabel();
   const mode = modeLabel();
-  const hasKey = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
 
   return (
     <main className="page checkout-page">
@@ -31,26 +31,24 @@ export default function CheckoutPage() {
         <Link href="/" className="brand-mark">
           OFFLINERICH
         </Link>
-        <Link href="/onramp" className="ghost-link">
-          Onramp
+        <Link href="/checkout/fiat" className="ghost-link">
+          Fiat only
         </Link>
       </header>
 
       <section className="checkout-layout">
         <div className="checkout-copy">
-          <p className="eyebrow">Checkout</p>
-          <h1>Pay & claim</h1>
+          <p className="eyebrow">Live checkout</p>
+          <h1>Pay → we receive crypto</h1>
           <p>
-            Card, Apple Pay, and Google Pay through Stripe Embedded Checkout.
+            Same Crossmint-style flow on Stripe: buyer pays with card / Apple
+            Pay / Google Pay, and crypto settles into the locked OFFLINERICH
+            treasury wallets.
           </p>
           <dl className="meta-list">
             <div>
-              <dt>Price</dt>
-              <dd>{price}</dd>
-            </div>
-            <div>
-              <dt>Product</dt>
-              <dd>OFFLINERICH Drop</dd>
+              <dt>Amount</dt>
+              <dd>{price} USD → USDC / ETH / BTC</dd>
             </div>
             <div>
               <dt>Mode</dt>
@@ -60,31 +58,33 @@ export default function CheckoutPage() {
               <dt>Merchant</dt>
               <dd>G N LABS LLC</dd>
             </div>
+            <div>
+              <dt>Treasury (EVM)</dt>
+              <dd>
+                <code>{TREASURY.evm}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Treasury (BTC)</dt>
+              <dd>
+                <code>{TREASURY.bitcoin}</code>
+              </dd>
+            </div>
           </dl>
           <p className="fineprint">
-            Local/dev uses Stripe test keys so you can pay with{" "}
-            <code>4242…</code> without real charges. Swap in live keys + the
-            live price id from G N LABS LLC to take real payments.
+            Networks: Ethereum, Polygon, Base, Bitcoin. BSC is not supported by
+            Stripe Onramp — use the same EVM address on Polygon/Base/ETH instead.
+            Requires Stripe Crypto Onramp approval + live API keys on G N LABS
+            LLC.
           </p>
         </div>
 
         <div className="checkout-panel">
-          {hasKey ? (
-            <Suspense
-              fallback={<div className="setup-panel">Loading checkout…</div>}
-            >
-              <StripeCheckout />
-            </Suspense>
-          ) : (
-            <div className="setup-panel">
-              <h2>Stripe keys required</h2>
-              <p>
-                Set <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>,{" "}
-                <code>STRIPE_SECRET_KEY</code>, and <code>STRIPE_PRICE_ID</code>{" "}
-                in <code>.env.local</code>.
-              </p>
-            </div>
-          )}
+          <Suspense
+            fallback={<div className="setup-panel">Loading checkout…</div>}
+          >
+            <StripeOnrampCheckout />
+          </Suspense>
         </div>
       </section>
     </main>
