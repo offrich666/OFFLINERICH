@@ -23,7 +23,7 @@ npm run dev
 In another terminal (webhooks):
 
 ```bash
-stripe listen --forward-to localhost:3000/api/webhooks/stripe
+stripe listen --forward-to localhost:3000/api/webhooks/stripe --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed
 # paste the whsec_… into STRIPE_WEBHOOK_SECRET and restart next
 ```
 
