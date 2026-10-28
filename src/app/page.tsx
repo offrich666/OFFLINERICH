@@ -16,15 +16,12 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay with card, Apple Pay, or Google Pay — crypto settles into the
-          OFFLINERICH treasury via Stripe Onramp.
+          Pay $9,000 with card, Apple Pay, or Google Pay. Add your wallet —
+          crypto is delivered on the network you choose.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Pay → crypto
-          </Link>
-          <Link href="/checkout/fiat" className="secondary-cta">
-            Fiat checkout
+            Pay $9,000
           </Link>
         </div>
       </section>

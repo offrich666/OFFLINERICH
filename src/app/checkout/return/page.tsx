@@ -17,25 +17,39 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
     redirect("/checkout");
   }
 
-  const stripe = getStripe();
-  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  let status = "complete";
+  let paymentStatus = "paid";
+  let email: string | null = null;
+  let amount: string | null = null;
+  let network: string | null = null;
+  let wallet: string | null = null;
 
-  if (session.status === "open") {
-    redirect("/checkout");
+  try {
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.status === "open") {
+      redirect("/checkout");
+    }
+
+    status = session.status || status;
+    paymentStatus = session.payment_status || paymentStatus;
+    email = session.customer_details?.email || session.customer_email || null;
+    network = session.metadata?.client_network || null;
+    wallet = session.metadata?.client_wallet || null;
+
+    if (typeof session.amount_total === "number") {
+      amount = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: (session.currency || "usd").toUpperCase(),
+        maximumFractionDigits: 0,
+      }).format(session.amount_total / 100);
+    }
+  } catch {
+    // Payment Link returns may not have server keys — still show thank-you
   }
 
-  const email =
-    session.customer_details?.email || session.customer_email || null;
-  const paid =
-    session.payment_status === "paid" ||
-    session.payment_status === "no_payment_required";
-  const amount =
-    typeof session.amount_total === "number"
-      ? new Intl.NumberFormat("en-US", {
-          style: "currency",
-          currency: (session.currency || "usd").toUpperCase(),
-        }).format(session.amount_total / 100)
-      : null;
+  const paid = paymentStatus === "paid" || paymentStatus === "no_payment_required";
 
   return (
     <main className="page checkout-page">
@@ -51,11 +65,11 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
       <section className="checkout-layout">
         <div className="checkout-copy">
           <p className="eyebrow">Return</p>
-          <h1>{paid ? "Payment complete" : "Payment status"}</h1>
+          <h1>{paid ? "Payment received" : "Payment status"}</h1>
           <p>
             {paid
-              ? "Thanks — your OFFLINERICH drop payment went through."
-              : `Stripe reports status “${session.status}” / payment “${session.payment_status}”.`}
+              ? "Thanks — we are processing crypto delivery to your wallet."
+              : `Status: ${status} / ${paymentStatus}.`}
           </p>
           <dl className="meta-list">
             {amount ? (
@@ -64,29 +78,34 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
                 <dd>{amount}</dd>
               </div>
             ) : null}
+            {network ? (
+              <div>
+                <dt>Network</dt>
+                <dd>{network}</dd>
+              </div>
+            ) : null}
+            {wallet ? (
+              <div>
+                <dt>Your wallet</dt>
+                <dd>
+                  <code>{wallet}</code>
+                </dd>
+              </div>
+            ) : null}
             {email ? (
               <div>
                 <dt>Email</dt>
                 <dd>{email}</dd>
               </div>
             ) : null}
-            <div>
-              <dt>Session</dt>
-              <dd>
-                <code>{session.id}</code>
-              </dd>
-            </div>
           </dl>
           <p className="fineprint">
-            Fulfillment runs from the Stripe webhook (
-            <code>checkout.session.completed</code>), not this page alone.
+            Delivery is processed after payment confirmation. Keep this page for
+            your records.
           </p>
           <div className="cta-row" style={{ marginTop: "1.5rem" }}>
             <Link href="/" className="primary-cta">
               Back home
-            </Link>
-            <Link href="/checkout" className="secondary-cta">
-              Buy again
             </Link>
           </div>
         </div>

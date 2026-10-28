@@ -443,8 +443,94 @@ code {
   width: 100%;
 }
 
-.stripe-onramp {
+.stripe-onramp,
+.client-pay {
   gap: 1rem;
+}
+
+.setup-panel.soft {
+  background: transparent;
+  border: 1px solid var(--line);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.85rem 0;
+  font-size: 0.85rem;
+  color: var(--mist);
+}
+
+.field select,
+.field input,
+.mark-sent input {
+  background: var(--ink-soft);
+  border: 1px solid var(--line);
+  color: var(--fog);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+}
+
+.form-error {
+  color: #f0a0a0;
+  font-size: 0.9rem;
+}
+
+.destination-summary {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.destination-summary code {
+  word-break: break-all;
+  font-size: 0.8rem;
+}
+
+.ops-table-wrap {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.ops-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.ops-table th,
+.ops-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.65rem 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.ops-table code.break {
+  word-break: break-all;
+  font-size: 0.72rem;
+}
+
+.mark-sent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.mark-sent button {
+  background: var(--gold-deep);
+  color: #0a0b0d;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.45rem 0.7rem;
+  cursor: pointer;
+  font: inherit;
 }
 
 .treasury-box h2 {

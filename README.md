@@ -1,59 +1,51 @@
-# OFFLINERICH × Stripe (live treasury onramp)
+# OFFLINERICH — $9,000 pay → crypto to client wallet
 
-Buyers pay with **card / Apple Pay / Google Pay**. Stripe Crypto Onramp converts
-to crypto and delivers it to the **locked OFFLINERICH treasury wallets** (same
-idea as Crossmint payout — merchant receives crypto).
+Client experience (no treasury mentioned):
 
-## Treasury wallets
+1. Choose network + paste **their** wallet  
+2. Pay **$9,000** with **card / Apple Pay / Google Pay** (Stripe)  
+3. After payment, crypto is delivered to that wallet  
 
-| Chain | Address |
+Internal flow (ops only):
+
+1. Stripe collects USD on **G N LABS LLC**  
+2. Crypto is funded into the **treasury**  
+3. Ops sends treasury → client wallet and marks the job in `/ops/transfers`
+
+## Live Stripe
+
+| | |
 | --- | --- |
-| Ethereum / Polygon / Base (EVM) | `0x1dbB04Fe817A2C49DB853f2C49d29Db441355FE9` |
-| BSC (same EVM addr; **not** on Stripe Onramp) | `0x1dbB04Fe817A2C49DB853f2C49d29Db441355FE9` |
-| Bitcoin | `bc1qly9n852q3j5csvgd59lcmazhfu74fc77x88vrj` |
+| Price | `price_1UVgMyQWCzdANStkyBrFVqwR` ($9,000) |
+| Payment Link | https://buy.stripe.com/4gM4gB4TvfTyegU2S7ds407 |
+| Account | `acct_1UCk64QWCzdANStk` (G N LABS LLC) |
 
-Stripe Onramp networks: `ethereum`, `polygon`, `base`, `bitcoin`  
-Assets: `usdc`, `eth`, `btc`
+Payment Link already collects **network** + **wallet** and supports Apple Pay / Google Pay / card on `buy.stripe.com`.
 
-## Live Stripe (G N LABS LLC)
+## Env
 
-| | Value |
-| --- | --- |
-| Account | `acct_1UCk64QWCzdANStk` |
-| Product | `prod_VWjGHH8S9tb38E` |
-| Price ($1) | `price_1UVfndQWCzdANStkYKTRQTtc` |
-| Live Payment Link (fiat) | https://buy.stripe.com/eVq8wReu5cHm8WA8crds406 |
+```bash
+cp .env.example .env.local
+# Optional embedded checkout on your domain:
+# NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+# STRIPE_SECRET_KEY=rk_live_...
+# STRIPE_WEBHOOK_SECRET=whsec_...
+OPS_SECRET=...
+```
 
-### Unlock Crypto Onramp (required for treasury crypto)
+Without live keys, `/checkout` validates wallet then opens the **live Payment Link**.
 
-1. Submit [Crypto Onramp application](https://dashboard.stripe.com/crypto-onramp/get-started) on the live account.
-2. Add live keys to `.env.local`:
-   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`
-   - `STRIPE_SECRET_KEY=rk_live_…` (preferred) or `sk_live_…`
-   - `STRIPE_WEBHOOK_SECRET=whsec_…`
-3. Restart `npm run dev`.
+## Ops queue
 
-Until Onramp is approved, `/checkout` still offers the **live Payment Link** (USD to Stripe). Main crypto-to-treasury path is Onramp.
+```
+/ops/transfers?key=$OPS_SECRET
+```
+
+Shows paid orders with client wallet + internal treasury address. Mark sent with outbound tx hash after you transfer.
 
 ## Run
 
 ```bash
 npm install --legacy-peer-deps
-cp .env.example .env.local   # fill live keys
 npm run dev
 ```
-
-Webhooks:
-
-```bash
-stripe listen --forward-to localhost:3000/api/webhooks/stripe \
-  --events checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.async_payment_failed,crypto.onramp_session.updated
-```
-
-## Routes
-
-- `/checkout` — Pay → crypto to treasury (Onramp, wallets locked)
-- `/checkout/fiat` — Embedded Checkout / Payment Link (USD)
-- `POST /api/onramp/session` — mint Onramp session (`lock_wallet_address: true`)
-- `POST /api/checkout/session` — fiat Embedded Checkout Session
-- `POST /api/webhooks/stripe` — fulfillment
