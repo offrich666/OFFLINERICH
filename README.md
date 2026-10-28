@@ -1,52 +1,73 @@
-# OFFLINERICH
+# OFFLINERICH × Crossmint Onramp
 
-Next.js storefront with **Crossmint** embedded checkout (card + crypto).
+Buy USDC in-app with **card**, **Apple Pay**, and **Google Pay** via [Crossmint Onramp](https://docs.crossmint.com/onramp/overview).
 
 ## Quick start
 
 ```bash
 npm install
 cp .env.example .env.local
-# fill in Crossmint keys + collection id
+# add client + server API keys
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000/checkout](http://localhost:3000/checkout).
 
-## Environment
+## Routes
 
-| Variable | Where | Purpose |
-| --- | --- | --- |
-| `NEXT_PUBLIC_CROSSMINT_API_KEY` | browser | Client key (`ck_…`) |
-| `CROSSMINT_SERVER_API_KEY` | server only | Server key (`sk_…`) for `/api/*` |
-| `NEXT_PUBLIC_CROSSMINT_COLLECTION_ID` | browser | Sellable collection id |
-| `NEXT_PUBLIC_CROSSMINT_PRICE` | browser | Checkout price |
-| `CROSSMINT_PAYOUT_ADDRESS` | scripts | Wallet that receives sales |
-| `CROSSMINT_API_BASE` | server | Default production API base |
+| Path | Purpose |
+| --- | --- |
+| `/` | Brand landing |
+| `/checkout` | USDC onramp (primary) |
+| `/drop` | Optional NFT collection checkout |
+| `GET /api/crossmint/health` | Keys + onramp readiness |
+| `POST /api/onramp/orders` | Create onramp order |
+| `GET /.well-known/apple-developer-merchantid-domain-association` | Apple Pay domain file |
 
-Never commit `.env.local`. Rotate any key that was pasted into chat or a ticket.
+## Payment methods
 
-## Create a sellable collection
+Embedded checkout enables:
 
-Your Crossmint project starts with `default-polygon` / `default-solana` (no payments). Create a paid drop:
+```ts
+fiat: {
+  enabled: true,
+  allowedMethods: { card: true, applePay: true, googlePay: true },
+}
+```
 
-1. Put your payout wallet in `CROSSMINT_PAYOUT_ADDRESS`
-2. Run `npm run setup:collection`
-3. Whitelist `http://localhost:3000` (and your production domain) on the **client** API key in [Crossmint Console](https://www.crossmint.com/console)
-4. Confirm the client key has `orders.create` scope
-5. Production payments may require Crossmint account / collection verification — contact Crossmint Sales if checkout is blocked on prod
+### Apple Pay (web)
 
-## Useful routes
+1. Download the verification file from Crossmint Console → **Apple Pay Domains**
+2. Put contents in `APPLE_PAY_DOMAIN_ASSOCIATION` **or** save as  
+   `public/.well-known/apple-developer-merchantid-domain-association`
+3. Deploy on **HTTPS**
+4. Verify the domain in Crossmint Console
+5. Test in **Safari** (macOS / iOS)
 
-- `/` — brand landing
-- `/checkout` — embedded Crossmint checkout
-- `GET /api/crossmint/health` — key + collection diagnostic
-- `POST /api/orders` — server-side order create `{ "email": "you@example.com" }`
+Google Pay on web needs no extra domain setup.
+
+## Production gate
+
+Crossmint Onramp on **production** requires a signed Order Form + KYB. Staging is self-serve.
+
+If health/checkout returns:
+
+> Onramp is not yet enabled for production use…
+
+then either:
+
+- switch to **staging** keys (`ck_staging_` / `sk_staging_`, `NEXT_PUBLIC_CROSSMINT_ENV=staging`), or
+- contact [Crossmint Sales](https://www.crossmint.com/contact/sales) to enable production
+
+## API key scopes
+
+Server key: `orders.create`, `orders.read`, `wallets.create`  
+Client key: whitelist your origins + checkout scopes used by embedded UI
 
 ## Scripts
 
 ```bash
 npm run dev
 npm run build
-npm run setup:collection
+npm run setup:collection   # optional NFT collection helper
 ```

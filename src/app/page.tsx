@@ -9,26 +9,27 @@ export default function Home() {
       <header className="topbar">
         <span className="brand-mark">OFFLINERICH</span>
         <Link href="/checkout" className="top-cta">
-          Buy
+          Buy USDC
         </Link>
       </header>
 
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Limited digital drops. Card or crypto. Settled through Crossmint.
+          Onramp stablecoins in-app. Card, Apple Pay, and Google Pay — powered
+          by Crossmint.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Enter checkout
+            Open checkout
           </Link>
           <a
             className="secondary-cta"
-            href="https://www.crossmint.com/console"
+            href="https://docs.crossmint.com/onramp/overview"
             target="_blank"
             rel="noreferrer"
           >
-            Crossmint console
+            Onramp docs
           </a>
         </div>
       </section>

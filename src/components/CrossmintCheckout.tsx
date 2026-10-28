@@ -7,6 +7,7 @@ import {
   CrossmintProvider,
   useCrossmintCheckout,
 } from "@crossmint/client-sdk-react-ui";
+import { checkoutAppearance } from "@/lib/crossmint";
 
 function OrderStatus() {
   const { order } = useCrossmintCheckout();
@@ -22,7 +23,6 @@ function OrderStatus() {
   }, [order]);
 
   if (!message) return null;
-
   return <p className="status-line">{message}</p>;
 }
 
@@ -50,24 +50,11 @@ export function CrossmintCheckout({ apiKey, collectionId, price }: Props) {
       <div className="setup-panel">
         <h2>Collection not configured</h2>
         <p>
-          Your Crossmint project only has default collections without payments
-          enabled. Create a sellable collection, then set{" "}
+          Primary payments are on{" "}
+          <a href="/checkout">USDC onramp checkout</a>. For NFT drops, create a
+          sellable collection and set{" "}
           <code>NEXT_PUBLIC_CROSSMINT_COLLECTION_ID</code>.
         </p>
-        <ol>
-          <li>
-            Add your payout wallet to <code>CROSSMINT_PAYOUT_ADDRESS</code> in{" "}
-            <code>.env.local</code>
-          </li>
-          <li>
-            Run <code>npm run setup:collection</code>
-          </li>
-          <li>
-            In Crossmint Console → API Keys, whitelist{" "}
-            <code>http://localhost:3000</code> on the client key
-          </li>
-          <li>Restart <code>npm run dev</code></li>
-        </ol>
       </div>
     );
   }
@@ -78,6 +65,7 @@ export function CrossmintCheckout({ apiKey, collectionId, price }: Props) {
         <div className="checkout-shell">
           <OrderStatus />
           <CrossmintEmbeddedCheckout
+            appearance={checkoutAppearance}
             lineItems={{
               collectionLocator: `crossmint:${collectionId}`,
               callData: {

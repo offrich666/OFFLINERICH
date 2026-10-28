@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { CrossmintCheckout } from "@/components/CrossmintCheckout";
+import { OnrampCheckout } from "@/components/OnrampCheckout";
 import {
-  getCheckoutPrice,
   getClientApiKey,
-  getCollectionId,
+  getDefaultOnrampAmount,
+  getDefaultOnrampChain,
+  getUsdcEnvironment,
 } from "@/lib/crossmint";
 
 export default function CheckoutPage() {
+  const amount = getDefaultOnrampAmount();
+  const chain = getDefaultOnrampChain();
+  const environment = getUsdcEnvironment();
   const apiKey = getClientApiKey();
-  const collectionId = getCollectionId();
-  const price = getCheckoutPrice();
 
   return (
     <main className="page checkout-page">
@@ -24,29 +26,42 @@ export default function CheckoutPage() {
 
       <section className="checkout-layout">
         <div className="checkout-copy">
-          <p className="eyebrow">Checkout</p>
-          <h1>Claim the drop</h1>
+          <p className="eyebrow">Onramp checkout</p>
+          <h1>Buy USDC</h1>
           <p>
-            Pay with card or crypto through Crossmint. Delivery lands in the
-            email wallet you use at checkout.
+            Pay with card, Apple Pay, or Google Pay. Crossmint handles KYC,
+            chargebacks, and delivery into your wallet.
           </p>
           <dl className="meta-list">
             <div>
-              <dt>Price</dt>
-              <dd>${price} USD</dd>
+              <dt>Starting amount</dt>
+              <dd>${amount}</dd>
             </div>
             <div>
-              <dt>Network</dt>
-              <dd>Polygon</dd>
+              <dt>Default chain</dt>
+              <dd>{chain}</dd>
+            </div>
+            <div>
+              <dt>Environment</dt>
+              <dd>{environment}</dd>
+            </div>
+            <div>
+              <dt>Wallets</dt>
+              <dd>Apple / Google / Card</dd>
             </div>
           </dl>
+          <p className="fineprint">
+            Apple Pay appears in Safari after you host the domain association
+            file and verify the domain in Crossmint Console. Production onramp
+            needs Crossmint Sales enablement.
+          </p>
         </div>
 
         <div className="checkout-panel">
-          <CrossmintCheckout
+          <OnrampCheckout
             apiKey={apiKey}
-            collectionId={collectionId}
-            price={price}
+            defaultAmount={amount}
+            defaultChain={chain}
           />
         </div>
       </section>
