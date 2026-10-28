@@ -434,6 +434,15 @@ code {
   padding: 0.35rem;
 }
 
+.stripe-embed {
+  min-height: 480px;
+  width: 100%;
+}
+
+.stripe-embed iframe {
+  width: 100%;
+}
+
 .payment-stack {
   display: flex;
   flex-direction: column;

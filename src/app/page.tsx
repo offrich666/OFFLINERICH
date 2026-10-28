@@ -16,8 +16,8 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay with card, Apple Pay, or Google Pay. Crossmint checkout is wired
-          to collection offlinerich-drop.
+          Pay with card, Apple Pay, or Google Pay through Stripe Embedded
+          Checkout.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">

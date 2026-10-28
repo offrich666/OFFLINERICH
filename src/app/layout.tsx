@@ -16,7 +16,7 @@ const figtree = Figtree({
 
 export const metadata: Metadata = {
   title: "OFFLINERICH",
-  description: "OFFLINERICH drops — pay with Crossmint card or crypto checkout.",
+  description: "OFFLINERICH drops — pay with Stripe card, Apple Pay, or Google Pay.",
 };
 
 export default function RootLayout({

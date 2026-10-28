@@ -1,92 +1,29 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { connection } from "next/server";
-import { PaymentCheckout } from "@/components/PaymentCheckout";
-import {
-  crossmintFetch,
-  getCheckoutPrice,
-  getClientApiKey,
-  getCollectionId,
-  getUsdcEnvironment,
-} from "@/lib/crossmint";
+import { StripeCheckout } from "@/components/StripeCheckout";
 
 export const instant = false;
 
-async function probeCheckout() {
-  await connection();
-  const collectionId = getCollectionId();
-  if (!collectionId) {
-    return {
-      blocked: true,
-      message: "Collection id is not configured.",
-    };
-  }
-
-  try {
-    const { ok, data } = await crossmintFetch<{
-      message?: string;
-      clientSecret?: string;
-      order?: { orderId?: string };
-    }>("/orders", {
-      method: "POST",
-      body: JSON.stringify({
-        recipient: { email: "probe@offlinerich.local" },
-        payment: {
-          receiptEmail: "probe@offlinerich.local",
-          method: "card",
-          currency: "usd",
-        },
-        lineItems: [
-          {
-            collectionLocator: `crossmint:${collectionId}`,
-            callData: { totalPrice: getCheckoutPrice(), quantity: 1 },
-          },
-        ],
-      }),
-    });
-
-    if (ok && (data.clientSecret || data.order?.orderId)) {
-      return { blocked: false, message: "Checkout order create succeeded." };
-    }
-
-    return {
-      blocked: true,
-      message:
-        data.message ||
-        "Crossmint rejected the production checkout probe.",
-    };
-  } catch (error) {
-    return {
-      blocked: true,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Could not probe Crossmint checkout.",
-    };
-  }
+function priceLabel() {
+  const cents = Number(process.env.NEXT_PUBLIC_STRIPE_PRICE_CENTS || "100");
+  if (!Number.isFinite(cents) || cents < 0) return "$1.00";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(cents / 100);
 }
 
-async function CheckoutPanel() {
-  const apiKey = getClientApiKey();
-  const collectionId = getCollectionId();
-  const price = getCheckoutPrice();
-  const probe = await probeCheckout();
-
-  return (
-    <PaymentCheckout
-      apiKey={apiKey}
-      collectionId={collectionId}
-      price={price}
-      verificationBlocked={probe.blocked}
-      verificationMessage={probe.message}
-    />
-  );
+function modeLabel() {
+  const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "";
+  if (key.includes("_live_")) return "live";
+  if (key.includes("_test_")) return "test";
+  return "—";
 }
 
 export default function CheckoutPage() {
-  const collectionId = getCollectionId();
-  const price = getCheckoutPrice();
-  const environment = getUsdcEnvironment();
+  const price = priceLabel();
+  const mode = modeLabel();
+  const hasKey = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
 
   return (
     <main className="page checkout-page">
@@ -104,42 +41,50 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay & claim</h1>
           <p>
-            Card, Apple Pay, and Google Pay through Crossmint Embedded Checkout.
-            Crypto is available too.
+            Card, Apple Pay, and Google Pay through Stripe Embedded Checkout.
           </p>
           <dl className="meta-list">
             <div>
               <dt>Price</dt>
-              <dd>${price} USDC</dd>
+              <dd>{price}</dd>
             </div>
             <div>
-              <dt>Collection</dt>
-              <dd>{collectionId || "—"}</dd>
+              <dt>Product</dt>
+              <dd>OFFLINERICH Drop</dd>
             </div>
             <div>
-              <dt>Environment</dt>
-              <dd>{environment}</dd>
+              <dt>Mode</dt>
+              <dd>{mode}</dd>
             </div>
             <div>
-              <dt>Payout owner</dt>
-              <dd>naserademid@gmail.com</dd>
+              <dt>Merchant</dt>
+              <dd>G N LABS LLC</dd>
             </div>
           </dl>
           <p className="fineprint">
-            Collection <code>offlinerich-drop</code> pays out to the Crossmint
-            wallet owned by <code>naserademid@gmail.com</code>. Verification
-            contact: <code>groupgrow64@gmail.com</code>. Production charges
-            unlock after Crossmint KYB + collection review (Support ticket
-            already filed).
+            Local/dev uses Stripe test keys so you can pay with{" "}
+            <code>4242…</code> without real charges. Swap in live keys + the
+            live price id from G N LABS LLC to take real payments.
           </p>
         </div>
 
         <div className="checkout-panel">
-          <Suspense
-            fallback={<div className="setup-panel">Loading checkout…</div>}
-          >
-            <CheckoutPanel />
-          </Suspense>
+          {hasKey ? (
+            <Suspense
+              fallback={<div className="setup-panel">Loading checkout…</div>}
+            >
+              <StripeCheckout />
+            </Suspense>
+          ) : (
+            <div className="setup-panel">
+              <h2>Stripe keys required</h2>
+              <p>
+                Set <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code>,{" "}
+                <code>STRIPE_SECRET_KEY</code>, and <code>STRIPE_PRICE_ID</code>{" "}
+                in <code>.env.local</code>.
+              </p>
+            </div>
+          )}
         </div>
       </section>
     </main>

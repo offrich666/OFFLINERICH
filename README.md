@@ -1,45 +1,41 @@
-# OFFLINERICH × Crossmint
+# OFFLINERICH × Stripe
 
-Production checkout is wired to collection **`offlinerich-drop`** with card, Apple Pay, and Google Pay.
+Card, Apple Pay, and Google Pay via **Stripe Embedded Checkout**.
 
-## Already done in this repo / project
+## Stripe setup (done)
 
-- Payout wallet owned by **`naserademid@gmail.com`**: `0x2A787A5D845Ac9636De5E4Ab599fBB65A7B08443`
-- Collection **`offlinerich-drop`** payout retargeted to that wallet (Polygon, 1 USDC)
-- Embedded checkout UI with Apple Pay / Google Pay / card
-- Apple Pay domain association route
-- USDC onramp flow at `/onramp`
-- Crossmint Support ticket submitted from **`groupgrow64@gmail.com`** requesting production Checkout/Onramp + KYB/collection review
+| | Test (local) | Live (G N LABS LLC) |
+| --- | --- | --- |
+| Product | `OFFLINERICH Drop` | `prod_VWjGHH8S9tb38E` |
+| Price ($1) | `price_1UVfndAcIwRSiheleztRBkx1` | `price_1UVfndQWCzdANStkYKTRQTtc` |
+| Account | claimable sandbox | `acct_1UCk64QWCzdANStk` |
 
-## What still needs a human in Crossmint Console / Sales
-
-Production **Checkout** and **Onramp** require Crossmint **Order Form + KYB**.  
-Sales web form rejects `@gmail.com` — use a company domain there, or reply to the Support ticket already filed.
-
-| Step | Where |
-| --- | --- |
-| Whitelist `http://localhost:3000` + your domain | Console → API Keys → client key |
-| Start review for `offlinerich-drop` | Console → collection → Review (left sidebar) |
-| Enable production payments | Reply to Support ticket / [Contact Sales](https://www.crossmint.com/contact/sales) with a **company** email |
-
-Staging is self-serve if you want to test before KYB: use `ck_staging_` / `sk_staging_` and `NEXT_PUBLIC_CROSSMINT_ENV=staging`.
+Local `.env.local` uses **test** keys so `4242 4242 4242 4242` works without real charges. For production, set live keys from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys) and `STRIPE_PRICE_ID=price_1UVfndQWCzdANStkYKTRQTtc`.
 
 ## Run
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env.local   # then fill Stripe keys
 npm run dev
 ```
 
-- `/checkout` — paid drop (primary)
-- `/onramp` — buy USDC
-- `GET /api/crossmint/health` — readiness
-- `GET /.well-known/apple-developer-merchantid-domain-association` — Apple Pay file
+In another terminal (webhooks):
 
-## Apple Pay
+```bash
+stripe listen --forward-to localhost:3000/api/webhooks/stripe
+# paste the whsec_… into STRIPE_WEBHOOK_SECRET and restart next
+```
 
-1. Download file from Console → Apple Pay Domains
-2. Set `APPLE_PAY_DOMAIN_ASSOCIATION` or save under `public/.well-known/`
-3. Verify HTTPS domain in Console
-4. Test in Safari
+- `/checkout` — Embedded Checkout
+- `/checkout/return` — post-pay return page
+- `POST /api/checkout/session` — creates Checkout Session (`ui_mode: embedded_page`)
+- `POST /api/webhooks/stripe` — fulfills `checkout.session.completed` + `async_payment_succeeded`
+
+## Apple Pay / Google Pay
+
+Stripe enables wallet methods dynamically (do not hardcode `payment_method_types`). For Apple Pay on a custom domain, register the domain under Stripe Dashboard → Settings → Payment methods → Apple Pay.
+
+## Crossmint
+
+Legacy Crossmint onramp/collection code remains under `/onramp` and related APIs. Primary paid drop checkout is Stripe.
