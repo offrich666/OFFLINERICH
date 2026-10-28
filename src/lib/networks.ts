@@ -19,21 +19,39 @@ export function isValidWalletAddress(networkId: string, address: string): boolea
   const net = getNetwork(networkId);
   if (!net) return false;
   if (net.kind === "bitcoin") {
-    // Bech32 / legacy-ish BTC addresses
     return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(trimmed);
   }
   return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
 }
 
-export const CHECKOUT_AMOUNT_CENTS = Number(
-  process.env.NEXT_PUBLIC_STRIPE_PRICE_CENTS || "900000",
-);
+/** Inclusive USD bounds for client checkout. */
+export const MIN_AMOUNT_USD = 10;
+export const MAX_AMOUNT_USD = 9000;
+export const MIN_AMOUNT_CENTS = MIN_AMOUNT_USD * 100;
+export const MAX_AMOUNT_CENTS = MAX_AMOUNT_USD * 100;
 
-export function checkoutAmountUsdLabel(): string {
-  const cents = Number.isFinite(CHECKOUT_AMOUNT_CENTS) ? CHECKOUT_AMOUNT_CENTS : 900000;
+export function parseAmountUsd(input: string | number): number | null {
+  const n = typeof input === "number" ? input : Number(String(input).replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+export function amountUsdToCents(usd: number): number {
+  return Math.round(usd * 100);
+}
+
+export function isValidAmountUsd(usd: number): boolean {
+  return usd >= MIN_AMOUNT_USD && usd <= MAX_AMOUNT_USD;
+}
+
+export function formatUsd(usd: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
+    maximumFractionDigits: usd % 1 === 0 ? 0 : 2,
+  }).format(usd);
+}
+
+export function checkoutAmountRangeLabel(): string {
+  return `${formatUsd(MIN_AMOUNT_USD)} – ${formatUsd(MAX_AMOUNT_USD)}`;
 }

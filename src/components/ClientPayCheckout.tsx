@@ -8,8 +8,13 @@ import {
 } from "@stripe/react-stripe-js";
 import {
   CLIENT_NETWORKS,
-  checkoutAmountUsdLabel,
+  MAX_AMOUNT_USD,
+  MIN_AMOUNT_USD,
+  checkoutAmountRangeLabel,
+  formatUsd,
+  isValidAmountUsd,
   isValidWalletAddress,
+  parseAmountUsd,
   type ClientNetworkId,
 } from "@/lib/networks";
 
@@ -17,14 +22,19 @@ const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const paymentLinkUrl =
   process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
-  "https://buy.stripe.com/4gM4gB4TvfTyegU2S7ds407";
+  "https://buy.stripe.com/aFafZj4TvdLq8WAboDds408";
 
 export function ClientPayCheckout() {
-  const amountLabel = checkoutAmountUsdLabel();
+  const rangeLabel = checkoutAmountRangeLabel();
+  const [amountInput, setAmountInput] = useState("10");
   const [network, setNetwork] = useState<ClientNetworkId>("polygon");
   const [wallet, setWallet] = useState("");
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const amountUsd = parseAmountUsd(amountInput);
+  const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
+  const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
 
   const asset = useMemo(
     () => CLIENT_NETWORKS.find((n) => n.id === network)?.asset ?? "USDC",
@@ -41,6 +51,7 @@ export function ClientPayCheckout() {
         network,
         wallet: wallet.trim(),
         asset,
+        amountUsd,
       }),
     });
     const data = (await res.json()) as { clientSecret?: string; error?: string };
@@ -48,10 +59,14 @@ export function ClientPayCheckout() {
       throw new Error(data.error || "Could not start checkout");
     }
     return data.clientSecret;
-  }, [asset, network, wallet]);
+  }, [amountUsd, asset, network, wallet]);
 
   function continueToPay() {
     setError(null);
+    if (!amountOk) {
+      setError(`Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`);
+      return;
+    }
     if (!walletOk) {
       setError(
         network === "bitcoin"
@@ -61,8 +76,6 @@ export function ClientPayCheckout() {
       return;
     }
     if (!publishableKey || !stripePromise) {
-      // Live path without local secret/publishable keys: Stripe-hosted link
-      // collects network + wallet on their page (Apple Pay / Google Pay / card).
       window.location.href = paymentLinkUrl;
       return;
     }
@@ -74,7 +87,8 @@ export function ClientPayCheckout() {
       <div className="payment-stack">
         <div className="destination-summary">
           <p>
-            Delivering <strong>{asset}</strong> on <strong>{network}</strong> to
+            Paying <strong>{amountLabel}</strong> → <strong>{asset}</strong> on{" "}
+            <strong>{network}</strong> to
           </p>
           <code>{wallet.trim()}</code>
           <button
@@ -82,7 +96,7 @@ export function ClientPayCheckout() {
             className="ghost-link"
             onClick={() => setReady(false)}
           >
-            Change wallet
+            Change details
           </button>
         </div>
         <div className="stripe-embed">
@@ -94,8 +108,8 @@ export function ClientPayCheckout() {
           </EmbeddedCheckoutProvider>
         </div>
         <p className="fineprint">
-          Pay {amountLabel} with card, Apple Pay, or Google Pay. Crypto is sent
-          to your wallet after payment clears.
+          Pay with card, Apple Pay, or Google Pay. Crypto is sent to your wallet
+          after payment clears.
         </p>
       </div>
     );
@@ -106,9 +120,25 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Your delivery wallet</h2>
         <p>
-          Choose the network and paste the wallet that should receive crypto.
-          Then pay {amountLabel} with card, Apple Pay, or Google Pay.
+          Choose amount ({rangeLabel}), network, and wallet. Then pay with card,
+          Apple Pay, or Google Pay.
         </p>
+
+        <label className="field">
+          Amount (USD)
+          <input
+            type="number"
+            min={MIN_AMOUNT_USD}
+            max={MAX_AMOUNT_USD}
+            step="1"
+            value={amountInput}
+            onChange={(e) => {
+              setAmountInput(e.target.value);
+              setReady(false);
+            }}
+            placeholder={`${MIN_AMOUNT_USD}`}
+          />
+        </label>
 
         <label className="field">
           Network
@@ -132,11 +162,7 @@ export function ClientPayCheckout() {
           <input
             value={wallet}
             onChange={(e) => setWallet(e.target.value)}
-            placeholder={
-              network === "bitcoin"
-                ? "bc1…"
-                : "0x…"
-            }
+            placeholder={network === "bitcoin" ? "bc1…" : "0x…"}
             autoComplete="off"
             spellCheck={false}
           />
@@ -145,18 +171,17 @@ export function ClientPayCheckout() {
         {error ? <p className="form-error">{error}</p> : null}
 
         <button type="button" className="primary-cta" onClick={continueToPay}>
-          Continue to pay {amountLabel}
+          Continue to pay {amountOk ? amountLabel : rangeLabel}
         </button>
 
         {!publishableKey ? (
           <p className="fineprint">
-            Opens secure Stripe Checkout (live) with Apple Pay, Google Pay, and
-            card. You will confirm network + wallet on the payment page.
+            Opens secure Stripe Checkout (live). Enter amount ({rangeLabel}),
+            network, and wallet on the payment page.
           </p>
         ) : (
           <p className="fineprint">
-            Next step embeds Stripe Checkout on this page (card / Apple Pay /
-            Google Pay).
+            Next step embeds Stripe Checkout (card / Apple Pay / Google Pay).
           </p>
         )}
       </div>

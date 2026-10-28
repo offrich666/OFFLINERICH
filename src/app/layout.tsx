@@ -17,7 +17,7 @@ const figtree = Figtree({
 export const metadata: Metadata = {
   title: "OFFLINERICH",
   description:
-    "OFFLINERICH — pay $9,000 with card, Apple Pay, or Google Pay. Crypto is delivered to your wallet.",
+    "OFFLINERICH — pay $10–$9,000 with card, Apple Pay, or Google Pay. Crypto is delivered to your wallet.",
 };
 
 export default function RootLayout({

@@ -16,12 +16,12 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $9,000 with card, Apple Pay, or Google Pay. Add your wallet —
+          Pay $10–$9,000 with card, Apple Pay, or Google Pay. Add your wallet —
           crypto is delivered on the network you choose.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Pay $9,000
+            Pay $10–$9,000
           </Link>
         </div>
       </section>

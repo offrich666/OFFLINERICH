@@ -1,51 +1,35 @@
-# OFFLINERICH — $9,000 pay → crypto to client wallet
+# OFFLINERICH — pay $10–$9,000 → crypto to client wallet
 
-Client experience (no treasury mentioned):
+## Important: what Stripe sends you
 
-1. Choose network + paste **their** wallet  
-2. Pay **$9,000** with **card / Apple Pay / Google Pay** (Stripe)  
-3. After payment, crypto is delivered to that wallet  
+When a client pays **$10** (or any amount) with card / Apple Pay / Google Pay:
 
-Internal flow (ops only):
+- You receive **USD in Stripe** (G N LABS LLC balance) — **not crypto**
+- Stripe does **not** auto-send crypto to your treasury or to the client
+- You (ops) convert / fund treasury, then send crypto treasury → client wallet
+- Track jobs at `/ops/transfers?key=$OPS_SECRET`
 
-1. Stripe collects USD on **G N LABS LLC**  
-2. Crypto is funded into the **treasury**  
-3. Ops sends treasury → client wallet and marks the job in `/ops/transfers`
+Crypto Onramp (separate Stripe product, needs application) can mint crypto to a wallet; this checkout path is **fiat Checkout → manual crypto send**.
+
+## Client flow
+
+1. Amount **$10–$9,000**
+2. Network + their wallet
+3. Pay with card / Apple Pay / Google Pay
+4. After payment, crypto is delivered to that wallet (ops from treasury)
 
 ## Live Stripe
 
 | | |
 | --- | --- |
-| Price | `price_1UVgMyQWCzdANStkyBrFVqwR` ($9,000) |
-| Payment Link | https://buy.stripe.com/4gM4gB4TvfTyegU2S7ds407 |
-| Account | `acct_1UCk64QWCzdANStk` (G N LABS LLC) |
-
-Payment Link already collects **network** + **wallet** and supports Apple Pay / Google Pay / card on `buy.stripe.com`.
-
-## Env
-
-```bash
-cp .env.example .env.local
-# Optional embedded checkout on your domain:
-# NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
-# STRIPE_SECRET_KEY=rk_live_...
-# STRIPE_WEBHOOK_SECRET=whsec_...
-OPS_SECRET=...
-```
-
-Without live keys, `/checkout` validates wallet then opens the **live Payment Link**.
-
-## Ops queue
-
-```
-/ops/transfers?key=$OPS_SECRET
-```
-
-Shows paid orders with client wallet + internal treasury address. Mark sent with outbound tx hash after you transfer.
+| Flexible price | `price_1UVgRDQWCzdANStksBqKZ5BL` ($10–$9,000) |
+| Payment Link | https://buy.stripe.com/aFafZj4TvdLq8WAboDds408 |
+| Account | `acct_1UCk64QWCzdANStk` |
 
 ## Run
 
 ```bash
 npm install --legacy-peer-deps
+cp .env.example .env.local
 npm run dev
 ```
