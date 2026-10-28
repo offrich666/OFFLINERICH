@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { connection } from "next/server";
 import { PaymentCheckout } from "@/components/PaymentCheckout";
@@ -9,7 +10,10 @@ import {
   getUsdcEnvironment,
 } from "@/lib/crossmint";
 
+export const instant = false;
+
 async function probeCheckout() {
+  await connection();
   const collectionId = getCollectionId();
   if (!collectionId) {
     return {
@@ -62,13 +66,27 @@ async function probeCheckout() {
   }
 }
 
-export default async function CheckoutPage() {
-  await connection();
+async function CheckoutPanel() {
   const apiKey = getClientApiKey();
   const collectionId = getCollectionId();
   const price = getCheckoutPrice();
-  const environment = getUsdcEnvironment();
   const probe = await probeCheckout();
+
+  return (
+    <PaymentCheckout
+      apiKey={apiKey}
+      collectionId={collectionId}
+      price={price}
+      verificationBlocked={probe.blocked}
+      verificationMessage={probe.message}
+    />
+  );
+}
+
+export default function CheckoutPage() {
+  const collectionId = getCollectionId();
+  const price = getCheckoutPrice();
+  const environment = getUsdcEnvironment();
 
   return (
     <main className="page checkout-page">
@@ -103,26 +121,25 @@ export default async function CheckoutPage() {
               <dd>{environment}</dd>
             </div>
             <div>
-              <dt>Methods</dt>
-              <dd>Card / Apple / Google</dd>
+              <dt>Payout owner</dt>
+              <dd>naserademid@gmail.com</dd>
             </div>
           </dl>
           <p className="fineprint">
-            Collection <code>offlinerich-drop</code> and payout wallet are
-            already created. Production charges unlock after Crossmint verifies
-            the project (Order Form + KYB) and you start collection review in
-            Console.
+            Collection <code>offlinerich-drop</code> pays out to the Crossmint
+            wallet owned by <code>naserademid@gmail.com</code>. Verification
+            contact: <code>groupgrow64@gmail.com</code>. Production charges
+            unlock after Crossmint KYB + collection review (Support ticket
+            already filed).
           </p>
         </div>
 
         <div className="checkout-panel">
-          <PaymentCheckout
-            apiKey={apiKey}
-            collectionId={collectionId}
-            price={price}
-            verificationBlocked={probe.blocked}
-            verificationMessage={probe.message}
-          />
+          <Suspense
+            fallback={<div className="setup-panel">Loading checkout…</div>}
+          >
+            <CheckoutPanel />
+          </Suspense>
         </div>
       </section>
     </main>

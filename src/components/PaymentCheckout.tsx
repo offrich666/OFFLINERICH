@@ -104,7 +104,11 @@ export function PaymentCheckout({
               >
                 Crossmint Sales
               </a>{" "}
-              for Order Form + KYB (required for production card/Apple Pay)
+              for Order Form + KYB (required for production card/Apple Pay).
+              Use contact email <code>groupgrow64@gmail.com</code>.
+            </li>
+            <li>
+              Payout wallet owner: <code>naserademid@gmail.com</code>
             </li>
           </ol>
         </div>

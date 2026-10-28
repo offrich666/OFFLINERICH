@@ -107,7 +107,13 @@ export async function GET() {
     collectionId: collectionId || null,
     collectionFound: Boolean(selected),
     collectionHasPayments: Boolean(selected?.payments),
-    payoutAddress: process.env.CROSSMINT_PAYOUT_ADDRESS || null,
+    payoutAddress:
+      process.env.CROSSMINT_PAYOUT_ADDRESS ||
+      "0x2A787A5D845Ac9636De5E4Ab599fBB65A7B08443",
+    walletOwnerEmail:
+      process.env.CROSSMINT_WALLET_OWNER_EMAIL || "naserademid@gmail.com",
+    contactEmail:
+      process.env.CROSSMINT_CONTACT_EMAIL || "groupgrow64@gmail.com",
     collections: collections.map((c) => ({
       id: c.id,
       name: c.metadata?.name ?? c.id,
