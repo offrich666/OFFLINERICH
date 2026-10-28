@@ -107,11 +107,21 @@ export async function GET() {
     collectionId: collectionId || null,
     collectionFound: Boolean(selected),
     collectionHasPayments: Boolean(selected?.payments),
+    payoutAddress: process.env.CROSSMINT_PAYOUT_ADDRESS || null,
     collections: collections.map((c) => ({
       id: c.id,
       name: c.metadata?.name ?? c.id,
       hasPayments: Boolean(c.payments),
     })),
     collectionsMessage,
+    productionUnlock: {
+      required: [
+        "Whitelist localhost + HTTPS domain on client API key",
+        "Start collection review for offlinerich-drop in Crossmint Console",
+        "Complete Crossmint Order Form + KYB via Sales for production card/Apple Pay/onramp",
+      ],
+      salesUrl: "https://www.crossmint.com/contact/sales",
+      consoleUrl: "https://www.crossmint.com/console",
+    },
   });
 }
