@@ -62,14 +62,12 @@ async function ensureWallet(email: string, chain: OnrampChain) {
     },
   };
 
+  // Owner already makes creation idempotent — do not also send x-idempotency-key.
   const { ok, status, data } = await crossmintFetch<WalletResponse>(
     "/wallets",
     {
       method: "POST",
       body: JSON.stringify(body),
-      headers: {
-        "x-idempotency-key": `offlinerich-${owner}-${chainTypeFor(chain)}`,
-      },
     },
     getWalletsApiBase(),
   );
