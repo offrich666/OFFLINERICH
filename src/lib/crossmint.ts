@@ -66,7 +66,11 @@ export function getClientApiKey() {
 }
 
 export function getCollectionId() {
-  return process.env.NEXT_PUBLIC_CROSSMINT_COLLECTION_ID ?? "";
+  return (
+    process.env.NEXT_PUBLIC_CROSSMINT_COLLECTION_ID ||
+    process.env.CROSSMINT_COLLECTION_ID ||
+    "offlinerich-drop"
+  );
 }
 
 export function getCheckoutPrice() {
