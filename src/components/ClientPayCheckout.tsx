@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
+import { loadStripeOnramp } from "@stripe/crypto";
 import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
@@ -24,13 +25,18 @@ const paymentLinkUrl =
   process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
   "https://buy.stripe.com/aFafZj4TvdLq8WAboDds408";
 
+type PayMode = "idle" | "onramp" | "checkout";
+
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState("10");
   const [network, setNetwork] = useState<ClientNetworkId>("polygon");
   const [wallet, setWallet] = useState("");
-  const [ready, setReady] = useState(false);
+  const [mode, setMode] = useState<PayMode>("idle");
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const onrampMountRef = useRef<HTMLDivElement>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -43,7 +49,7 @@ export function ClientPayCheckout() {
 
   const walletOk = isValidWalletAddress(network, wallet);
 
-  const fetchClientSecret = useCallback(async () => {
+  const fetchCheckoutSecret = useCallback(async () => {
     const res = await fetch("/api/checkout/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -61,10 +67,60 @@ export function ClientPayCheckout() {
     return data.clientSecret;
   }, [amountUsd, asset, network, wallet]);
 
-  function continueToPay() {
+  async function startOnrampToTreasury() {
+    if (!publishableKey) {
+      throw new Error("missing_keys");
+    }
+    const res = await fetch("/api/onramp/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountUsd,
+        network,
+        wallet: wallet.trim(),
+        asset,
+      }),
+    });
+    const data = (await res.json()) as {
+      clientSecret?: string;
+      error?: string;
+      code?: string;
+      applyUrl?: string;
+    };
+    if (!res.ok || !data.clientSecret) {
+      const err = new Error(data.error || "Onramp unavailable") as Error & {
+        code?: string;
+        applyUrl?: string;
+      };
+      err.code = data.code;
+      err.applyUrl = data.applyUrl;
+      throw err;
+    }
+
+    if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+    const stripeOnramp = await loadStripeOnramp(publishableKey);
+    if (!stripeOnramp) throw new Error("Failed to load Stripe Onramp");
+
+    const session = stripeOnramp.createSession({
+      clientSecret: data.clientSecret,
+      appearance: { theme: "dark" },
+    });
+    session.addEventListener("onramp_session_updated", (e) => {
+      const next = e.payload?.session?.status;
+      if (next) setStatus(`Status: ${next}`);
+    });
+    if (onrampMountRef.current) session.mount(onrampMountRef.current);
+    setMode("onramp");
+    setStatus("Pay now — crypto settles to OFFLINERICH for delivery to your wallet.");
+  }
+
+  async function continueToPay() {
     setError(null);
+    setStatus("");
     if (!amountOk) {
-      setError(`Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`);
+      setError(
+        `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
+      );
       return;
     }
     if (!walletOk) {
@@ -75,42 +131,81 @@ export function ClientPayCheckout() {
       );
       return;
     }
-    if (!publishableKey || !stripePromise) {
-      window.location.href = paymentLinkUrl;
-      return;
+
+    setLoading(true);
+    try {
+      // Preferred: Crypto Onramp → YOUR treasury receives crypto when client pays.
+      await startOnrampToTreasury();
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      // Fallback: USD Checkout / Payment Link (no crypto-in until Onramp unlocked)
+      if (
+        code === "onramp_not_enabled" ||
+        code === "missing_keys" ||
+        code === "onramp_error" ||
+        !publishableKey
+      ) {
+        if (publishableKey && stripePromise) {
+          setMode("checkout");
+          setError(
+            "Crypto-to-treasury Onramp is not enabled on this Stripe account yet. Using USD checkout fallback — you receive dollars, not crypto, until Onramp is approved.",
+          );
+        } else {
+          window.location.href = paymentLinkUrl;
+          return;
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Payment failed to start");
+      }
+    } finally {
+      setLoading(false);
     }
-    setReady(true);
   }
 
-  if (ready && stripePromise) {
+  if (mode === "onramp") {
     return (
       <div className="payment-stack">
         <div className="destination-summary">
           <p>
-            Paying <strong>{amountLabel}</strong> → <strong>{asset}</strong> on{" "}
+            Paying <strong>{amountLabel}</strong> · delivery on{" "}
             <strong>{network}</strong> to
           </p>
           <code>{wallet.trim()}</code>
-          <button
-            type="button"
-            className="ghost-link"
-            onClick={() => setReady(false)}
-          >
+          <button type="button" className="ghost-link" onClick={() => setMode("idle")}>
             Change details
           </button>
         </div>
+        {status ? <p className="fineprint">{status}</p> : null}
+        <div ref={onrampMountRef} className="stripe-embed onramp-mount" />
+      </div>
+    );
+  }
+
+  if (mode === "checkout" && stripePromise) {
+    return (
+      <div className="payment-stack">
+        <div className="destination-summary">
+          <p>
+            Paying <strong>{amountLabel}</strong> · delivery on{" "}
+            <strong>{network}</strong> to
+          </p>
+          <code>{wallet.trim()}</code>
+          <button type="button" className="ghost-link" onClick={() => setMode("idle")}>
+            Change details
+          </button>
+        </div>
+        {error ? <p className="form-error">{error}</p> : null}
         <div className="stripe-embed">
           <EmbeddedCheckoutProvider
             stripe={stripePromise}
-            options={{ fetchClientSecret }}
+            options={{ fetchClientSecret: fetchCheckoutSecret }}
           >
             <EmbeddedCheckout />
           </EmbeddedCheckoutProvider>
         </div>
-        <p className="fineprint">
-          Pay with card, Apple Pay, or Google Pay. Crypto is sent to your wallet
-          after payment clears.
-        </p>
       </div>
     );
   }
@@ -120,8 +215,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Your delivery wallet</h2>
         <p>
-          Choose amount ({rangeLabel}), network, and wallet. Then pay with card,
-          Apple Pay, or Google Pay.
+          Amount ({rangeLabel}), network, and wallet. Pay with card, Apple Pay,
+          or Google Pay.
         </p>
 
         <label className="field">
@@ -132,10 +227,7 @@ export function ClientPayCheckout() {
             max={MAX_AMOUNT_USD}
             step="1"
             value={amountInput}
-            onChange={(e) => {
-              setAmountInput(e.target.value);
-              setReady(false);
-            }}
+            onChange={(e) => setAmountInput(e.target.value)}
             placeholder={`${MIN_AMOUNT_USD}`}
           />
         </label>
@@ -144,10 +236,7 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) => {
-              setNetwork(e.target.value as ClientNetworkId);
-              setReady(false);
-            }}
+            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
           >
             {CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
@@ -170,20 +259,21 @@ export function ClientPayCheckout() {
 
         {error ? <p className="form-error">{error}</p> : null}
 
-        <button type="button" className="primary-cta" onClick={continueToPay}>
-          Continue to pay {amountOk ? amountLabel : rangeLabel}
+        <button
+          type="button"
+          className="primary-cta"
+          onClick={continueToPay}
+          disabled={loading}
+        >
+          {loading
+            ? "Starting…"
+            : `Continue to pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
 
-        {!publishableKey ? (
-          <p className="fineprint">
-            Opens secure Stripe Checkout (live). Enter amount ({rangeLabel}),
-            network, and wallet on the payment page.
-          </p>
-        ) : (
-          <p className="fineprint">
-            Next step embeds Stripe Checkout (card / Apple Pay / Google Pay).
-          </p>
-        )}
+        <p className="fineprint">
+          Preferred path: Stripe Crypto Onramp (you receive crypto). If Onramp
+          is not approved yet, falls back to USD Payment Link.
+        </p>
       </div>
     </div>
   );

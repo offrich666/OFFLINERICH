@@ -24,6 +24,7 @@ export type TransferOrder = {
   treasuryWallet: string;
   stripeSessionId?: string;
   stripePaymentIntentId?: string;
+  onrampSessionId?: string;
   customerEmail?: string | null;
   notes?: string;
   outboundTxHash?: string;
@@ -59,6 +60,63 @@ async function saveOrders(orders: TransferOrder[]) {
 function treasuryForNetwork(network: string): string {
   if (network === "bitcoin") return TREASURY.bitcoin;
   return TREASURY.evm;
+}
+
+export async function upsertAwaitingCryptoOrder(input: {
+  onrampSessionId: string;
+  amountCents: number;
+  currency: string;
+  network: string;
+  asset: string;
+  clientWallet: string;
+}): Promise<TransferOrder> {
+  const orders = await listTransferOrders();
+  const existing = orders.find((o) => o.onrampSessionId === input.onrampSessionId);
+  const now = new Date().toISOString();
+
+  if (existing) {
+    existing.updatedAt = now;
+    existing.amountCents = input.amountCents;
+    existing.network = input.network;
+    existing.asset = input.asset;
+    existing.clientWallet = input.clientWallet;
+    await saveOrders(orders);
+    return existing;
+  }
+
+  const order: TransferOrder = {
+    id: `ord_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: now,
+    updatedAt: now,
+    status: "awaiting_payment",
+    amountCents: input.amountCents,
+    currency: input.currency,
+    network: input.network,
+    asset: input.asset,
+    clientWallet: input.clientWallet,
+    treasuryWallet: treasuryForNetwork(input.network),
+    onrampSessionId: input.onrampSessionId,
+    notes:
+      "Onramp path: client pays → crypto locked to treasury. When fulfillment_complete, status becomes treasury_funded; then send to clientWallet.",
+  };
+
+  orders.unshift(order);
+  await saveOrders(orders);
+  return order;
+}
+
+export async function markOnrampTreasuryFunded(
+  onrampSessionId: string,
+): Promise<TransferOrder | null> {
+  const orders = await listTransferOrders();
+  const order = orders.find((o) => o.onrampSessionId === onrampSessionId);
+  if (!order) return null;
+  order.status = "treasury_funded";
+  order.updatedAt = new Date().toISOString();
+  order.notes =
+    "Crypto delivered to treasury via Stripe Onramp. Send treasury → clientWallet, then mark sent.";
+  await saveOrders(orders);
+  return order;
 }
 
 export async function upsertPaidTransferOrder(input: {
@@ -105,7 +163,7 @@ export async function upsertPaidTransferOrder(input: {
     stripePaymentIntentId: input.stripePaymentIntentId || undefined,
     customerEmail: input.customerEmail,
     notes:
-      "Client paid via Stripe. Fund treasury (card→crypto), then send from treasury to clientWallet. Do not expose treasury to client.",
+      "USD Checkout path — no crypto yet. Convert/fund treasury, then send to clientWallet. Prefer Onramp for crypto-in.",
   };
 
   orders.unshift(order);

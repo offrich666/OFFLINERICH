@@ -39,8 +39,10 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
           <p className="eyebrow">Ops</p>
           <h1>Treasury → client transfers</h1>
           <p>
-            Clients never see treasury. After Stripe payment, fund treasury then
-            send to <code>clientWallet</code> and mark sent with the tx hash.
+            Preferred path: Onramp funds treasury → status{" "}
+            <code>treasury_funded</code> → send to <code>clientWallet</code> →
+            mark sent. USD Checkout fallback stays{" "}
+            <code>paid_pending_treasury</code> until you fund manually.
           </p>
         </div>
 
@@ -56,6 +58,7 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
                   <th>Network / asset</th>
                   <th>Client wallet</th>
                   <th>Treasury (internal)</th>
+                  <th>Notes</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -81,9 +84,19 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
                     <td>
                       <code className="break">{o.treasuryWallet}</code>
                     </td>
+                    <td className="ops-notes">
+                      {o.onrampSessionId ? (
+                        <div>
+                          <code className="break">{o.onrampSessionId}</code>
+                        </div>
+                      ) : null}
+                      {o.notes ? <span>{o.notes}</span> : null}
+                    </td>
                     <td>
                       {o.status === "sent_to_client" ? (
                         <code className="break">{o.outboundTxHash}</code>
+                      ) : o.status === "awaiting_payment" ? (
+                        <span className="fineprint">Waiting for Onramp</span>
                       ) : (
                         <MarkSentForm orderId={o.id} opsKey={expected} />
                       )}

@@ -1,7 +1,19 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
-import { upsertPaidTransferOrder } from "@/lib/orders";
+import {
+  markOnrampTreasuryFunded,
+  upsertAwaitingCryptoOrder,
+  upsertPaidTransferOrder,
+} from "@/lib/orders";
+
+type OnrampSessionObject = {
+  id: string;
+  status?: string | null;
+  metadata?: Record<string, string> | null;
+  source_amount?: string | null;
+  source_currency?: string | null;
+};
 
 function customFieldValue(
   fields: Stripe.Checkout.Session.CustomField[] | null | undefined,
@@ -72,6 +84,61 @@ async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
   });
 }
 
+/**
+ * Onramp: client paid fiat → crypto locked to OUR treasury.
+ * When status is fulfillment_complete, mark treasury_funded so ops can
+ * send treasury → clientWallet.
+ */
+async function fulfillOnrampSession(session: OnrampSessionObject) {
+  const status = session.status || "";
+  console.info("[stripe webhook] onramp_session", {
+    id: session.id,
+    status,
+  });
+
+  if (status !== "fulfillment_complete") {
+    return;
+  }
+
+  const meta = session.metadata || {};
+  const network = meta.client_network || "polygon";
+  const clientWallet = meta.client_wallet || "";
+  const asset =
+    meta.client_asset || (network === "bitcoin" ? "BTC" : "USDC");
+  const sourceAmount = Number(session.source_amount || 0);
+  const amountCents = Number.isFinite(sourceAmount)
+    ? Math.round(sourceAmount * 100)
+    : 0;
+
+  if (clientWallet) {
+    await upsertAwaitingCryptoOrder({
+      onrampSessionId: session.id,
+      amountCents: amountCents || 1000,
+      currency: session.source_currency || "usd",
+      network,
+      asset,
+      clientWallet,
+    });
+  }
+
+  const order = await markOnrampTreasuryFunded(session.id);
+  if (!order) {
+    console.error(
+      "[stripe webhook] onramp fulfillment_complete but no order",
+      session.id,
+    );
+    return;
+  }
+
+  console.info("[stripe webhook] treasury funded via onramp", {
+    orderId: order.id,
+    network: order.network,
+    clientWallet: order.clientWallet,
+    treasuryWallet: order.treasuryWallet,
+    amountCents: order.amountCents,
+  });
+}
+
 export async function POST(request: Request) {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!webhookSecret) {
@@ -100,14 +167,20 @@ export async function POST(request: Request) {
   }
 
   try {
+    const type = event.type as string;
     if (
-      event.type === "checkout.session.completed" ||
-      event.type === "checkout.session.async_payment_succeeded"
+      type === "checkout.session.completed" ||
+      type === "checkout.session.async_payment_succeeded"
     ) {
       await fulfillCheckoutSession(event.data.object as Stripe.Checkout.Session);
-    } else if (event.type === "checkout.session.async_payment_failed") {
+    } else if (type === "checkout.session.async_payment_failed") {
       const session = event.data.object as Stripe.Checkout.Session;
       console.warn("[stripe webhook] async payment failed", session.id);
+    } else if (type === "crypto.onramp_session.updated") {
+      // Not yet in Stripe Node types — Crypto Onramp webhook
+      await fulfillOnrampSession(
+        event.data.object as unknown as OnrampSessionObject,
+      );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Handler error";

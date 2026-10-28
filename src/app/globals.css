@@ -511,6 +511,17 @@ code {
   vertical-align: top;
 }
 
+.ops-notes {
+  max-width: 18rem;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.ops-notes code.break {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
 .ops-table code.break {
   word-break: break-all;
   font-size: 0.72rem;

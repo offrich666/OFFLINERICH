@@ -3,7 +3,6 @@ import Stripe from "stripe";
 import {
   ONRAMP_CURRENCIES,
   ONRAMP_NETWORKS,
-  defaultOnrampAmountUsd,
   treasuryWalletAddresses,
   type OnrampCurrency,
   type OnrampNetwork,
@@ -65,41 +64,62 @@ export function checkoutIntegrationId(): string {
 export function getLivePaymentLinkUrl(): string {
   return (
     process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
-    "https://buy.stripe.com/eVq8wReu5cHm8WA8crds406"
+    "https://buy.stripe.com/aFafZj4TvdLq8WAboDds408"
   );
+}
+
+/** Map client delivery network → Onramp network that funds treasury. */
+export function onrampNetworkForClientNetwork(
+  clientNetwork: string,
+): OnrampNetwork {
+  if (clientNetwork === "bitcoin") return "bitcoin";
+  if (clientNetwork === "ethereum") return "ethereum";
+  if (clientNetwork === "base") return "base";
+  // polygon + bsc (no BSC onramp) → fund treasury on polygon
+  return "polygon";
+}
+
+export function onrampCurrencyForNetwork(network: OnrampNetwork): OnrampCurrency {
+  return network === "bitcoin" ? "btc" : "usdc";
 }
 
 type CreateOnrampInput = {
   customerIpAddress?: string;
-  sourceAmountUsd?: string;
-  destinationNetwork?: OnrampNetwork;
-  destinationCurrency?: OnrampCurrency;
+  sourceAmountUsd: string;
+  clientNetwork: string;
+  clientWallet: string;
+  clientAsset: string;
 };
 
 /**
- * Mint a Crypto Onramp session that locks delivery to OFFLINERICH treasury.
- * Uses Stripe preview Onramp API via rawRequest.
+ * Mint Crypto Onramp session: client pays fiat → crypto locked to OUR treasury.
+ * Client wallet is stored in metadata for the later treasury→client send.
  */
-export async function createTreasuryOnrampSession(input: CreateOnrampInput = {}) {
+export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
   const stripe = getStripe();
-  const sourceAmount = input.sourceAmountUsd || defaultOnrampAmountUsd();
-  const destinationNetwork = input.destinationNetwork || "polygon";
-  const destinationCurrency = input.destinationCurrency || "usdc";
+  const destinationNetwork = onrampNetworkForClientNetwork(input.clientNetwork);
+  const destinationCurrency = onrampCurrencyForNetwork(destinationNetwork);
+  const wallets = treasuryWalletAddresses();
 
   const params: Record<string, unknown> = {
     source_currency: "usd",
-    source_amount: sourceAmount,
+    source_amount: input.sourceAmountUsd,
     destination_currency: destinationCurrency,
     destination_network: destinationNetwork,
     destination_currencies: [...ONRAMP_CURRENCIES],
     destination_networks: [...ONRAMP_NETWORKS],
     lock_wallet_address: true,
-    wallet_addresses: treasuryWalletAddresses(),
+    wallet_addresses: wallets,
     metadata: {
       project: "offlinerich",
-      flow: "treasury_onramp",
-      treasury_evm: treasuryWalletAddresses().ethereum,
-      treasury_btc: treasuryWalletAddresses().bitcoin,
+      flow: "pay_to_treasury_then_client",
+      client_network: input.clientNetwork,
+      client_wallet: input.clientWallet,
+      client_asset: input.clientAsset,
+      onramp_network: destinationNetwork,
+      onramp_currency: destinationCurrency,
+      treasury_evm: wallets.ethereum,
+      treasury_btc: wallets.bitcoin,
     },
   };
 
@@ -107,7 +127,6 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput = {})
     params.customer_ip_address = input.customerIpAddress;
   }
 
-  // Preview API — not in the typed SDK surface yet.
   const session = await stripe.rawRequest(
     "POST",
     "/v1/crypto/onramp_sessions",
