@@ -473,6 +473,21 @@ code {
   font: inherit;
 }
 
+.form-hint {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+
+.form-hint a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .form-error {
   color: #f0a0a0;
   font-size: 0.9rem;

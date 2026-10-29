@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { loadStripeOnramp } from "@stripe/crypto";
 import {
@@ -27,6 +27,12 @@ const paymentLinkUrl =
 
 type PayMode = "idle" | "onramp" | "checkout";
 
+type OnrampStatus = {
+  readyForOnrampUi?: boolean;
+  keys?: { mode?: string };
+  application?: { submitted?: boolean };
+};
+
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState("10");
@@ -36,7 +42,23 @@ export function ClientPayCheckout() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [onrampStatus, setOnrampStatus] = useState<OnrampStatus | null>(null);
   const onrampMountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onramp/status")
+      .then((r) => r.json())
+      .then((data: OnrampStatus) => {
+        if (!cancelled) setOnrampStatus(data);
+      })
+      .catch(() => {
+        /* ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -259,6 +281,23 @@ export function ClientPayCheckout() {
 
         {error ? <p className="form-error">{error}</p> : null}
 
+        {onrampStatus?.application?.submitted &&
+        !onrampStatus.readyForOnrampUi ? (
+          <p className="form-hint">
+            Onramp application submitted for G N LABS. Add{" "}
+            <strong>test</strong> API keys from{" "}
+            <a
+              href="https://dashboard.stripe.com/test/apikeys"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Dashboard → Test mode → API keys
+            </a>{" "}
+            (`pk_test_…` / `sk_test_…`) to try crypto-to-treasury now. Until
+            then, pay falls back to USD.
+          </p>
+        ) : null}
+
         <button
           type="button"
           className="primary-cta"
@@ -271,8 +310,9 @@ export function ClientPayCheckout() {
         </button>
 
         <p className="fineprint">
-          Preferred path: Stripe Crypto Onramp (you receive crypto). If Onramp
-          is not approved yet, falls back to USD Payment Link.
+          Preferred: Stripe Crypto Onramp → crypto to OFFLINERICH treasury →
+          delivery to your wallet. Without Onramp keys, falls back to USD
+          Payment Link.
         </p>
       </div>
     </div>

@@ -30,12 +30,15 @@ Treasury (internal only):
 
 ## What you must do in Stripe Dashboard (agent cannot)
 
-1. Apply: https://dashboard.stripe.com/crypto-onramp/get-started  
-2. Paste live keys into env (`pk_live_…`, `rk_live_…` / `sk_live_…`, `whsec_…`)  
-3. Webhook → `https://YOUR_DOMAIN/api/webhooks/stripe`  
-   Events: `crypto.onramp_session.updated`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`
+1. ~~Apply Onramp~~ — **submitted** for G N LABS LLC (`acct_1UCk64QWCzdANStk`)
+2. **Now:** paste **test** keys from https://dashboard.stripe.com/test/apikeys  
+   (`pk_test_…`, `sk_test_…`, `whsec_…`) → try crypto-to-treasury on `/checkout`
+3. Allowlist domain: https://dashboard.stripe.com/crypto-onramp/allowlist-domains
+4. After Stripe approves: paste **live** keys + webhook  
+   Events: `crypto.onramp_session.updated`, `checkout.session.completed`, …
 
-Until Onramp is approved, `/checkout` falls back to the USD Payment Link so clients can still pay.
+Without keys, `/checkout` falls back to the USD Payment Link (dollars, not crypto).
+Status probe: `GET /api/onramp/status`
 
 ## Live Stripe (USD fallback)
 
