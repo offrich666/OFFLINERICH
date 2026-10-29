@@ -28,6 +28,23 @@ type OnrampStatus = {
   nextSteps?: string[];
 };
 
+function friendlyOnrampStatus(raw: string | undefined): string {
+  switch (raw) {
+    case "initialized":
+      return "Payment form ready — enter card or choose Apple Pay / Google Pay below.";
+    case "rejected":
+      return "Payment was rejected. Change details and try again.";
+    case "requires_payment":
+      return "Complete payment in the form below.";
+    case "fulfillment_processing":
+      return "Payment received — delivering crypto…";
+    case "fulfillment_complete":
+      return "Done — crypto delivered to treasury for your wallet.";
+    default:
+      return raw ? `Status: ${raw}` : "";
+  }
+}
+
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState("10");
@@ -56,6 +73,14 @@ export function ClientPayCheckout() {
     };
   }, []);
 
+  // Focus layout on the pay widget (hide marketing copy on mobile).
+  useEffect(() => {
+    document.documentElement.classList.toggle("onramp-active", mode === "onramp");
+    return () => {
+      document.documentElement.classList.remove("onramp-active");
+    };
+  }, [mode]);
+
   // Mount onramp after the pay UI is painted so the container exists.
   useEffect(() => {
     if (mode !== "onramp" || !clientSecretRef.current || !publishableKey) {
@@ -74,14 +99,19 @@ export function ClientPayCheckout() {
           appearance: { theme: "dark" },
         });
         session.addEventListener("onramp_session_updated", (e) => {
-          const next = e.payload?.session?.status;
-          if (next) setStatus(`Status: ${next}`);
+          const next = e.payload?.session?.status as string | undefined;
+          setStatus(friendlyOnrampStatus(next));
         });
         if (onrampMountRef.current && !cancelled) {
           session.mount(onrampMountRef.current);
-          setStatus(
-            "Pay on this page with card, Apple Pay, or Google Pay (Samsung Pay via Google Pay on Android).",
-          );
+          setStatus(friendlyOnrampStatus("initialized"));
+          // Bring the Stripe form into view on phones (form sits below marketing copy).
+          requestAnimationFrame(() => {
+            onrampMountRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          });
         }
       } catch (err) {
         if (!cancelled) {
@@ -163,7 +193,7 @@ export function ClientPayCheckout() {
 
   if (mode === "onramp") {
     return (
-      <div className="payment-stack">
+      <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
             Paying <strong>{amountLabel}</strong> · delivery on{" "}
@@ -182,7 +212,10 @@ export function ClientPayCheckout() {
             Change details
           </button>
         </div>
-        {status ? <p className="fineprint">{status}</p> : null}
+        {status ? <p className="form-hint">{status}</p> : null}
+        <p className="fineprint onramp-scroll-hint">
+          Use the Stripe form below — card, Apple Pay, or Google Pay.
+        </p>
         <div ref={onrampMountRef} className="stripe-embed onramp-mount" />
       </div>
     );
@@ -241,22 +274,7 @@ export function ClientPayCheckout() {
         {onrampStatus?.keys?.publishableValid === false ? (
           <p className="form-error">
             Stripe publishable key is invalid on this deploy (
-            {onrampStatus.keys.publishableError || "pk_live rejected"}). Update{" "}
-            <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> in Vercel from{" "}
-            <a
-              href="https://dashboard.stripe.com/apikeys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Dashboard → API keys
-            </a>{" "}
-            (copy the full <code>pk_live_…</code>), then Redeploy.
-          </p>
-        ) : onrampStatus?.application?.approved &&
-          !onrampStatus.readyForOnrampUi ? (
-          <p className="form-hint">
-            Onramp approved — live Stripe keys are required on this host before
-            checkout can open.
+            {onrampStatus.keys.publishableError || "pk_live rejected"}).
           </p>
         ) : null}
 
