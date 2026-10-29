@@ -18,8 +18,13 @@ const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
 type OnrampStatus = {
   readyForOnrampUi?: boolean;
-  keys?: { mode?: string };
+  keys?: {
+    mode?: string;
+    publishableValid?: boolean;
+    publishableError?: string | null;
+  };
   application?: { submitted?: boolean; approved?: boolean };
+  nextSteps?: string[];
 };
 
 export function ClientPayCheckout() {
@@ -232,8 +237,22 @@ export function ClientPayCheckout() {
 
         {error ? <p className="form-error">{error}</p> : null}
 
-        {onrampStatus?.application?.approved &&
-        !onrampStatus.readyForOnrampUi ? (
+        {onrampStatus?.keys?.publishableValid === false ? (
+          <p className="form-error">
+            Stripe publishable key is invalid on this deploy (
+            {onrampStatus.keys.publishableError || "pk_live rejected"}). Update{" "}
+            <code>NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY</code> in Vercel from{" "}
+            <a
+              href="https://dashboard.stripe.com/apikeys"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Dashboard → API keys
+            </a>{" "}
+            (copy the full <code>pk_live_…</code>), then Redeploy.
+          </p>
+        ) : onrampStatus?.application?.approved &&
+          !onrampStatus.readyForOnrampUi ? (
           <p className="form-hint">
             Onramp approved — live Stripe keys are required on this host before
             checkout can open.
