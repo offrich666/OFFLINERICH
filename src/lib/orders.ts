@@ -166,8 +166,9 @@ export async function upsertPaidTransferOrder(input: {
     stripeSessionId: input.stripeSessionId,
     stripePaymentIntentId: input.stripePaymentIntentId || undefined,
     customerEmail: input.customerEmail,
-    notes:
-      "USD Checkout path — no crypto yet. Convert/fund treasury, then send to clientWallet. Prefer Onramp for crypto-in.",
+    notes: input.clientWallet.startsWith("(awaiting")
+      ? "Simple pay — USD in Stripe. Ask customer (email) for delivery wallet, fund treasury, then send."
+      : "USD Checkout — convert/fund treasury, then send to clientWallet.",
   };
 
   orders.unshift(order);

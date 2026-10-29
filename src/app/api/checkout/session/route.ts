@@ -8,37 +8,27 @@ import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   amountUsdToCents,
-  getNetwork,
   isValidAmountUsd,
-  isValidWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
 import { TREASURY } from "@/lib/treasury";
 
 /**
- * Direct Checkout — card / Apple Pay / Google Pay only (no Link, no Onramp KYC).
- * Fiat settles to Stripe; webhook queues treasury → client crypto delivery.
+ * Simple Embedded Checkout — amount only.
+ * Card / Apple Pay / Google Pay (no Link, no Onramp KYC, no wallet form).
+ * Crypto delivery is handled after payment via ops + customer email.
  */
 export async function POST(request: Request) {
   try {
     const stripe = getStripe();
     const origin = getAppOrigin(request);
 
-    let network = "ethereum";
-    let wallet = "";
-    let asset = "USDC";
     let amountUsd = MIN_AMOUNT_USD;
 
     try {
       const body = (await request.json()) as {
-        network?: string;
-        wallet?: string;
-        asset?: string;
         amountUsd?: string | number;
       };
-      if (body?.network) network = String(body.network).trim().toLowerCase();
-      if (body?.wallet) wallet = String(body.wallet).trim();
-      if (body?.asset) asset = String(body.asset).trim().toUpperCase();
       if (body?.amountUsd != null) {
         const parsed = parseAmountUsd(body.amountUsd);
         if (parsed != null) amountUsd = parsed;
@@ -56,39 +46,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const net = getNetwork(network);
-    if (!net) {
-      return NextResponse.json({ error: "Unsupported network" }, { status: 400 });
-    }
-    if (!isValidWalletAddress(network, wallet)) {
-      return NextResponse.json(
-        { error: "Valid client wallet address is required" },
-        { status: 400 },
-      );
-    }
-    asset = net.asset;
-
     const amountCents = amountUsdToCents(amountUsd);
-    const treasuryWallet =
-      network === "bitcoin" ? TREASURY.bitcoin : TREASURY.evm;
 
     const session = await stripe.checkout.sessions.create({
       ui_mode: "embedded_page",
       mode: "payment",
-      // Account defaults to Managed Payments + Link — turn those off for a
-      // simple card / Apple Pay / Google Pay form.
       managed_payments: { enabled: false },
       allowed_payment_method_types: ["card"],
       billing_address_collection: "auto",
       phone_number_collection: { enabled: false },
+      customer_email: undefined,
       line_items: [
         {
           price_data: {
             currency: "usd",
             unit_amount: amountCents,
             product_data: {
-              name: "Crypto delivery",
-              description: `${asset} on ${network} after payment`,
+              name: "OFFLINERICH payment",
+              description: "Crypto delivery after payment confirmation",
               tax_code: "txcd_10000000",
             },
           },
@@ -99,21 +74,20 @@ export async function POST(request: Request) {
       integration_identifier: checkoutIntegrationId(),
       metadata: {
         project: "offlinerich",
-        sku: "offlinerich-drop-flex",
-        flow: "direct_pay_then_treasury_send",
+        sku: "offlinerich-simple-pay",
+        flow: "simple_amount_pay",
         amount_usd: String(amountUsd),
-        client_network: network,
-        client_wallet: wallet,
-        client_asset: asset,
-        treasury_wallet: treasuryWallet,
+        // Defaults for ops queue — wallet collected after pay / via email
+        client_network: "ethereum",
+        client_wallet: "",
+        client_asset: "USDC",
+        treasury_wallet: TREASURY.evm,
       },
       payment_intent_data: {
         metadata: {
           amount_usd: String(amountUsd),
-          client_network: network,
-          client_wallet: wallet,
-          client_asset: asset,
-          treasury_wallet: treasuryWallet,
+          flow: "simple_amount_pay",
+          treasury_wallet: TREASURY.evm,
         },
       },
     });

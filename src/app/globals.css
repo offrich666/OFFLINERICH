@@ -471,6 +471,36 @@ code {
   border: 1px solid var(--line);
 }
 
+.amount-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0.25rem;
+}
+
+.amount-chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--ink-soft);
+  color: var(--fog);
+  border-radius: 8px;
+  padding: 0.55rem 0.85rem;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.amount-chip:hover {
+  border-color: color-mix(in srgb, var(--fog) 35%, var(--line));
+}
+
+.amount-chip.active {
+  border-color: var(--fog);
+  background: color-mix(in srgb, var(--fog) 12%, transparent);
+  color: var(--fog);
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -46,21 +46,17 @@ async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
   const network =
     meta.client_network ||
     customFieldValue(session.custom_fields, "network") ||
-    "polygon";
+    "ethereum";
   const clientWallet =
     meta.client_wallet ||
     customFieldValue(session.custom_fields, "wallet") ||
     "";
   const asset = meta.client_asset || (network === "bitcoin" ? "BTC" : "USDC");
+  const customerEmail =
+    session.customer_details?.email ?? session.customer_email ?? null;
 
-  if (!clientWallet) {
-    console.error(
-      "[stripe webhook] paid session missing client wallet",
-      session.id,
-    );
-    return;
-  }
-
+  // Simple amount-pay flow has no wallet up front — still queue the paid order
+  // so ops can collect a delivery wallet from the customer email.
   const order = await upsertPaidTransferOrder({
     stripeSessionId: session.id,
     stripePaymentIntentId:
@@ -71,14 +67,15 @@ async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
     currency: session.currency || "usd",
     network,
     asset,
-    clientWallet,
-    customerEmail: session.customer_details?.email ?? session.customer_email,
+    clientWallet: clientWallet || "(awaiting wallet — contact customer)",
+    customerEmail,
   });
 
   console.info("[stripe webhook] transfer order queued", {
     orderId: order.id,
     network: order.network,
     clientWallet: order.clientWallet,
+    customerEmail: order.customerEmail,
     treasuryWallet: order.treasuryWallet,
     amountCents: order.amountCents,
   });

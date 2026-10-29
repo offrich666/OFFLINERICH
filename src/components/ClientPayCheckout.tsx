@@ -1,168 +1,103 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { loadStripeOnramp } from "@stripe/crypto";
+import { useCallback, useState } from "react";
+import { loadStripe } from "@stripe/stripe-js";
 import {
-  CLIENT_NETWORKS,
+  EmbeddedCheckout,
+  EmbeddedCheckoutProvider,
+} from "@stripe/react-stripe-js";
+import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
   formatUsd,
   isValidAmountUsd,
-  isValidWalletAddress,
   parseAmountUsd,
-  type ClientNetworkId,
 } from "@/lib/networks";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
+const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+
+const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 /**
- * Stripe Crypto Onramp → crypto settles to OFFLINERICH treasury wallets
- * when the client pays. Client wallet is only for later delivery from treasury.
+ * Payment-Link-simple UX: pick an amount → pay with card / Apple Pay / Google Pay
+ * on this page. No network picker, no wallet field, no Onramp KYC form.
+ * Ops delivers crypto after Stripe marks the payment paid (email on the charge).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
-  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
-  const [wallet, setWallet] = useState("");
-  const [mode, setMode] = useState<"idle" | "onramp">("idle");
-  const [status, setStatus] = useState("");
+  const [mode, setMode] = useState<"pick" | "pay">("pick");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const onrampMountRef = useRef<HTMLDivElement>(null);
-  const clientSecretRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("onramp-active", mode === "onramp");
-    return () => document.documentElement.classList.remove("onramp-active");
-  }, [mode]);
-
-  useEffect(() => {
-    if (mode !== "onramp" || !clientSecretRef.current || !publishableKey) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
-        const stripeOnramp = await loadStripeOnramp(publishableKey);
-        if (!stripeOnramp || cancelled) throw new Error("Failed to load pay form");
-        const session = stripeOnramp.createSession({
-          clientSecret: clientSecretRef.current!,
-          appearance: { theme: "dark" },
-        });
-        session.addEventListener("onramp_session_updated", (e) => {
-          const next = e.payload?.session?.status as string | undefined;
-          if (next === "fulfillment_complete") {
-            setStatus("Paid — crypto is in the OFFLINERICH treasury. Delivery to your wallet follows.");
-          } else if (next === "fulfillment_processing") {
-            setStatus("Payment received — crypto settling to treasury…");
-          } else if (next === "initialized" || next === "requires_payment") {
-            setStatus("Complete payment below. Crypto goes to treasury when you pay.");
-          } else if (next) {
-            setStatus(`Status: ${next}`);
-          }
-        });
-        if (onrampMountRef.current && !cancelled) {
-          session.mount(onrampMountRef.current);
-          setStatus("Complete payment below. Crypto goes to treasury when you pay.");
-          requestAnimationFrame(() => {
-            onrampMountRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Could not open payment");
-          setMode("idle");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode]);
+  const [paidAmount, setPaidAmount] = useState<number | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
-  const asset = useMemo(
-    () => CLIENT_NETWORKS.find((n) => n.id === network)?.asset ?? "USDC",
-    [network],
-  );
-  const walletOk = isValidWalletAddress(network, wallet);
 
-  async function continueToPay() {
+  const fetchClientSecret = useCallback(async () => {
+    const res = await fetch("/api/checkout/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amountUsd: paidAmount ?? amountUsd }),
+    });
+    const data = (await res.json()) as { clientSecret?: string; error?: string };
+    if (!res.ok || !data.clientSecret) {
+      throw new Error(data.error || "Could not start checkout");
+    }
+    return data.clientSecret;
+  }, [paidAmount, amountUsd]);
+
+  async function startPay() {
     setError(null);
-    setStatus("");
-    if (!amountOk) {
+    if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
       );
       return;
     }
-    if (!walletOk) {
-      setError(
-        network === "bitcoin"
-          ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-          : "Enter a valid EVM wallet address (0x + 40 hex chars).",
-      );
-      return;
-    }
-    if (!publishableKey) {
+    if (!publishableKey || !stripePromise) {
       setError("Stripe publishable key missing.");
       return;
     }
-
     setLoading(true);
-    try {
-      const res = await fetch("/api/onramp/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amountUsd,
-          network,
-          wallet: wallet.trim(),
-          asset,
-        }),
-      });
-      const data = (await res.json()) as {
-        clientSecret?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.clientSecret) {
-        throw new Error(data.error || "Could not start crypto checkout");
-      }
-      clientSecretRef.current = data.clientSecret;
-      setMode("onramp");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed to start");
-    } finally {
-      setLoading(false);
-    }
+    setPaidAmount(amountUsd);
+    setMode("pay");
+    setLoading(false);
   }
 
-  if (mode === "onramp") {
+  if (mode === "pay" && paidAmount != null && stripePromise) {
     return (
-      <div className="payment-stack onramp-focus">
+      <div className="payment-stack client-pay">
         <div className="destination-summary">
           <p>
-            Pay <strong>{amountLabel}</strong> · you receive {asset} on{" "}
-            <strong>{network}</strong>
+            Pay <strong>{formatUsd(paidAmount)}</strong> with card, Apple Pay, or
+            Google Pay
           </p>
-          <code>{wallet.trim()}</code>
           <button
             type="button"
             className="ghost-link"
             onClick={() => {
-              clientSecretRef.current = null;
-              setMode("idle");
-              setStatus("");
+              setMode("pick");
+              setPaidAmount(null);
+              setError(null);
             }}
           >
-            Change
+            Change amount
           </button>
         </div>
-        {status ? <p className="form-hint">{status}</p> : null}
-        <div ref={onrampMountRef} className="stripe-embed onramp-mount" />
+        <div className="stripe-embed">
+          <EmbeddedCheckoutProvider
+            key={paidAmount}
+            stripe={stripePromise}
+            options={{ fetchClientSecret }}
+          >
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
       </div>
     );
   }
@@ -170,14 +105,27 @@ export function ClientPayCheckout() {
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
-        <h2>Pay for crypto</h2>
-        <p>
-          Client pays card / Apple Pay / Google Pay. Crypto lands in OFFLINERICH
-          treasury, then is sent to the wallet below.
-        </p>
+        <h2>Pay</h2>
+        <p>Pick an amount. Pay on this page — no wallet or network needed.</p>
+
+        <div className="amount-chips" role="group" aria-label="Quick amounts">
+          {QUICK_AMOUNTS.map((n) => {
+            const active = amountOk && amountUsd === n;
+            return (
+              <button
+                key={n}
+                type="button"
+                className={active ? "amount-chip active" : "amount-chip"}
+                onClick={() => setAmountInput(String(n))}
+              >
+                {formatUsd(n)}
+              </button>
+            );
+          })}
+        </div>
 
         <label className="field">
-          Amount (USD)
+          Or enter amount (USD)
           <input
             type="number"
             min={MIN_AMOUNT_USD}
@@ -189,41 +137,20 @@ export function ClientPayCheckout() {
           />
         </label>
 
-        <label className="field">
-          Network
-          <select
-            value={network}
-            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
-          >
-            {CLIENT_NETWORKS.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label} ({n.asset})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="field">
-          Client wallet (delivery)
-          <input
-            value={wallet}
-            onChange={(e) => setWallet(e.target.value)}
-            placeholder={network === "bitcoin" ? "bc1…" : "0x…"}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </label>
-
         {error ? <p className="form-error">{error}</p> : null}
 
         <button
           type="button"
           className="primary-cta"
-          onClick={continueToPay}
-          disabled={loading}
+          onClick={startPay}
+          disabled={loading || !amountOk}
         >
-          {loading ? "Starting…" : `Pay ${amountOk ? amountLabel : rangeLabel}`}
+          {loading ? "Starting…" : `Continue to pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
+
+        <p className="fineprint">
+          After payment we email you and send crypto to the wallet you provide.
+        </p>
       </div>
     </div>
   );

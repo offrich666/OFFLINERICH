@@ -9,15 +9,15 @@ export default function Home() {
       <header className="topbar">
         <span className="brand-mark">OFFLINERICH</span>
         <Link href="/checkout" className="top-cta">
-          Checkout
+          Pay
         </Link>
       </header>
 
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $5–$9,000 with card, Apple Pay, or Google Pay. Add your wallet —
-          crypto is delivered on the network you choose.
+          Pay $5–$9,000 with card, Apple Pay, or Google Pay. Simple checkout —
+          crypto is delivered after payment.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
