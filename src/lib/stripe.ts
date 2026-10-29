@@ -7,6 +7,7 @@ import {
   type OnrampCurrency,
   type OnrampNetwork,
 } from "@/lib/treasury";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 let stripeClient: Stripe | null = null;
 
@@ -37,22 +38,7 @@ export function getStripePriceId(): string {
 }
 
 export function getPublishableKey(): string {
-  // Keep in sync with src/lib/stripePublic.ts (server bundle cannot import
-  // a client-only pattern change without pulling RSC boundaries oddly).
-  const FALLBACK =
-    "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
-  const BAD =
-    "pk_live_51UCk64QWCzdANStkTBzLbV5xmNgSPXWGkyaW3L8YUP8REGloiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
-  const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() || "";
-  if (
-    fromEnv.startsWith("pk_") &&
-    fromEnv.length >= 107 &&
-    fromEnv !== BAD &&
-    !fromEnv.includes("placeholder")
-  ) {
-    return fromEnv;
-  }
-  return FALLBACK;
+  return getStripePublishableKey();
 }
 
 export function isLiveStripeKey(key = process.env.STRIPE_SECRET_KEY || ""): boolean {
@@ -63,31 +49,21 @@ export function getAppOrigin(request?: Request): string {
   if (request) {
     const origin = request.headers.get("origin");
     if (origin) return origin;
-    const host =
-      request.headers.get("x-forwarded-host") || request.headers.get("host");
-    const proto = request.headers.get("x-forwarded-proto") || "http";
-    if (host) return `${proto}://${host}`;
+    try {
+      return new URL(request.url).origin;
+    } catch {
+      /* fall through */
+    }
   }
-  return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+  if (configured) return configured;
+  return "http://localhost:3000";
 }
 
-export function checkoutIntegrationId(): string {
-  const suffix = Math.random().toString(36).slice(2, 10);
-  return `offlinerich_emb_${suffix}`;
+export function checkoutIntegrationId(): string | undefined {
+  return process.env.STRIPE_CHECKOUT_INTEGRATION_ID || undefined;
 }
 
-export function getLivePaymentLinkUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
-    "https://buy.stripe.com/aFafZj4TvdLq8WAboDds408"
-  );
-}
-
-/**
- * Map client delivery network → Onramp network that funds treasury.
- * EU Onramp: USDC/ETH settle on ethereum; BTC on bitcoin.
- * Polygon/Base/BSC clients still get delivery later from the same EVM treasury.
- */
 export function onrampNetworkForClientNetwork(
   clientNetwork: string,
 ): OnrampNetwork {
@@ -96,7 +72,8 @@ export function onrampNetworkForClientNetwork(
 }
 
 export function onrampCurrencyForNetwork(network: OnrampNetwork): OnrampCurrency {
-  return network === "bitcoin" ? "btc" : "usdc";
+  if (network === "bitcoin") return "btc";
+  return "usdc";
 }
 
 type CreateOnrampInput = {
