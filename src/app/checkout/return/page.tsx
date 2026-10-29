@@ -62,7 +62,7 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
           <h1>{paid ? "Payment received" : "Payment status"}</h1>
           <p>
             {paid
-              ? "Thanks. Reply to your receipt email with the wallet address where you want crypto delivered."
+              ? "Thanks. Reply to your receipt email with the wallet where you want crypto delivered — we convert from Stripe and send."
               : `Status: ${status} / ${paymentStatus}.`}
           </p>
           <dl className="meta-list">

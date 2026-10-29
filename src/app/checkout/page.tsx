@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
           <p>
-            Card / Apple Pay / Google Pay → USDC lands in OFFLINERICH treasury →
-            we send crypto to your wallet.
+            Bank cards welcome — normal Stripe payment (not crypto category).
+            After pay we fund treasury and deliver crypto to your wallet.
           </p>
         </div>
 
