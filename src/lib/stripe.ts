@@ -37,10 +37,22 @@ export function getStripePriceId(): string {
 }
 
 export function getPublishableKey(): string {
-  // Re-export path for server code; keep fallback in stripePublic (client-safe).
-  const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
-  if (fromEnv && !fromEnv.includes("placeholder")) return fromEnv;
-  return "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
+  // Keep in sync with src/lib/stripePublic.ts (server bundle cannot import
+  // a client-only pattern change without pulling RSC boundaries oddly).
+  const FALLBACK =
+    "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
+  const BAD =
+    "pk_live_51UCk64QWCzdANStkTBzLbV5xmNgSPXWGkyaW3L8YUP8REGloiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
+  const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim() || "";
+  if (
+    fromEnv.startsWith("pk_") &&
+    fromEnv.length >= 107 &&
+    fromEnv !== BAD &&
+    !fromEnv.includes("placeholder")
+  ) {
+    return fromEnv;
+  }
+  return FALLBACK;
 }
 
 export function isLiveStripeKey(key = process.env.STRIPE_SECRET_KEY || ""): boolean {
