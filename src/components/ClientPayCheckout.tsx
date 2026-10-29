@@ -1,12 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { loadStripeOnramp } from "@stripe/crypto";
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
@@ -18,92 +13,142 @@ import {
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
-
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 /**
- * Bank-card path: regular Stripe Checkout (your business MCC — not crypto).
- * Banks that block "crypto" merchant category can still pay here.
- * USD lands in Stripe → you convert/fund treasury → deliver to client wallet.
- *
- * Crypto Onramp (auto USDC to treasury) stays at /onramp for cards that allow crypto.
+ * ONLY path: Stripe Crypto Onramp → USDC locked to OFFLINERICH treasury.
+ * Amount (+ optional email). No fiat detour.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
-  const [mode, setMode] = useState<"pick" | "pay">("pick");
+  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<"pick" | "onramp">("pick");
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const secretRef = useRef<string | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
 
-  const fetchClientSecret = useCallback(async () => {
-    const res = await fetch("/api/checkout/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountUsd: paidAmount ?? amountUsd }),
-    });
-    const data = (await res.json()) as { clientSecret?: string; error?: string };
-    if (!res.ok || !data.clientSecret) {
-      throw new Error(data.error || "Could not start checkout");
-    }
-    return data.clientSecret;
-  }, [paidAmount, amountUsd]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("onramp-active", mode === "onramp");
+    return () => document.documentElement.classList.remove("onramp-active");
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "onramp" || !secretRef.current || !publishableKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (mountRef.current) mountRef.current.innerHTML = "";
+        const stripeOnramp = await loadStripeOnramp(publishableKey);
+        if (!stripeOnramp || cancelled) throw new Error("Failed to load pay form");
+        const session = stripeOnramp.createSession({
+          clientSecret: secretRef.current!,
+          appearance: { theme: "dark" },
+        });
+        session.addEventListener("onramp_session_updated", (e) => {
+          const next = e.payload?.session?.status as string | undefined;
+          if (next === "fulfillment_complete") {
+            setStatus(
+              "Paid — USDC is in the OFFLINERICH treasury. Send your delivery wallet after.",
+            );
+          } else if (next === "fulfillment_processing") {
+            setStatus("Payment received — crypto settling to treasury…");
+          } else if (next === "initialized" || next === "requires_payment") {
+            setStatus("Complete payment below. USDC goes to treasury when you pay.");
+          } else if (next) {
+            setStatus(`Status: ${next}`);
+          }
+        });
+        if (mountRef.current && !cancelled) {
+          session.mount(mountRef.current);
+          setStatus("Complete payment below. USDC goes to treasury when you pay.");
+          requestAnimationFrame(() => {
+            mountRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not open payment");
+          setMode("pick");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   async function startPay() {
     setError(null);
+    setStatus("");
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
       );
       return;
     }
-    if (!publishableKey || !stripePromise) {
+    if (!publishableKey) {
       setError("Stripe publishable key missing.");
       return;
     }
     setLoading(true);
-    setPaidAmount(amountUsd);
-    setMode("pay");
-    setLoading(false);
+    try {
+      const res = await fetch("/api/onramp/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsd,
+          email: email.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as { clientSecret?: string; error?: string };
+      if (!res.ok || !data.clientSecret) {
+        throw new Error(data.error || "Could not start crypto checkout");
+      }
+      secretRef.current = data.clientSecret;
+      setPaidAmount(amountUsd);
+      setMode("onramp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed to start");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (mode === "pay" && paidAmount != null && stripePromise) {
+  if (mode === "onramp" && paidAmount != null) {
     return (
-      <div className="payment-stack client-pay">
+      <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Pay <strong>{formatUsd(paidAmount)}</strong> with card, Apple Pay, or
-            Google Pay
+            Pay <strong>{formatUsd(paidAmount)}</strong> → USDC to OFFLINERICH
+            treasury
           </p>
           <button
             type="button"
             className="ghost-link"
             onClick={() => {
+              secretRef.current = null;
               setMode("pick");
               setPaidAmount(null);
-              setError(null);
+              setStatus("");
             }}
           >
             Change amount
           </button>
         </div>
-        <div className="stripe-embed">
-          <EmbeddedCheckoutProvider
-            key={paidAmount}
-            stripe={stripePromise}
-            options={{ fetchClientSecret }}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        <div ref={mountRef} className="stripe-embed onramp-mount" />
         <p className="fineprint">
-          This is a normal card payment (not crypto MCC) so bank cards that
-          block crypto purchases can work. After pay we convert and send crypto.
+          If a bank says “not allowed merchant category,” that card blocks crypto
+          buys — try another card (credit often works). Apple Pay needs Stripe
+          Onramp enablement + Safari.
         </p>
       </div>
     );
@@ -112,10 +157,10 @@ export function ClientPayCheckout() {
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
-        <h2>Pay</h2>
+        <h2>Pay → treasury</h2>
         <p>
-          Pick an amount. Pay with your bank card — this path avoids the crypto
-          merchant block many banks use.
+          Pick an amount. When you pay, USDC goes straight into the OFFLINERICH
+          treasury — then we send to your wallet.
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -147,6 +192,17 @@ export function ClientPayCheckout() {
           />
         </label>
 
+        <label className="field">
+          Email (optional — speeds checkout)
+          <input
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+          />
+        </label>
+
         {error ? <p className="form-error">{error}</p> : null}
 
         <button
@@ -159,13 +215,6 @@ export function ClientPayCheckout() {
             ? "Starting…"
             : `Continue to pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
-
-        <p className="fineprint">
-          Got “not allowed merchant category” on crypto pay? This page is the
-          fix. Optional:{" "}
-          <Link href="/checkout/crypto">direct crypto Onramp</Link> only if your
-          card allows crypto buys (USDC → treasury).
-        </p>
       </div>
     </div>
   );

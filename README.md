@@ -13,22 +13,20 @@ Paste **live API keys** to go live:
 
 Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 
-## Flow (main `/checkout` — bank cards)
-
-Banks often block Crypto Onramp with **“not allowed merchant category.”**
-Main checkout uses **regular Stripe Checkout** (business MCC, not crypto):
+## Flow (main `/checkout` — Onramp → treasury)
 
 ```
-Client picks amount → Embedded Checkout (card / Apple Pay / Google Pay)
+Client picks amount → Stripe Crypto Onramp
+        │  (card / Apple Pay / Google Pay)
+        ▼
+USDC locked to OFFLINERICH treasury (Ethereum)
         │
         ▼
-USD in Stripe (G N LABS LLC)
-        │
-        ▼
-Ops converts / funds treasury → sends crypto to client wallet
+Client sends delivery wallet → ops sends treasury → client
 ```
 
-Optional `/onramp` — USDC straight to treasury when the client’s card allows crypto MCC.
+Note: some banks block crypto MCC (“not allowed merchant category”). That is the
+bank, not the site — try another card. Fiat-only checkout is NOT the product path.
 
 Treasury (internal):
 
