@@ -1,11 +1,15 @@
+import { connection } from "next/server";
 import { NextResponse } from "next/server";
 import { getPublishableKey, isLiveStripeKey } from "@/lib/stripe";
+
+export const instant = false;
 
 /**
  * Readiness probe for Crypto Onramp (no Stripe network call).
  * Application APPROVED — live + test keys unlock crypto-to-treasury.
  */
 export async function GET() {
+  await connection();
   const secret = process.env.STRIPE_SECRET_KEY || "";
   const publishable = getPublishableKey();
   const hasSecret = Boolean(secret);

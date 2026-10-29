@@ -111,8 +111,6 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
     destination_networks: [...ONRAMP_NETWORKS],
     lock_wallet_address: true,
     wallet_addresses: wallets,
-    // Dark theme for embedded / hosted onramp
-    appearance: { theme: "dark" },
     metadata: {
       project: "offlinerich",
       flow: "pay_to_treasury_then_client",
