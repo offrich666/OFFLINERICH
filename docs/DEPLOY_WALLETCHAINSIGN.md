@@ -1,50 +1,33 @@
-# Deploy OFFLINERICH → www.walletchainsign.com
+# Deploy OFFLINERICH → www.walletchainsign.com (Njalla + Grok)
 
-## Why it fails today
-`www.walletchainsign.com` is on **Vercel** but serves a **different** Grok “Ledger / WalletChainSign” app.
-`/checkout` returns **404** because this OFFLINERICH Next.js app is not that project.
+## What’s wrong now
+- Registrar/DNS: **Njalla** (`1-you.njalla.no`, `2-can.njalla.in`, `3-get.njalla.fo`)
+- `www` still **CNAME → `c1b1aec43a37291d.vercel-dns-016.com`** (Grok App Builder publish — Ledger app)
+- That is **not** your personal Vercel project and **not** this OFFLINERICH repo
+- `/checkout` → **404**
 
-## Fastest path (claim temp deploy + attach domain)
+## Fix (agent can do this with secrets)
 
-A built OFFLINERICH deploy is ready to claim (expires ~1h from creation):
+1. **Grok** → open the WalletChainSign / Ledger project → remove custom domain `www.walletchainsign.com` (stops Grok reclaiming DNS).
+2. Add Cloud secrets:
+   - `NJALLA_API_TOKEN` — https://njal.la/ → Settings → API  
+     methods: `list-records`, `add-record`, `edit-record`, `remove-record`, `list-domains`
+   - `VERCEL_TOKEN` — https://vercel.com/account/tokens (deploy OFFLINERICH)
+3. Agent will:
+   - Deploy OFFLINERICH to Vercel with live Stripe env
+   - Run `scripts/njalla-point-walletchainsign.sh <vercel-cname-target>`
+   - Confirm https://www.walletchainsign.com/checkout
 
-1. Open the claim link from the agent (or recreate with `npx vercel deploy --temporary --yes`).
-2. Log into the Vercel account that owns `www.walletchainsign.com`.
-3. After claim → **Settings → Environment Variables** → add the table below → Redeploy.
-4. **Settings → Domains** → Add `www.walletchainsign.com` → confirm **move domain** off the Grok Ledger project.
-5. Stripe allowlist already has `www.walletchainsign.com`. Webhook already points at `/api/webhooks/stripe`.
+Manual DNS (if you edit Njalla yourself):
 
-## Or: Import from GitHub
+| Type | Name | Content |
+| --- | --- | --- |
+| CNAME | `www` | `<your-offlinerich-project>.vercel-dns.com` (exact target from Vercel Domains UI) |
 
-1. Open [vercel.com/new](https://vercel.com/new) → Import `offrich666/OFFLINERICH`
-2. Branch: `cursor/stripe-9000-client-wallet-d4e9` (or `main` after merge)
-3. Framework: Next.js (auto). `.npmrc` sets `legacy-peer-deps=true`.
-4. **Environment Variables** (Production) — see table.
-5. Deploy → Domains → add `www.walletchainsign.com` (move from Grok project).
-
-## Environment Variables (Production)
-
-| Name | Value |
-| --- | --- |
-| `NEXT_PUBLIC_APP_URL` | `https://www.walletchainsign.com` |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_live_…` (G N LABS) |
-| `STRIPE_SECRET_KEY` | `sk_live_…` |
-| `STRIPE_WEBHOOK_SECRET` | signing secret for webhook `we_1UVtdmQWCzdANStktynNULDO` |
-| `STRIPE_PRICE_ID` | `price_1UVgRDQWCzdANStksBqKZ5BL` |
-| `NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL` | `https://buy.stripe.com/aFafZj4TvdLq8WAboDds408` |
-| `OPS_SECRET` | long random string |
-
-Helper (after `vercel login` or `VERCEL_TOKEN`): `./scripts/push-vercel-env.sh`
-
-## Already done in Stripe
+## Stripe (already done)
 - Onramp approved (live)
 - Allowlist: `www.walletchainsign.com`, `localhost`
-- Webhook: `https://www.walletchainsign.com/api/webhooks/stripe` (`we_1UVtdm…`)
+- Webhook: `https://www.walletchainsign.com/api/webhooks/stripe`
 
-## Verify
-- https://www.walletchainsign.com/checkout → pay form
-- https://www.walletchainsign.com/api/onramp/status → `"mode":"live"`
-- Pay $10 → `/ops/transfers?key=OPS_SECRET` shows order
-
-## Agent note
-Without a `VERCEL_TOKEN` the agent cannot attach your custom domain. Paste a token from https://vercel.com/account/tokens to finish automatically.
+## Env on the host that serves the domain
+`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL`, `OPS_SECRET`
