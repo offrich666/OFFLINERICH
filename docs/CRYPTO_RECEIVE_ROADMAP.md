@@ -1,4 +1,4 @@
-# Roadmap: Client pays $10 → you receive crypto
+# Roadmap: Client pays $5 → you receive crypto
 
 ## Status (G N LABS LLC · `acct_1UCk64QWCzdANStk`)
 
@@ -14,7 +14,7 @@
 ## Architecture
 
 ```
-Client pays $10–$9000 (card / Apple Pay / Google Pay)
+Client pays $5–$9000 (card / Apple Pay / Google Pay)
         │
         ▼
 Stripe Crypto Onramp  ──lock──►  YOUR treasury
@@ -33,7 +33,7 @@ Treasury (internal):
 
 ## Phase 0 — Done in app
 
-- [x] Amount **$10–$9,000**
+- [x] Amount **$5–$9,000**
 - [x] Client network + wallet (treasury hidden)
 - [x] Onramp session locked to treasury (`POST /api/onramp/session`)
 - [x] EU-safe settle networks (ethereum / bitcoin)

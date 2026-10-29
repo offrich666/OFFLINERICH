@@ -1,4 +1,4 @@
-# OFFLINERICH — pay $10–$9,000 → crypto to treasury → client wallet
+# OFFLINERICH — pay $5–$9,000 → crypto to treasury → client wallet
 
 ## Status
 
@@ -16,7 +16,7 @@ Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 ## Flow
 
 ```
-Client pays $10–$9000
+Client pays $5–$9000
         │
         ▼
 Stripe Crypto Onramp  ──lock──►  treasury (EU: Ethereum USDC or BTC)
@@ -47,5 +47,5 @@ npm run dev
 
 | | |
 | --- | --- |
-| Flexible price | `price_1UVgRDQWCzdANStksBqKZ5BL` ($10–$9,000) |
+| Flexible price | `price_1UVgRDQWCzdANStksBqKZ5BL` ($5–$9,000) |
 | Payment Link | https://buy.stripe.com/aFafZj4TvdLq8WAboDds408 |
