@@ -25,7 +25,7 @@ export function isValidWalletAddress(networkId: string, address: string): boolea
 }
 
 /** Inclusive USD bounds for client checkout. */
-export const MIN_AMOUNT_USD = 10;
+export const MIN_AMOUNT_USD = 5;
 export const MAX_AMOUNT_USD = 9000;
 export const MIN_AMOUNT_CENTS = MIN_AMOUNT_USD * 100;
 export const MAX_AMOUNT_CENTS = MAX_AMOUNT_USD * 100;

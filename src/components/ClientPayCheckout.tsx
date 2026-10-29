@@ -23,7 +23,7 @@ const publishableKey = getStripePublishableKey();
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [amountInput, setAmountInput] = useState("10");
+  const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<"idle" | "onramp">("idle");
