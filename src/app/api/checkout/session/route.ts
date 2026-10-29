@@ -16,8 +16,8 @@ import {
 import { TREASURY } from "@/lib/treasury";
 
 /**
- * Direct Checkout (card / Apple Pay / Google Pay) — no Stripe Link / Onramp KYC.
- * Client pays fiat; webhook queues treasury → client crypto delivery.
+ * Direct Checkout — card / Apple Pay / Google Pay only (no Link, no Onramp KYC).
+ * Fiat settles to Stripe; webhook queues treasury → client crypto delivery.
  */
 export async function POST(request: Request) {
   try {
@@ -75,8 +75,10 @@ export async function POST(request: Request) {
     const session = await stripe.checkout.sessions.create({
       ui_mode: "embedded_page",
       mode: "payment",
-      // Card only → Apple Pay / Google Pay show as wallets; Link is excluded.
-      payment_method_types: ["card"],
+      // Account defaults to Managed Payments + Link — turn those off for a
+      // simple card / Apple Pay / Google Pay form.
+      managed_payments: { enabled: false },
+      allowed_payment_method_types: ["card"],
       billing_address_collection: "auto",
       phone_number_collection: { enabled: false },
       line_items: [
@@ -86,7 +88,8 @@ export async function POST(request: Request) {
             unit_amount: amountCents,
             product_data: {
               name: "Crypto delivery",
-              description: `${asset} on ${network} to your wallet after payment`,
+              description: `${asset} on ${network} after payment`,
+              tax_code: "txcd_10000000",
             },
           },
           quantity: 1,
@@ -122,7 +125,10 @@ export async function POST(request: Request) {
       );
     }
 
-    return NextResponse.json({ clientSecret: session.client_secret });
+    return NextResponse.json({
+      clientSecret: session.client_secret,
+      paymentMethodTypes: session.payment_method_types,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to create Checkout Session";
