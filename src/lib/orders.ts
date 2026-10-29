@@ -30,7 +30,11 @@ export type TransferOrder = {
   outboundTxHash?: string;
 };
 
-const DATA_DIR = path.join(process.cwd(), "data");
+/** Vercel serverless FS is read-only except /tmp. Local/dev uses ./data. */
+const DATA_DIR =
+  process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME
+    ? path.join("/tmp", "offlinerich-data")
+    : path.join(process.cwd(), "data");
 const ORDERS_FILE = path.join(DATA_DIR, "transfer-orders.json");
 
 async function ensureStore() {
