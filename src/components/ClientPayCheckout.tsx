@@ -1,12 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadStripeOnramp } from "@stripe/crypto";
-import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
 import {
   CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
@@ -20,12 +15,6 @@ import {
 } from "@/lib/networks";
 
 const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
-const paymentLinkUrl =
-  process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
-  "https://buy.stripe.com/aFafZj4TvdLq8WAboDds408";
-
-type PayMode = "idle" | "onramp" | "checkout";
 
 type OnrampStatus = {
   readyForOnrampUi?: boolean;
@@ -38,12 +27,13 @@ export function ClientPayCheckout() {
   const [amountInput, setAmountInput] = useState("10");
   const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
-  const [mode, setMode] = useState<PayMode>("idle");
+  const [mode, setMode] = useState<"idle" | "onramp">("idle");
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [onrampStatus, setOnrampStatus] = useState<OnrampStatus | null>(null);
   const onrampMountRef = useRef<HTMLDivElement>(null);
+  const clientSecretRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +50,49 @@ export function ClientPayCheckout() {
     };
   }, []);
 
+  // Mount onramp after the pay UI is painted so the container exists.
+  useEffect(() => {
+    if (mode !== "onramp" || !clientSecretRef.current || !publishableKey) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+        const stripeOnramp = await loadStripeOnramp(publishableKey);
+        if (!stripeOnramp || cancelled) {
+          throw new Error("Failed to load Stripe Onramp");
+        }
+        const session = stripeOnramp.createSession({
+          clientSecret: clientSecretRef.current!,
+          appearance: { theme: "dark" },
+        });
+        session.addEventListener("onramp_session_updated", (e) => {
+          const next = e.payload?.session?.status;
+          if (next) setStatus(`Status: ${next}`);
+        });
+        if (onrampMountRef.current && !cancelled) {
+          session.mount(onrampMountRef.current);
+          setStatus(
+            "Pay on this page with card, Apple Pay, or Google Pay (Samsung Pay via Google Pay on Android).",
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load the on-page payment form",
+          );
+          setMode("idle");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
@@ -70,83 +103,6 @@ export function ClientPayCheckout() {
   );
 
   const walletOk = isValidWalletAddress(network, wallet);
-
-  const fetchCheckoutSecret = useCallback(async () => {
-    const res = await fetch("/api/checkout/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        network,
-        wallet: wallet.trim(),
-        asset,
-        amountUsd,
-      }),
-    });
-    const data = (await res.json()) as { clientSecret?: string; error?: string };
-    if (!res.ok || !data.clientSecret) {
-      throw new Error(data.error || "Could not start checkout");
-    }
-    return data.clientSecret;
-  }, [amountUsd, asset, network, wallet]);
-
-  async function startOnrampToTreasury() {
-    if (!publishableKey) {
-      throw new Error("missing_keys");
-    }
-    const res = await fetch("/api/onramp/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amountUsd,
-        network,
-        wallet: wallet.trim(),
-        asset,
-      }),
-    });
-    const data = (await res.json()) as {
-      clientSecret?: string;
-      redirectUrl?: string | null;
-      error?: string;
-      code?: string;
-      applyUrl?: string;
-    };
-    if (!res.ok || !data.clientSecret) {
-      const err = new Error(data.error || "Onramp unavailable") as Error & {
-        code?: string;
-        applyUrl?: string;
-      };
-      err.code = data.code;
-      err.applyUrl = data.applyUrl;
-      throw err;
-    }
-
-    // Prefer embedded Onramp; fall back to Stripe-hosted redirect_url
-    try {
-      if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
-      const stripeOnramp = await loadStripeOnramp(publishableKey);
-      if (!stripeOnramp) throw new Error("Failed to load Stripe Onramp");
-
-      const session = stripeOnramp.createSession({
-        clientSecret: data.clientSecret,
-        appearance: { theme: "dark" },
-      });
-      session.addEventListener("onramp_session_updated", (e) => {
-        const next = e.payload?.session?.status;
-        if (next) setStatus(`Status: ${next}`);
-      });
-      if (onrampMountRef.current) session.mount(onrampMountRef.current);
-      setMode("onramp");
-      setStatus(
-        "Pay now — crypto settles to OFFLINERICH treasury, then delivery to your wallet.",
-      );
-    } catch (embedErr) {
-      if (data.redirectUrl) {
-        window.location.href = data.redirectUrl;
-        return;
-      }
-      throw embedErr;
-    }
-  }
 
   async function continueToPay() {
     setError(null);
@@ -165,35 +121,35 @@ export function ClientPayCheckout() {
       );
       return;
     }
+    if (!publishableKey) {
+      setError("Stripe publishable key missing on this deploy.");
+      return;
+    }
 
     setLoading(true);
     try {
-      // Preferred: Crypto Onramp → YOUR treasury receives crypto when client pays.
-      await startOnrampToTreasury();
-    } catch (err) {
-      const code =
-        err && typeof err === "object" && "code" in err
-          ? String((err as { code?: string }).code)
-          : "";
-      // Fallback: USD Checkout / Payment Link (no crypto-in until Onramp unlocked)
-      if (
-        code === "onramp_not_enabled" ||
-        code === "missing_keys" ||
-        code === "onramp_error" ||
-        !publishableKey
-      ) {
-        if (publishableKey && stripePromise) {
-          setMode("checkout");
-          setError(
-            "Onramp is approved but keys are missing or the session failed. Using USD checkout fallback — paste live pk_live_/sk_live_ keys to receive crypto.",
-          );
-        } else {
-          window.location.href = paymentLinkUrl;
-          return;
-        }
-      } else {
-        setError(err instanceof Error ? err.message : "Payment failed to start");
+      const res = await fetch("/api/onramp/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsd,
+          network,
+          wallet: wallet.trim(),
+          asset,
+        }),
+      });
+      const data = (await res.json()) as {
+        clientSecret?: string;
+        error?: string;
+        code?: string;
+      };
+      if (!res.ok || !data.clientSecret) {
+        throw new Error(data.error || "Could not start on-page checkout");
       }
+      clientSecretRef.current = data.clientSecret;
+      setMode("onramp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed to start");
     } finally {
       setLoading(false);
     }
@@ -208,7 +164,15 @@ export function ClientPayCheckout() {
             <strong>{network}</strong> to
           </p>
           <code>{wallet.trim()}</code>
-          <button type="button" className="ghost-link" onClick={() => setMode("idle")}>
+          <button
+            type="button"
+            className="ghost-link"
+            onClick={() => {
+              clientSecretRef.current = null;
+              setMode("idle");
+              setStatus("");
+            }}
+          >
             Change details
           </button>
         </div>
@@ -218,39 +182,14 @@ export function ClientPayCheckout() {
     );
   }
 
-  if (mode === "checkout" && stripePromise) {
-    return (
-      <div className="payment-stack">
-        <div className="destination-summary">
-          <p>
-            Paying <strong>{amountLabel}</strong> · delivery on{" "}
-            <strong>{network}</strong> to
-          </p>
-          <code>{wallet.trim()}</code>
-          <button type="button" className="ghost-link" onClick={() => setMode("idle")}>
-            Change details
-          </button>
-        </div>
-        {error ? <p className="form-error">{error}</p> : null}
-        <div className="stripe-embed">
-          <EmbeddedCheckoutProvider
-            stripe={stripePromise}
-            options={{ fetchClientSecret: fetchCheckoutSecret }}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
         <h2>Your delivery wallet</h2>
         <p>
-          Amount ({rangeLabel}), network, and wallet. Pay with card, Apple Pay,
-          or Google Pay.
+          Amount ({rangeLabel}), network, and wallet. Pay on this page with
+          card, Apple Pay, or Google Pay (Samsung Pay on Android via Google
+          Pay).
         </p>
 
         <label className="field">
@@ -296,18 +235,8 @@ export function ClientPayCheckout() {
         {onrampStatus?.application?.approved &&
         !onrampStatus.readyForOnrampUi ? (
           <p className="form-hint">
-            Onramp <strong>approved</strong> for G N LABS. Paste{" "}
-            <strong>live</strong> API keys from{" "}
-            <a
-              href="https://dashboard.stripe.com/apikeys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Dashboard → API keys
-            </a>{" "}
-            (`pk_live_…` / `sk_live_…`) into env secrets, then restart. Crypto
-            settles to Ethereum/Bitcoin treasury (EU). Until keys are set, pay
-            falls back to USD.
+            Onramp approved — live Stripe keys are required on this host before
+            checkout can open.
           </p>
         ) : null}
 
@@ -323,9 +252,8 @@ export function ClientPayCheckout() {
         </button>
 
         <p className="fineprint">
-          Preferred: Stripe Crypto Onramp → crypto to OFFLINERICH treasury →
-          delivery to your wallet. Without Onramp keys, falls back to USD
-          Payment Link.
+          You stay on this site. Stripe Crypto Onramp collects payment; crypto
+          settles to OFFLINERICH treasury, then delivery to your wallet.
         </p>
       </div>
     </div>

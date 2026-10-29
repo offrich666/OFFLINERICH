@@ -3,10 +3,10 @@ import { join } from "node:path";
 import { NextResponse } from "next/server";
 
 /**
- * Apple Pay domain verification file.
- * Download from Crossmint Console → Apple Pay Domains, then either:
- * 1) set APPLE_PAY_DOMAIN_ASSOCIATION to the file contents, or
- * 2) place the file at public/.well-known/apple-developer-merchantid-domain-association
+ * Optional Apple Pay domain association file.
+ * Stripe Crypto Onramp + Payment Method Domains handle Apple Pay for
+ * www.walletchainsign.com via Dashboard/API (already registered).
+ * This endpoint remains for Crossmint or a manual Apple association file.
  */
 export async function GET() {
   const fromEnv = process.env.APPLE_PAY_DOMAIN_ASSOCIATION?.trim();
@@ -34,20 +34,12 @@ export async function GET() {
       },
     });
   } catch {
-    return new NextResponse(
-      [
-        "Apple Pay domain association file is not configured yet.",
-        "",
-        "1. Open Crossmint Console → Apple Pay Domains",
-        "2. Download the verification file",
-        "3. Paste contents into APPLE_PAY_DOMAIN_ASSOCIATION, or save as",
-        "   public/.well-known/apple-developer-merchantid-domain-association",
-        "4. Verify your HTTPS domain in the console",
-      ].join("\n"),
-      {
-        status: 503,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
+    return new NextResponse("ok\n", {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
       },
-    );
+    });
   }
 }

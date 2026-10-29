@@ -20,9 +20,9 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
           <p>
-            Card, Apple Pay, or Google Pay. Choose any amount from $10 to
-            $9,000, add your wallet on the network you choose — crypto is
-            delivered there after payment.
+            Card, Apple Pay, or Google Pay (Samsung Pay via Google Pay on
+            Android). Choose any amount from $10 to $9,000, add your wallet —
+            crypto is delivered there after payment. You never leave this page.
           </p>
           <dl className="meta-list">
             <div>
