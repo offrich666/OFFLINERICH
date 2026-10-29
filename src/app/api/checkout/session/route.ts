@@ -15,12 +15,15 @@ import {
 } from "@/lib/networks";
 import { TREASURY } from "@/lib/treasury";
 
+/**
+ * Direct Checkout (card / Apple Pay / Google Pay) — no Stripe Link / Onramp KYC.
+ * Client pays fiat; webhook queues treasury → client crypto delivery.
+ */
 export async function POST(request: Request) {
   try {
     const stripe = getStripe();
     const origin = getAppOrigin(request);
 
-    let customerEmail: string | undefined;
     let network = "ethereum";
     let wallet = "";
     let asset = "USDC";
@@ -28,15 +31,11 @@ export async function POST(request: Request) {
 
     try {
       const body = (await request.json()) as {
-        email?: string;
         network?: string;
         wallet?: string;
         asset?: string;
         amountUsd?: string | number;
       };
-      if (body?.email && typeof body.email === "string") {
-        customerEmail = body.email.trim() || undefined;
-      }
       if (body?.network) network = String(body.network).trim().toLowerCase();
       if (body?.wallet) wallet = String(body.wallet).trim();
       if (body?.asset) asset = String(body.asset).trim().toUpperCase();
@@ -76,15 +75,18 @@ export async function POST(request: Request) {
     const session = await stripe.checkout.sessions.create({
       ui_mode: "embedded_page",
       mode: "payment",
+      // Card only → Apple Pay / Google Pay show as wallets; Link is excluded.
+      payment_method_types: ["card"],
+      billing_address_collection: "auto",
+      phone_number_collection: { enabled: false },
       line_items: [
         {
           price_data: {
             currency: "usd",
             unit_amount: amountCents,
             product_data: {
-              name: "OFFLINERICH Drop",
-              description:
-                "Pay with card, Apple Pay, or Google Pay. Crypto is delivered to your wallet.",
+              name: "Crypto delivery",
+              description: `${asset} on ${network} to your wallet after payment`,
             },
           },
           quantity: 1,
@@ -92,11 +94,10 @@ export async function POST(request: Request) {
       ],
       return_url: `${origin}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
       integration_identifier: checkoutIntegrationId(),
-      ...(customerEmail ? { customer_email: customerEmail } : {}),
       metadata: {
         project: "offlinerich",
         sku: "offlinerich-drop-flex",
-        flow: "client_wallet_via_treasury",
+        flow: "direct_pay_then_treasury_send",
         amount_usd: String(amountUsd),
         client_network: network,
         client_wallet: wallet,

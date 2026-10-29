@@ -193,12 +193,30 @@ code {
   margin: 0 auto;
 }
 
+.checkout-layout-simple {
+  max-width: 560px;
+  gap: 1.25rem;
+}
+
+.checkout-copy-simple h1 {
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
+}
+
+.checkout-copy-simple > p {
+  margin-top: 0.5rem;
+}
+
 @media (min-width: 900px) {
   .checkout-layout {
     grid-template-columns: 1fr minmax(320px, 450px);
     align-items: start;
     gap: 3rem;
     padding-top: 2rem;
+  }
+
+  .checkout-layout-simple {
+    grid-template-columns: 1fr;
+    max-width: 520px;
   }
 }
 

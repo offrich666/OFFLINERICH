@@ -15,33 +15,11 @@ export default function CheckoutPage() {
         <span className="ghost-link">{range}</span>
       </header>
 
-      <section className="checkout-layout">
-        <div className="checkout-copy">
+      <section className="checkout-layout checkout-layout-simple">
+        <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
-          <p>
-            Card, Apple Pay, or Google Pay (Samsung Pay via Google Pay on
-            Android). Choose any amount from $10 to $9,000, add your wallet —
-            crypto is delivered there after payment. You never leave this page.
-          </p>
-          <dl className="meta-list">
-            <div>
-              <dt>Amount</dt>
-              <dd>{range}</dd>
-            </div>
-            <div>
-              <dt>Pay with</dt>
-              <dd>Card · Apple Pay · Google Pay</dd>
-            </div>
-            <div>
-              <dt>You receive</dt>
-              <dd>Crypto on your wallet / network</dd>
-            </div>
-          </dl>
-          <p className="fineprint">
-            Enter your destination wallet carefully. Delivery starts after
-            Stripe confirms payment.
-          </p>
+          <p>Pay now. Crypto to your wallet after payment.</p>
         </div>
 
         <div className="checkout-panel">
