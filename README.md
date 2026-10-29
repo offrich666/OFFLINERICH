@@ -16,16 +16,16 @@ Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 ## Flow
 
 ```
-Client picks amount ($5–$9,000) → pays on /checkout
-        │  (card / Apple Pay / Google Pay — Embedded Checkout)
+Client picks amount ($5–$9,000) → Stripe Crypto Onramp on /checkout
+        │  (card / Apple Pay / Google Pay; Stripe KYC inside widget)
         ▼
-USD in Stripe  →  ops funds treasury  →  crypto to client wallet
+USDC locked to OFFLINERICH treasury (Ethereum)
         │
         ▼
-Client replies to receipt email with delivery wallet
+Client sends delivery wallet → /ops/transfers sends treasury → client
 ```
 
-Advanced Onramp (crypto straight to treasury) still at `/onramp` if needed.
+Stripe Onramp geo: US + EU (Stripe limit). Lowest KYC for small amounts is name / email / phone / address.
 
 Treasury (internal):
 

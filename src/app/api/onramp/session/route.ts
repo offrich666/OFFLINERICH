@@ -6,13 +6,16 @@ import {
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
-  getNetwork,
   isValidAmountUsd,
-  isValidWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
 import { upsertAwaitingCryptoOrder } from "@/lib/orders";
 
+/**
+ * Easy Onramp path: amount (+ optional email) only.
+ * Crypto settles to OFFLINERICH treasury (locked). Client delivery wallet
+ * is collected after pay via email / ops — not required to start.
+ */
 export async function POST(request: Request) {
   try {
     if (!process.env.STRIPE_SECRET_KEY) {
@@ -20,31 +23,25 @@ export async function POST(request: Request) {
         {
           error: "STRIPE_SECRET_KEY missing",
           code: "missing_keys",
-          hint: "Onramp is approved — paste pk_live_/sk_live_ into env. See docs/CRYPTO_RECEIVE_ROADMAP.md",
+          hint: "Onramp is approved — paste pk_live_/sk_live_ into env.",
         },
         { status: 503 },
       );
     }
 
     let amountUsd = MIN_AMOUNT_USD;
-    let network = "ethereum";
-    let wallet = "";
-    let asset = "USDC";
+    let email = "";
 
     try {
       const body = (await request.json()) as {
         amountUsd?: string | number;
-        network?: string;
-        wallet?: string;
-        asset?: string;
+        email?: string;
       };
       if (body?.amountUsd != null) {
         const parsed = parseAmountUsd(body.amountUsd);
         if (parsed != null) amountUsd = parsed;
       }
-      if (body?.network) network = String(body.network).trim().toLowerCase();
-      if (body?.wallet) wallet = String(body.wallet).trim();
-      if (body?.asset) asset = String(body.asset).trim().toUpperCase();
+      if (body?.email) email = String(body.email).trim().toLowerCase();
     } catch {
       // empty
     }
@@ -58,17 +55,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const net = getNetwork(network);
-    if (!net) {
-      return NextResponse.json({ error: "Unsupported network" }, { status: 400 });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "Enter a valid email" }, { status: 400 });
     }
-    if (!isValidWalletAddress(network, wallet)) {
-      return NextResponse.json(
-        { error: "Valid client wallet address is required" },
-        { status: 400 },
-      );
-    }
-    asset = net.asset;
 
     const forwarded = request.headers.get("x-forwarded-for");
     const customerIpAddress =
@@ -79,9 +68,10 @@ export async function POST(request: Request) {
     const session = await createTreasuryOnrampSession({
       customerIpAddress,
       sourceAmountUsd: amountUsd.toFixed(2),
-      clientNetwork: network,
-      clientWallet: wallet,
-      clientAsset: asset,
+      clientNetwork: "ethereum",
+      clientWallet: "",
+      clientAsset: "USDC",
+      customer: email ? { email } : undefined,
     });
 
     if (!session.client_secret) {
@@ -95,9 +85,11 @@ export async function POST(request: Request) {
       onrampSessionId: session.id,
       amountCents: Math.round(amountUsd * 100),
       currency: "usd",
-      network,
-      asset,
-      clientWallet: wallet,
+      network: "ethereum",
+      asset: "USDC",
+      clientWallet: email
+        ? `(awaiting wallet — ${email})`
+        : "(awaiting wallet — contact after pay)",
     });
 
     return NextResponse.json({
@@ -107,6 +99,7 @@ export async function POST(request: Request) {
       redirectUrl: session.redirect_url ?? null,
       livemode: session.livemode ?? isLiveStripeKey(),
       mode: "onramp_to_treasury",
+      settlesTo: "treasury_usdc_ethereum",
     });
   } catch (error) {
     const message =
@@ -122,7 +115,6 @@ export async function POST(request: Request) {
       {
         error: message,
         code: needsOnramp ? "onramp_not_enabled" : "onramp_error",
-        roadmap: "/docs/CRYPTO_RECEIVE_ROADMAP.md",
         applyUrl: "https://dashboard.stripe.com/crypto-onramp/get-started",
       },
       { status: needsOnramp ? 503 : 500 },

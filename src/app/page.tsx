@@ -16,8 +16,8 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $5–$9,000 with card, Apple Pay, or Google Pay. Simple checkout —
-          crypto is delivered after payment.
+          Pay $5–$9,000 with card, Apple Pay, or Google Pay. Crypto settles to
+          our treasury when you pay — then we deliver to your wallet.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">

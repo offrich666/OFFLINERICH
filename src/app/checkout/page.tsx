@@ -19,7 +19,10 @@ export default function CheckoutPage() {
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
-          <p>Card, Apple Pay, or Google Pay — on this page. Crypto follows after.</p>
+          <p>
+            Card / Apple Pay / Google Pay → USDC lands in OFFLINERICH treasury →
+            we send crypto to your wallet.
+          </p>
         </div>
 
         <div className="checkout-panel">

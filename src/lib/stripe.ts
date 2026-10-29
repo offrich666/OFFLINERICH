@@ -76,25 +76,37 @@ export function onrampCurrencyForNetwork(network: OnrampNetwork): OnrampCurrency
   return "usdc";
 }
 
+type CustomerInfo = {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
 type CreateOnrampInput = {
   customerIpAddress?: string;
   sourceAmountUsd: string;
-  clientNetwork: string;
-  clientWallet: string;
-  clientAsset: string;
+  /** Optional — collected after pay for treasury → client delivery */
+  clientNetwork?: string;
+  clientWallet?: string;
+  clientAsset?: string;
+  customer?: CustomerInfo;
 };
 
 /**
- * Mint Crypto Onramp session: client pays fiat → crypto locked to OUR treasury.
- * Client wallet is stored in metadata for the later treasury→client send.
+ * Mint Crypto Onramp session: client pays fiat → USDC locked to OUR treasury.
+ * Destination wallet is locked to treasury so the client never picks a network
+ * or address during pay. Stripe still runs required KYC inside the widget.
  */
 export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
   const stripe = getStripe();
-  const destinationNetwork = onrampNetworkForClientNetwork(input.clientNetwork);
+  const clientNetwork = input.clientNetwork || "ethereum";
+  const destinationNetwork = onrampNetworkForClientNetwork(clientNetwork);
   const destinationCurrency = onrampCurrencyForNetwork(destinationNetwork);
   const wallets = treasuryWalletAddresses();
 
   const params: Record<string, unknown> = {
+    // Prefill so the widget skips destination picking; cards + wallets globally
+    // where Stripe Onramp is available (US + EU today).
     source_currency: "usd",
     source_amount: input.sourceAmountUsd,
     destination_currency: destinationCurrency,
@@ -105,20 +117,35 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
     wallet_addresses: wallets,
     metadata: {
       project: "offlinerich",
-      flow: "pay_to_treasury_then_client",
-      client_network: input.clientNetwork,
-      client_wallet: input.clientWallet,
-      client_asset: input.clientAsset,
+      flow: "onramp_to_treasury_easy_pay",
+      client_network: clientNetwork,
+      client_wallet: input.clientWallet || "",
+      client_asset: input.clientAsset || "USDC",
       onramp_network: destinationNetwork,
       onramp_currency: destinationCurrency,
       treasury_evm: wallets.ethereum,
       treasury_btc: wallets.bitcoin,
-      eu_note: "settle_on_ethereum_or_bitcoin",
+      eu_note: "settle_usdc_ethereum_or_btc",
     },
   };
 
   if (input.customerIpAddress) {
     params.customer_ip_address = input.customerIpAddress;
+  }
+
+  // Prefill what we have so Stripe KYC asks for less typing.
+  const customerInformation: Record<string, unknown> = {};
+  if (input.customer?.email) {
+    customerInformation.email = input.customer.email;
+  }
+  if (input.customer?.firstName) {
+    customerInformation.first_name = input.customer.firstName;
+  }
+  if (input.customer?.lastName) {
+    customerInformation.last_name = input.customer.lastName;
+  }
+  if (Object.keys(customerInformation).length > 0) {
+    params.customer_information = customerInformation;
   }
 
   const session = await stripe.rawRequest(

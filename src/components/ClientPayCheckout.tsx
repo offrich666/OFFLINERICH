@@ -1,11 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
+import { useEffect, useRef, useState } from "react";
+import { loadStripeOnramp } from "@stripe/crypto";
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
@@ -17,87 +13,157 @@ import {
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 /**
- * Payment-Link-simple UX: pick an amount → pay with card / Apple Pay / Google Pay
- * on this page. No network picker, no wallet field, no Onramp KYC form.
- * Ops delivers crypto after Stripe marks the payment paid (email on the charge).
+ * Easy Onramp: amount (+ email) → Stripe Crypto Onramp widget.
+ * Crypto settles to OFFLINERICH treasury (locked). No network/wallet picker.
+ * Stripe still collects required identity inside the widget (lowest KYC for the amount).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
-  const [mode, setMode] = useState<"pick" | "pay">("pick");
+  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState<"pick" | "onramp">("pick");
+  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const onrampMountRef = useRef<HTMLDivElement>(null);
+  const clientSecretRef = useRef<string | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
 
-  const fetchClientSecret = useCallback(async () => {
-    const res = await fetch("/api/checkout/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amountUsd: paidAmount ?? amountUsd }),
-    });
-    const data = (await res.json()) as { clientSecret?: string; error?: string };
-    if (!res.ok || !data.clientSecret) {
-      throw new Error(data.error || "Could not start checkout");
-    }
-    return data.clientSecret;
-  }, [paidAmount, amountUsd]);
+  useEffect(() => {
+    document.documentElement.classList.toggle("onramp-active", mode === "onramp");
+    return () => document.documentElement.classList.remove("onramp-active");
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "onramp" || !clientSecretRef.current || !publishableKey) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+        const stripeOnramp = await loadStripeOnramp(publishableKey);
+        if (!stripeOnramp || cancelled) throw new Error("Failed to load pay form");
+        const session = stripeOnramp.createSession({
+          clientSecret: clientSecretRef.current!,
+          appearance: { theme: "dark" },
+        });
+        session.addEventListener("onramp_session_updated", (e) => {
+          const next = e.payload?.session?.status as string | undefined;
+          if (next === "fulfillment_complete") {
+            setStatus(
+              "Paid — USDC is in the OFFLINERICH treasury. Reply with your wallet for delivery.",
+            );
+          } else if (next === "fulfillment_processing") {
+            setStatus("Payment received — crypto settling to treasury…");
+          } else if (next === "initialized" || next === "requires_payment") {
+            setStatus(
+              "Complete the short Stripe steps below (card / Apple Pay / Google Pay).",
+            );
+          } else if (next) {
+            setStatus(`Status: ${next}`);
+          }
+        });
+        if (onrampMountRef.current && !cancelled) {
+          session.mount(onrampMountRef.current);
+          setStatus(
+            "Complete the short Stripe steps below (card / Apple Pay / Google Pay).",
+          );
+          requestAnimationFrame(() => {
+            onrampMountRef.current?.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Could not open payment");
+          setMode("pick");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
 
   async function startPay() {
     setError(null);
+    setStatus("");
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
       );
       return;
     }
-    if (!publishableKey || !stripePromise) {
+    if (!publishableKey) {
       setError("Stripe publishable key missing.");
       return;
     }
+
     setLoading(true);
-    setPaidAmount(amountUsd);
-    setMode("pay");
-    setLoading(false);
+    try {
+      const res = await fetch("/api/onramp/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amountUsd,
+          email: email.trim() || undefined,
+        }),
+      });
+      const data = (await res.json()) as {
+        clientSecret?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.clientSecret) {
+        throw new Error(data.error || "Could not start crypto checkout");
+      }
+      clientSecretRef.current = data.clientSecret;
+      setPaidAmount(amountUsd);
+      setMode("onramp");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Payment failed to start");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  if (mode === "pay" && paidAmount != null && stripePromise) {
+  if (mode === "onramp" && paidAmount != null) {
     return (
-      <div className="payment-stack client-pay">
+      <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Pay <strong>{formatUsd(paidAmount)}</strong> with card, Apple Pay, or
-            Google Pay
+            Pay <strong>{formatUsd(paidAmount)}</strong> → USDC to OFFLINERICH
+            treasury
           </p>
           <button
             type="button"
             className="ghost-link"
             onClick={() => {
+              clientSecretRef.current = null;
               setMode("pick");
               setPaidAmount(null);
-              setError(null);
+              setStatus("");
             }}
           >
             Change amount
           </button>
         </div>
-        <div className="stripe-embed">
-          <EmbeddedCheckoutProvider
-            key={paidAmount}
-            stripe={stripePromise}
-            options={{ fetchClientSecret }}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        <div ref={onrampMountRef} className="stripe-embed onramp-mount" />
+        <p className="fineprint">
+          Stripe requires a short identity check for crypto purchases (name /
+          email / address; higher amounts may ask for more). Cards, Apple Pay,
+          and Google Pay are accepted where Stripe Onramp is available (US +
+          EU).
+        </p>
       </div>
     );
   }
@@ -106,7 +172,10 @@ export function ClientPayCheckout() {
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
         <h2>Pay</h2>
-        <p>Pick an amount. Pay on this page — no wallet or network needed.</p>
+        <p>
+          Pick an amount. Crypto goes to the OFFLINERICH treasury when you pay —
+          then we deliver to your wallet.
+        </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
           {QUICK_AMOUNTS.map((n) => {
@@ -137,6 +206,17 @@ export function ClientPayCheckout() {
           />
         </label>
 
+        <label className="field">
+          Email (optional — speeds checkout + delivery)
+          <input
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+          />
+        </label>
+
         {error ? <p className="form-error">{error}</p> : null}
 
         <button
@@ -145,11 +225,14 @@ export function ClientPayCheckout() {
           onClick={startPay}
           disabled={loading || !amountOk}
         >
-          {loading ? "Starting…" : `Continue to pay ${amountOk ? amountLabel : rangeLabel}`}
+          {loading
+            ? "Starting…"
+            : `Continue to pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
 
         <p className="fineprint">
-          After payment we email you and send crypto to the wallet you provide.
+          No wallet or network to enter here. After pay, send us the delivery
+          wallet.
         </p>
       </div>
     </div>

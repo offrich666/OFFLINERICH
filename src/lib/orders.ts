@@ -100,8 +100,9 @@ export async function upsertAwaitingCryptoOrder(input: {
     clientWallet: input.clientWallet,
     treasuryWallet: treasuryForNetwork(input.network),
     onrampSessionId: input.onrampSessionId,
-    notes:
-      "Onramp path: client pays → crypto locked to treasury. When fulfillment_complete, status becomes treasury_funded; then send to clientWallet.",
+    notes: input.clientWallet.startsWith("(awaiting")
+      ? "Onramp → treasury funded. Ask customer for delivery wallet, then send treasury → client and mark sent."
+      : "Onramp path: client pays → crypto locked to treasury. When fulfillment_complete, send to clientWallet.",
   };
 
   orders.unshift(order);
