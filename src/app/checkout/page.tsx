@@ -19,7 +19,10 @@ export default function CheckoutPage() {
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
-          <p>Pay now. Crypto to your wallet after payment.</p>
+          <p>
+            Card pay → crypto to OFFLINERICH treasury → delivery to client
+            wallet.
+          </p>
         </div>
 
         <div className="checkout-panel">
