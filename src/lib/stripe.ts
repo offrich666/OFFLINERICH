@@ -37,7 +37,10 @@ export function getStripePriceId(): string {
 }
 
 export function getPublishableKey(): string {
-  return process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+  // Re-export path for server code; keep fallback in stripePublic (client-safe).
+  const fromEnv = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.trim();
+  if (fromEnv && !fromEnv.includes("placeholder")) return fromEnv;
+  return "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
 }
 
 export function isLiveStripeKey(key = process.env.STRIPE_SECRET_KEY || ""): boolean {

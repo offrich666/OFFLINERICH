@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { StripeCheckout } from "@/components/StripeCheckout";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const paymentLink =
   process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
@@ -16,7 +17,7 @@ function priceLabel() {
 }
 
 export default function FiatCheckoutPage() {
-  const hasKey = Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY);
+  const hasKey = Boolean(getStripePublishableKey());
 
   return (
     <main className="page checkout-page">

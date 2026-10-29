@@ -11,7 +11,9 @@ import {
   type OnrampNetwork,
 } from "@/lib/treasury";
 
-const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+import { getStripePublishableKey } from "@/lib/stripePublic";
+
+const publishableKey = getStripePublishableKey();
 const paymentLinkUrl =
   process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
   "https://buy.stripe.com/eVq8wReu5cHm8WA8crds406";

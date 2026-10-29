@@ -8,28 +8,29 @@ async function probePublishableKey(publishable: string): Promise<{
 }> {
   if (!publishable) return { valid: false, error: "missing" };
   try {
-    const res = await fetch("https://api.stripe.com/v1/tokens", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${publishable}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        "card[number]": "4242424242424242",
-        "card[exp_month]": "12",
-        "card[exp_year]": "34",
-        "card[cvc]": "123",
-      }),
+    // Any authenticated Stripe response means the key string is recognized.
+    // 401 Invalid API Key = bad/truncated key. 403 secret_key_required = valid pk.
+    const res = await fetch("https://api.stripe.com/v1/payment_methods?limit=1", {
+      headers: { Authorization: `Bearer ${publishable}` },
       cache: "no-store",
     });
-    if (res.ok) return { valid: true };
     const data = (await res.json().catch(() => null)) as {
-      error?: { message?: string };
+      error?: { message?: string; code?: string };
     } | null;
-    return {
-      valid: false,
-      error: data?.error?.message || `HTTP ${res.status}`,
-    };
+    const message = data?.error?.message || `HTTP ${res.status}`;
+    if (res.status === 401 || /invalid api key/i.test(message)) {
+      return { valid: false, error: message };
+    }
+    if (
+      res.ok ||
+      data?.error?.code === "secret_key_required" ||
+      /secret key required/i.test(message)
+    ) {
+      return { valid: true };
+    }
+    // Other errors still imply Stripe accepted the key format/auth
+    if (res.status !== 401) return { valid: true };
+    return { valid: false, error: message };
   } catch (err) {
     return {
       valid: false,

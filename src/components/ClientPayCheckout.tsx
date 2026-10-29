@@ -13,8 +13,9 @@ import {
   parseAmountUsd,
   type ClientNetworkId,
 } from "@/lib/networks";
+import { getStripePublishableKey } from "@/lib/stripePublic";
 
-const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+const publishableKey = getStripePublishableKey();
 
 type OnrampStatus = {
   readyForOnrampUi?: boolean;

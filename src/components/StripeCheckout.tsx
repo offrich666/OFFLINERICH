@@ -7,7 +7,9 @@ import {
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 
-const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
+import { getStripePublishableKey } from "@/lib/stripePublic";
+
+const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
 type Props = {
