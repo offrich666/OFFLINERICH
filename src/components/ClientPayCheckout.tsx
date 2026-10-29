@@ -159,10 +159,11 @@ export function ClientPayCheckout() {
         {status ? <p className="form-hint">{status}</p> : null}
         <div ref={onrampMountRef} className="stripe-embed onramp-mount" />
         <p className="fineprint">
-          Stripe requires a short identity check for crypto purchases (name /
-          email / address; higher amounts may ask for more). Cards, Apple Pay,
-          and Google Pay are accepted where Stripe Onramp is available (US +
-          EU).
+          Stripe runs identity + payment inside this box. If a saved card is
+          declined, tap it and choose <strong>Add a new card</strong> (many
+          banks block crypto on debit — try a credit card). Apple Pay appears
+          only after Stripe enables it on Crypto Onramp and you use Safari on
+          iPhone with a card in Wallet.
         </p>
       </div>
     );

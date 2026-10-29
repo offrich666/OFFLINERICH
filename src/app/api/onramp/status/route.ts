@@ -71,10 +71,18 @@ export async function GET() {
     readyForOnrampUi: hasSecret && hasPublishable && publishableProbe.valid,
     paymentMethods: {
       card: true,
-      applePay:
-        "Active on payment_method_domains for www.walletchainsign.com (Safari/iOS). Crypto Onramp may also need Stripe to enable Apple Pay on the account.",
-      googlePay:
-        "Active on payment_method_domains for www.walletchainsign.com (Chrome/Android).",
+      applePay: {
+        paymentMethodDomain: "active on www.walletchainsign.com",
+        onrampWidget:
+          "Not guaranteed in Crypto Onramp until Stripe Sales enables Apple Pay for Onramp on this account. Domain registration alone is not enough.",
+        device: "Safari on iPhone/iPad with a card in Apple Wallet",
+      },
+      googlePay: {
+        paymentMethodDomain: "active on www.walletchainsign.com",
+        device: "Chrome on Android with Google Pay set up",
+      },
+      cards:
+        "Credit/debit via Onramp (US+EU). Banks often decline crypto on debit — try another card. Not all cards worldwide.",
       samsungPay: "Uses Google Pay on Android Chrome — no separate Stripe button.",
     },
     settleNetworks: ["ethereum", "bitcoin"],
@@ -91,7 +99,8 @@ export async function GET() {
         ? [
             "Pay on https://www.walletchainsign.com/checkout — stay on page",
             "Webhook already: https://www.walletchainsign.com/api/webhooks/stripe",
-            "If Apple Pay missing in Onramp widget, ask Stripe sales to enable Apple Pay for Crypto Onramp",
+            "Apple Pay missing in Onramp: email Stripe support/sales — enable Apple Pay for Crypto Onramp on acct_1UCk64QWCzdANStk (domains already active)",
+            "Card declined: bank refused crypto charge — client must try another card (prefer credit)",
           ]
         : [
             "Paste live pk_live_ / sk_live_ into Vercel env and redeploy",
