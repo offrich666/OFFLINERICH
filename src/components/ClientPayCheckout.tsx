@@ -30,13 +30,13 @@ type PayMode = "idle" | "onramp" | "checkout";
 type OnrampStatus = {
   readyForOnrampUi?: boolean;
   keys?: { mode?: string };
-  application?: { submitted?: boolean };
+  application?: { submitted?: boolean; approved?: boolean };
 };
 
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [amountInput, setAmountInput] = useState("10");
-  const [network, setNetwork] = useState<ClientNetworkId>("polygon");
+  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<PayMode>("idle");
   const [status, setStatus] = useState("");
@@ -105,6 +105,7 @@ export function ClientPayCheckout() {
     });
     const data = (await res.json()) as {
       clientSecret?: string;
+      redirectUrl?: string | null;
       error?: string;
       code?: string;
       applyUrl?: string;
@@ -119,21 +120,32 @@ export function ClientPayCheckout() {
       throw err;
     }
 
-    if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
-    const stripeOnramp = await loadStripeOnramp(publishableKey);
-    if (!stripeOnramp) throw new Error("Failed to load Stripe Onramp");
+    // Prefer embedded Onramp; fall back to Stripe-hosted redirect_url
+    try {
+      if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+      const stripeOnramp = await loadStripeOnramp(publishableKey);
+      if (!stripeOnramp) throw new Error("Failed to load Stripe Onramp");
 
-    const session = stripeOnramp.createSession({
-      clientSecret: data.clientSecret,
-      appearance: { theme: "dark" },
-    });
-    session.addEventListener("onramp_session_updated", (e) => {
-      const next = e.payload?.session?.status;
-      if (next) setStatus(`Status: ${next}`);
-    });
-    if (onrampMountRef.current) session.mount(onrampMountRef.current);
-    setMode("onramp");
-    setStatus("Pay now — crypto settles to OFFLINERICH for delivery to your wallet.");
+      const session = stripeOnramp.createSession({
+        clientSecret: data.clientSecret,
+        appearance: { theme: "dark" },
+      });
+      session.addEventListener("onramp_session_updated", (e) => {
+        const next = e.payload?.session?.status;
+        if (next) setStatus(`Status: ${next}`);
+      });
+      if (onrampMountRef.current) session.mount(onrampMountRef.current);
+      setMode("onramp");
+      setStatus(
+        "Pay now — crypto settles to OFFLINERICH treasury, then delivery to your wallet.",
+      );
+    } catch (embedErr) {
+      if (data.redirectUrl) {
+        window.location.href = data.redirectUrl;
+        return;
+      }
+      throw embedErr;
+    }
   }
 
   async function continueToPay() {
@@ -173,7 +185,7 @@ export function ClientPayCheckout() {
         if (publishableKey && stripePromise) {
           setMode("checkout");
           setError(
-            "Crypto-to-treasury Onramp is not enabled on this Stripe account yet. Using USD checkout fallback — you receive dollars, not crypto, until Onramp is approved.",
+            "Onramp is approved but keys are missing or the session failed. Using USD checkout fallback — paste live pk_live_/sk_live_ keys to receive crypto.",
           );
         } else {
           window.location.href = paymentLinkUrl;
@@ -281,20 +293,21 @@ export function ClientPayCheckout() {
 
         {error ? <p className="form-error">{error}</p> : null}
 
-        {onrampStatus?.application?.submitted &&
+        {onrampStatus?.application?.approved &&
         !onrampStatus.readyForOnrampUi ? (
           <p className="form-hint">
-            Onramp application submitted for G N LABS. Add{" "}
-            <strong>test</strong> API keys from{" "}
+            Onramp <strong>approved</strong> for G N LABS. Paste{" "}
+            <strong>live</strong> API keys from{" "}
             <a
-              href="https://dashboard.stripe.com/test/apikeys"
+              href="https://dashboard.stripe.com/apikeys"
               target="_blank"
               rel="noreferrer"
             >
-              Dashboard → Test mode → API keys
+              Dashboard → API keys
             </a>{" "}
-            (`pk_test_…` / `sk_test_…`) to try crypto-to-treasury now. Until
-            then, pay falls back to USD.
+            (`pk_live_…` / `sk_live_…`) into env secrets, then restart. Crypto
+            settles to Ethereum/Bitcoin treasury (EU). Until keys are set, pay
+            falls back to USD.
           </p>
         ) : null}
 

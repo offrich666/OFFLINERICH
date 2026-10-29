@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getPublishableKey, isLiveStripeKey } from "@/lib/stripe";
 
 /**
- * Lightweight readiness probe for Crypto Onramp (no Stripe network call).
- * Application submitted → use test keys to develop; live keys after approval.
+ * Readiness probe for Crypto Onramp (no Stripe network call).
+ * Application APPROVED — live + test keys unlock crypto-to-treasury.
  */
 export async function GET() {
   const secret = process.env.STRIPE_SECRET_KEY || "";
@@ -18,7 +18,8 @@ export async function GET() {
       account: "acct_1UCk64QWCzdANStk",
       business: "G N LABS LLC",
       submitted: true,
-      note: "Fiat-to-crypto onramp application submitted — try test mode while Stripe reviews.",
+      approved: true,
+      note: "Crypto Onramp approved — integrate in test and live mode. Paste API keys to mint sessions.",
     },
     keys: {
       secretPresent: hasSecret,
@@ -26,22 +27,27 @@ export async function GET() {
       mode,
     },
     readyForOnrampUi: hasSecret && hasPublishable,
+    settleNetworks: ["ethereum", "bitcoin"],
+    settleNote:
+      "EU Onramp settles USDC to Ethereum treasury (not Polygon/Base). Ops then sends to client network.",
     nextSteps:
       hasSecret && hasPublishable
         ? [
-            "Create a session via POST /api/onramp/session",
-            "Add your domain to Onramp allowlist in Dashboard",
-            "Register webhook crypto.onramp_session.updated",
+            "Allowlist domain: https://dashboard.stripe.com/crypto-onramp/allowlist-domains",
+            "Finish checklist: https://dashboard.stripe.com/crypto-onramp/onboarding",
+            "Webhook events: crypto.onramp_session.updated, checkout.session.completed → /api/webhooks/stripe",
+            "Pay on /checkout — crypto locks to treasury, then ops sends to client wallet",
           ]
         : [
-            "Open https://dashboard.stripe.com/test/apikeys (Test mode)",
-            "Paste NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_… and STRIPE_SECRET_KEY=sk_test_… into .env.local / hosting",
-            "Restart the app, then pay on /checkout — crypto settles to treasury in test",
+            "Open https://dashboard.stripe.com/apikeys (Live mode)",
+            "Paste NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_… and STRIPE_SECRET_KEY=sk_live_… (or rk_live_…)",
+            "Restart the app / re-run agent after secrets are saved",
+            "Allowlist your domain, then pay on /checkout",
           ],
     links: {
       onboarding: "https://dashboard.stripe.com/crypto-onramp/onboarding",
-      testApiKeys: "https://dashboard.stripe.com/test/apikeys",
       liveApiKeys: "https://dashboard.stripe.com/apikeys",
+      testApiKeys: "https://dashboard.stripe.com/test/apikeys",
       domainAllowlist: "https://dashboard.stripe.com/crypto-onramp/allowlist-domains",
       roadmap: "/docs/CRYPTO_RECEIVE_ROADMAP.md",
     },

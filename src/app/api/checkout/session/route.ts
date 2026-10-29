@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const origin = getAppOrigin(request);
 
     let customerEmail: string | undefined;
-    let network = "polygon";
+    let network = "ethereum";
     let wallet = "";
     let asset = "USDC";
     let amountUsd = MIN_AMOUNT_USD;

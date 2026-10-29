@@ -1,89 +1,67 @@
 # Roadmap: Client pays $10 → you receive crypto
 
-## Reality check
+## Status (G N LABS LLC · `acct_1UCk64QWCzdANStk`)
 
-| Method | Client pays card | You receive crypto? | Status on G N LABS LLC (`acct_1UCk64QWCzdANStk`) |
-| --- | --- | --- | --- |
-| Stripe Checkout / Payment Link | Yes | **No** — USD only | Live today |
-| **Stripe Crypto Onramp** (wallet locked to **your treasury**) | Yes | **Yes** — USDC/ETH/BTC to treasury | **Application submitted** — use **test mode** now; live after approval |
-| Treasury Financial Account → convert USD→USDC → wallet | Indirect | Yes (after convert) | No financial account yet |
-| Outside Stripe (exchange) | After bank payout | Yes | Always available |
+| Step | Status |
+| --- | --- |
+| Crypto Onramp application | **APPROVED** (live + test) |
+| App wiring (Onramp → treasury → ops) | **Done** |
+| Live API keys in env | **Needed** — paste `pk_live_…` / `sk_live_…` |
+| Domain allowlist | **Needed** |
+| Webhook `crypto.onramp_session.updated` | **Needed** on your HTTPS domain |
 
-**Target architecture (this repo):**
+## Architecture
 
 ```
 Client pays $10–$9000 (card / Apple Pay / Google Pay)
         │
         ▼
-Stripe Crypto Onramp  ──lock──►  YOUR treasury wallet (crypto lands HERE)
+Stripe Crypto Onramp  ──lock──►  YOUR treasury
+   (EU: USDC on Ethereum, or BTC)
         │
         ▼
-Ops / API sends treasury ──► client wallet (client never sees treasury)
+Ops /api/ops/transfers  ──send──►  client wallet (Polygon / Base / BSC / ETH / BTC)
 ```
+
+**EU note:** Stripe Onramp does not settle USDC to Polygon/Base for EU. App funds **Ethereum** treasury for all EVM client networks, then ops sends to the client’s chosen chain.
+
+Treasury (internal):
+
+- EVM: `0x1dbB04Fe817A2C49DB853f2C49d29Db441355FE9`
+- BTC: `bc1qly9n852q3j5csvgd59lcmazhfu74fc77x88vrj`
 
 ## Phase 0 — Done in app
 
 - [x] Amount **$10–$9,000**
-- [x] Client picks network + wallet (no treasury shown)
-- [x] Live Payment Link (USD fallback)
-- [x] Ops queue `/ops/transfers` for treasury→client
-- [x] Onramp session API locked to treasury (`POST /api/onramp/session`)
-- [x] Webhook hooks for checkout + onramp `fulfillment_complete` → `treasury_funded`
+- [x] Client network + wallet (treasury hidden)
+- [x] Onramp session locked to treasury (`POST /api/onramp/session`)
+- [x] EU-safe settle networks (ethereum / bitcoin)
+- [x] Webhook → `treasury_funded` on `fulfillment_complete`
+- [x] Ops queue `/ops/transfers`
 - [x] Status probe `GET /api/onramp/status`
+- [x] USD Payment Link fallback
 
-## Phase 1 — Dashboard (in progress)
+## Phase 1 — You (now that approved)
 
-### 1a — Application — DONE
-
-- [x] Submitted Crypto Onramp for **G N LABS LLC** (Stripe email confirmation)
-- [ ] Watch status: **[Onramp onboarding](https://dashboard.stripe.com/crypto-onramp/onboarding)**
-
-### 1b — Test mode NOW (while Stripe reviews)
-
-Stripe explicitly allows trying the integration in **test mode** after submit.
-
-1. Open **[Test API keys](https://dashboard.stripe.com/test/apikeys)** (toggle **Test mode** on).
-2. Paste into `.env.local` / hosting:
-   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_…`
-   - `STRIPE_SECRET_KEY=sk_test_…` (or restricted `rk_test_…`)
-   - `STRIPE_WEBHOOK_SECRET=whsec_…` (from `stripe listen` or Dashboard test webhook)
-3. Allowlist your local/dev domain: **[Onramp domain allowlist](https://dashboard.stripe.com/crypto-onramp/allowlist-domains)**
-4. Restart app → `/checkout` → Onramp UI (crypto → treasury in **test**).
-
-### 1c — Live mode (after Stripe approves)
-
-1. Paste **live** keys from [API keys](https://dashboard.stripe.com/apikeys)
-2. Webhook → `https://YOUR_DOMAIN/api/webhooks/stripe`  
+1. **[API keys](https://dashboard.stripe.com/apikeys)** → paste into Cloud Agent secrets / `.env.local`:
+   - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…`
+   - `STRIPE_SECRET_KEY=sk_live_…` or `rk_live_…`
+   - `STRIPE_WEBHOOK_SECRET=whsec_…`
+2. **[Onboarding checklist](https://dashboard.stripe.com/crypto-onramp/onboarding)**
+3. **[Domain allowlist](https://dashboard.stripe.com/crypto-onramp/allowlist-domains)** (your HTTPS host + localhost if testing)
+4. Webhook → `https://YOUR_DOMAIN/api/webhooks/stripe`  
    Events: `crypto.onramp_session.updated`, `checkout.session.completed`, …
 
-**After 1c:** real client payments deliver **crypto to your treasury**.
+**After keys:** `/checkout` opens Onramp → crypto lands in treasury → mark sent in ops.
 
-## Phase 2 — Already coded (activates with keys)
+## Phase 3 — Optional auto outbound
 
-- Checkout prefers **Onramp → treasury** (crypto-in).
-- Order row + `treasury_funded` when Onramp completes.
-- BSC: Onramp funds treasury on Polygon/Base/ETH; send BSC manually (no BSC Onramp).
+Treasury Financial Account + Global Payouts (stablecoin to wallets), or keep manual ops.
 
-## Phase 3 — Optional auto treasury→client
+## Links
 
-1. Create/enable **[Treasury Financial Account](https://dashboard.stripe.com/treasury)** + USDC.
-2. Enable **[Global Payouts / stablecoin to wallets](https://docs.stripe.com/global-payouts/send-money/stablecoins)** if needed.
-3. Automate outbound USDC to `clientWallet` (or keep manual mark-sent in `/ops/transfers`).
-
-## Phase 4 — Hardening
-
-- Production domain allowlist + Apple Pay domain verification.
-- Alerts when `fulfillment_complete` but no outbound tx within N hours.
-- Reconcile Onramp fees vs client-facing amount.
-
-## What you must click next
-
-| Action | Link |
+| Action | URL |
 | --- | --- |
-| **Paste test API keys** (unblocks crypto-in testing) | https://dashboard.stripe.com/test/apikeys |
-| Check Onramp review status | https://dashboard.stripe.com/crypto-onramp/onboarding |
+| Live API keys | https://dashboard.stripe.com/apikeys |
+| Onboarding checklist | https://dashboard.stripe.com/crypto-onramp/onboarding |
 | Domain allowlist | https://dashboard.stripe.com/crypto-onramp/allowlist-domains |
-| Live keys (after approval) | https://dashboard.stripe.com/apikeys |
-| Treasury FA (Phase 3) | https://dashboard.stripe.com/treasury |
-
-Without keys in env, `/checkout` falls back to the **USD Payment Link** (dollars, not crypto).

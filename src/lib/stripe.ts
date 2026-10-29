@@ -68,15 +68,16 @@ export function getLivePaymentLinkUrl(): string {
   );
 }
 
-/** Map client delivery network → Onramp network that funds treasury. */
+/**
+ * Map client delivery network → Onramp network that funds treasury.
+ * EU Onramp: USDC/ETH settle on ethereum; BTC on bitcoin.
+ * Polygon/Base/BSC clients still get delivery later from the same EVM treasury.
+ */
 export function onrampNetworkForClientNetwork(
   clientNetwork: string,
 ): OnrampNetwork {
   if (clientNetwork === "bitcoin") return "bitcoin";
-  if (clientNetwork === "ethereum") return "ethereum";
-  if (clientNetwork === "base") return "base";
-  // polygon + bsc (no BSC onramp) → fund treasury on polygon
-  return "polygon";
+  return "ethereum";
 }
 
 export function onrampCurrencyForNetwork(network: OnrampNetwork): OnrampCurrency {
@@ -110,6 +111,8 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
     destination_networks: [...ONRAMP_NETWORKS],
     lock_wallet_address: true,
     wallet_addresses: wallets,
+    // Dark theme for embedded / hosted onramp
+    appearance: { theme: "dark" },
     metadata: {
       project: "offlinerich",
       flow: "pay_to_treasury_then_client",
@@ -120,6 +123,7 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
       onramp_currency: destinationCurrency,
       treasury_evm: wallets.ethereum,
       treasury_btc: wallets.bitcoin,
+      eu_note: "settle_on_ethereum_or_bitcoin",
     },
   };
 

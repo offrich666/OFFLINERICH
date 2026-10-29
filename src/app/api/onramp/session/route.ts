@@ -20,14 +20,14 @@ export async function POST(request: Request) {
         {
           error: "STRIPE_SECRET_KEY missing",
           code: "missing_keys",
-          hint: "Add pk_live_/rk_live_ after Onramp approval. See docs/CRYPTO_RECEIVE_ROADMAP.md",
+          hint: "Onramp is approved — paste pk_live_/sk_live_ into env. See docs/CRYPTO_RECEIVE_ROADMAP.md",
         },
         { status: 503 },
       );
     }
 
     let amountUsd = MIN_AMOUNT_USD;
-    let network = "polygon";
+    let network = "ethereum";
     let wallet = "";
     let asset = "USDC";
 

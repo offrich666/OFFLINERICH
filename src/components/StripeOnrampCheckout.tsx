@@ -22,7 +22,7 @@ type Props = {
 
 export function StripeOnrampCheckout({ amountUsd }: Props) {
   const amount = amountUsd || defaultOnrampAmountUsd();
-  const [network, setNetwork] = useState<OnrampNetwork>("polygon");
+  const [network, setNetwork] = useState<OnrampNetwork>("ethereum");
   const [currency, setCurrency] = useState<OnrampCurrency>("usdc");
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string | null>(
@@ -112,7 +112,7 @@ export function StripeOnrampCheckout({ amountUsd }: Props) {
         </p>
         <dl className="meta-list compact">
           <div>
-            <dt>ETH / Polygon / Base</dt>
+            <dt>Ethereum (USDC settle · EU)</dt>
             <dd>
               <code>{TREASURY.evm}</code>
             </dd>
@@ -124,10 +124,9 @@ export function StripeOnrampCheckout({ amountUsd }: Props) {
             </dd>
           </div>
           <div>
-            <dt>BSC</dt>
+            <dt>Same EVM for later Polygon/Base/BSC sends</dt>
             <dd>
               <code>{TREASURY.bsc}</code>
-              <span className="hint"> — not on Stripe Onramp; use Polygon/Base/ETH</span>
             </dd>
           </div>
         </dl>
@@ -180,28 +179,41 @@ export function StripeOnrampCheckout({ amountUsd }: Props) {
       {status ? <p className="fineprint">{status}</p> : null}
       {error ? (
         <div className="blocked-hint">
-          <strong>Onramp not ready on this Stripe account yet</strong>
+          <strong>Onramp approved — add live keys</strong>
           <p>{error}</p>
           <ol>
             <li>
-              Open{" "}
+              Finish the{" "}
               <a
-                href="https://dashboard.stripe.com/crypto-onramp/get-started"
+                href="https://dashboard.stripe.com/crypto-onramp/onboarding"
                 target="_blank"
                 rel="noreferrer"
               >
-                Stripe Crypto Onramp application
+                Onramp checklist
               </a>{" "}
-              on <strong>G N LABS LLC</strong> (live) and submit it.
+              and{" "}
+              <a
+                href="https://dashboard.stripe.com/crypto-onramp/allowlist-domains"
+                target="_blank"
+                rel="noreferrer"
+              >
+                allowlist your domain
+              </a>
+              .
             </li>
             <li>
-              Put <code>pk_live_…</code> / <code>sk_live_…</code> (or restricted{" "}
-              <code>rk_live_…</code>) into <code>.env.local</code>.
+              Paste <code>pk_live_…</code> / <code>sk_live_…</code> (or{" "}
+              <code>rk_live_…</code>) from{" "}
+              <a
+                href="https://dashboard.stripe.com/apikeys"
+                target="_blank"
+                rel="noreferrer"
+              >
+                API keys
+              </a>{" "}
+              into env / Cloud secrets.
             </li>
-            <li>
-              Until Onramp is approved, use the live Payment Link (fiat settles to
-              Stripe; convert/payout USDC to treasury from Dashboard):
-            </li>
+            <li>Until keys are set, USD Payment Link still works:</li>
           </ol>
           <p>
             <a className="primary-cta" href={paymentLinkUrl} target="_blank" rel="noreferrer">
