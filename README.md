@@ -16,14 +16,16 @@ Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 ## Flow
 
 ```
-Client pays $5–$9000
+Client picks amount ($5–$9,000) → pays on /checkout
+        │  (card / Apple Pay / Google Pay — Embedded Checkout)
+        ▼
+USD in Stripe  →  ops funds treasury  →  crypto to client wallet
         │
         ▼
-Stripe Crypto Onramp  ──lock──►  treasury (EU: Ethereum USDC or BTC)
-        │
-        ▼
-/ops/transfers  ──send──►  client wallet (any network they picked)
+Client replies to receipt email with delivery wallet
 ```
+
+Advanced Onramp (crypto straight to treasury) still at `/onramp` if needed.
 
 Treasury (internal):
 
