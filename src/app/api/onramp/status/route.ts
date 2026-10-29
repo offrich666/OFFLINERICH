@@ -37,9 +37,10 @@ export async function GET() {
     nextSteps:
       hasSecret && hasPublishable
         ? [
-            "Allowlist domain: https://dashboard.stripe.com/crypto-onramp/allowlist-domains",
+            "Domain allowlist done (www.walletchainsign.com + localhost)",
+            "Deploy this app to https://www.walletchainsign.com so /checkout is live",
+            "Webhook → https://www.walletchainsign.com/api/webhooks/stripe (crypto.onramp_session.updated, checkout.session.completed)",
             "Finish checklist: https://dashboard.stripe.com/crypto-onramp/onboarding",
-            "Webhook events: crypto.onramp_session.updated, checkout.session.completed → /api/webhooks/stripe",
             "Pay on /checkout — crypto locks to treasury, then ops sends to client wallet",
           ]
         : [

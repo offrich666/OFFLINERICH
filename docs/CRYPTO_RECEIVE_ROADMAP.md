@@ -7,8 +7,9 @@
 | Crypto Onramp application | **APPROVED** (live + test) |
 | App wiring (Onramp → treasury → ops) | **Done** |
 | Live API keys in env | **Needed** — paste `pk_live_…` / `sk_live_…` |
-| Domain allowlist | **Needed** |
-| Webhook `crypto.onramp_session.updated` | **Needed** on your HTTPS domain |
+| Domain allowlist | **Done** — `www.walletchainsign.com`, `localhost` |
+| Webhook `crypto.onramp_session.updated` | Point at `https://www.walletchainsign.com/api/webhooks/stripe` |
+| Deploy this branch to production | `/checkout` must be live on walletchainsign.com (currently 404) |
 
 ## Architecture
 
@@ -48,9 +49,11 @@ Treasury (internal):
    - `STRIPE_SECRET_KEY=sk_live_…` or `rk_live_…`
    - `STRIPE_WEBHOOK_SECRET=whsec_…`
 2. **[Onboarding checklist](https://dashboard.stripe.com/crypto-onramp/onboarding)**
-3. **[Domain allowlist](https://dashboard.stripe.com/crypto-onramp/allowlist-domains)** (your HTTPS host + localhost if testing)
-4. Webhook → `https://YOUR_DOMAIN/api/webhooks/stripe`  
+3. ~~**Domain allowlist**~~ — done: `www.walletchainsign.com`, `localhost`  
+   (If you also use apex `walletchainsign.com` without www, add that too. Standalone hosted onramp uses `crypto.link.com`.)
+4. Webhook → `https://www.walletchainsign.com/api/webhooks/stripe`  
    Events: `crypto.onramp_session.updated`, `checkout.session.completed`, …
+5. **Deploy** this branch to Vercel so `/checkout` is live (site root is up; `/checkout` was 404).
 
 **After keys:** `/checkout` opens Onramp → crypto lands in treasury → mark sent in ops.
 

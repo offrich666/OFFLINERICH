@@ -7,8 +7,9 @@
 Paste **live API keys** to go live:
 
 1. https://dashboard.stripe.com/apikeys → `pk_live_…` + `sk_live_…` / `rk_live_…`
-2. https://dashboard.stripe.com/crypto-onramp/allowlist-domains
+2. ~~Domain allowlist~~ — `www.walletchainsign.com` + `localhost`
 3. https://dashboard.stripe.com/crypto-onramp/onboarding
+4. Deploy this branch to https://www.walletchainsign.com (set live Stripe env vars on Vercel)
 
 Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 
