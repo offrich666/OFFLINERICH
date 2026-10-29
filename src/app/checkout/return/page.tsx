@@ -3,8 +3,6 @@ import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { getStripe } from "@/lib/stripe";
 
-export const instant = false;
-
 type Props = {
   searchParams: Promise<{ session_id?: string }>;
 };

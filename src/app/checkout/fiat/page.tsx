@@ -2,8 +2,6 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { StripeCheckout } from "@/components/StripeCheckout";
 
-export const instant = false;
-
 const paymentLink =
   process.env.NEXT_PUBLIC_STRIPE_PAYMENT_LINK_URL ||
   "https://buy.stripe.com/eVq8wReu5cHm8WA8crds406";

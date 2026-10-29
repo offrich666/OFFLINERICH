@@ -7,8 +7,6 @@ import {
   getUsdcEnvironment,
 } from "@/lib/crossmint";
 
-export const instant = false;
-
 export default function OnrampPage() {
   const amount = getDefaultOnrampAmount();
   const chain = getDefaultOnrampChain();

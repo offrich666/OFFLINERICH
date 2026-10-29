@@ -1,13 +1,12 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
   // Keep secrets / local JSON out of Vercel serverless file tracing
   outputFileTracingExcludes: {
     "*": ["./.env*", "./data/**/*", "./.projects/**/*"],
   },
+  // Optional pretty-logger pulled by WalletConnect (Crossmint) — not required at build
+  serverExternalPackages: ["pino", "pino-pretty", "encoding"],
   turbopack: {
     rules: {
       "*.css": {
@@ -15,6 +14,15 @@ const nextConfig: NextConfig = {
         as: "*.css",
       },
     },
+  },
+  webpack: (config) => {
+    config.resolve = config.resolve ?? {};
+    config.resolve.fallback = {
+      ...(config.resolve.fallback ?? {}),
+      "pino-pretty": false,
+      encoding: false,
+    };
+    return config;
   },
 };
 

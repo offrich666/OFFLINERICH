@@ -3,8 +3,6 @@ import Link from "next/link";
 import { ClientPayCheckout } from "@/components/ClientPayCheckout";
 import { checkoutAmountRangeLabel } from "@/lib/networks";
 
-export const instant = false;
-
 export default function CheckoutPage() {
   const range = checkoutAmountRangeLabel();
 

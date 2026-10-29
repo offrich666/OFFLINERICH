@@ -2,8 +2,6 @@ import { connection } from "next/server";
 import { listTransferOrders } from "@/lib/orders";
 import { MarkSentForm } from "@/components/MarkSentForm";
 
-export const instant = false;
-
 type Props = {
   searchParams: Promise<{ key?: string }>;
 };
