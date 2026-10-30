@@ -211,6 +211,11 @@
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .btn:disabled {
@@ -312,6 +317,54 @@
 
 .footnotes li + li {
   margin-top: 0.55rem;
+}
+
+.share-box {
+  margin: 1rem 0;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(11, 61, 46, 0.1);
+}
+
+.share-box h3,
+.send h3 {
+  margin: 0 0 0.5rem;
+  font-family: var(--display);
+  font-size: 1.1rem;
+}
+
+.share-input {
+  width: 100%;
+  margin: 0.5rem 0 0.75rem;
+  border: 1px solid rgba(11, 61, 46, 0.18);
+  background: #fff;
+  color: var(--ink);
+  border-radius: 0.45rem;
+  padding: 0.65rem 0.75rem;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.actions.stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.steps {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: var(--muted);
+  line-height: 1.5;
+  font-size: 0.92rem;
+}
+
+.steps li + li {
+  margin-top: 0.35rem;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
 }
 
 .footnotes a {

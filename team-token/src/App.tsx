@@ -20,31 +20,14 @@ import {
   subscribeWalletEvents,
   switchChain,
 } from "./lib/ethereum";
+import {
+  buildReceiveShareUrl,
+  loadSavedToken,
+  saveToken,
+  type TokenState,
+} from "./lib/tokenShare";
 import type { Address, Hex } from "viem";
 import "./App.css";
-
-type TokenState = {
-  address: Address;
-  name: string;
-  symbol: string;
-  logo: string;
-  displayPrice: string;
-};
-
-const STORAGE_KEY = "relaymark-team-token";
-
-function loadSaved(): TokenState | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as TokenState) : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveToken(token: TokenState) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(token));
-}
 
 export default function App() {
   const [account, setAccount] = useState<Address | null>(null);
@@ -66,10 +49,16 @@ export default function App() {
   const [amount, setAmount] = useState("");
   const [lastTx, setLastTx] = useState<Hex | null>(null);
   const [walletReady, setWalletReady] = useState("Checking MetaMask Connect…");
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
-    const saved = loadSaved();
-    if (saved) setToken(saved);
+    const saved = loadSavedToken();
+    if (saved) {
+      setToken(saved);
+      setShareUrl(buildReceiveShareUrl(saved));
+      if (saved.chainId) setChainId(saved.chainId);
+    }
 
     let cancelled = false;
     let unsub: (() => void) | undefined;
@@ -102,7 +91,8 @@ export default function App() {
       return;
     }
     let cancelled = false;
-    readBalance(token.address, account, chainId)
+    const readOn = token.chainId || chainId;
+    readBalance(token.address, account, readOn)
       .then((b) => {
         if (!cancelled) setBalance(b);
       })
@@ -113,6 +103,22 @@ export default function App() {
       cancelled = true;
     };
   }, [token, account, chainId, lastTx]);
+
+  function rememberToken(next: TokenState) {
+    setToken(next);
+    saveToken(next);
+    const url = buildReceiveShareUrl(next);
+    setShareUrl(url);
+    return url;
+  }
+
+  async function onCopyShare() {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setShareCopied(true);
+    setStatus("Receive link copied — send it to anyone with MetaMask.");
+    window.setTimeout(() => setShareCopied(false), 2000);
+  }
 
   async function onConnect() {
     setError("");
@@ -186,23 +192,22 @@ export default function App() {
       });
       const next: TokenState = {
         address,
+        chainId,
         name: name.trim(),
         symbol: symbol.trim().toUpperCase(),
         logo,
         displayPrice: displayPrice.trim(),
       };
-      setToken(next);
-      saveToken(next);
-      setStatus(`Token deployed at ${shortAddress(address)}`);
+      rememberToken(next);
+      setStatus(`Deployed ${shortAddress(address)} — share the receive link so others can add it in MetaMask.`);
       try {
         await addTokenToMetaMask({
           address,
           symbol: next.symbol,
           image: logo || undefined,
         });
-        setStatus(`Deployed and added to MetaMask: ${shortAddress(address)}`);
       } catch {
-        setStatus(`Deployed ${shortAddress(address)} — add to MetaMask manually if needed.`);
+        /* share link still works for recipients */
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Deploy failed");
@@ -226,14 +231,14 @@ export default function App() {
     }
     const next: TokenState = {
       address: addr as Address,
+      chainId,
       name: name.trim() || "Team Token",
       symbol: symbol.trim().toUpperCase() || "TEAM",
       logo,
       displayPrice: displayPrice.trim(),
     };
-    setToken(next);
-    saveToken(next);
-    setStatus(`Using token ${shortAddress(addr)}`);
+    rememberToken(next);
+    setStatus(`Using token ${shortAddress(addr)} — share the receive link with MetaMask users.`);
   }
 
   async function onWatch() {
@@ -275,15 +280,22 @@ export default function App() {
     setBusy(true);
     setStatus("Confirm transfer in MetaMask…");
     try {
+      const sendChain = token.chainId || chainId;
+      if (chainId !== sendChain) {
+        await switchChain(sendChain);
+        setChainId(sendChain);
+      }
       const hash = await sendToken({
         token: token.address,
         to: to as Address,
         amount: amount.trim(),
         account,
-        chainId,
+        chainId: sendChain,
       });
       setLastTx(hash);
-      setStatus(`Sent ${amount} ${token.symbol}`);
+      setStatus(
+        `Sent ${amount} ${token.symbol}. After they added the token via your receive link, it shows in their MetaMask like other tokens.`,
+      );
       setAmount("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Send failed");
@@ -314,16 +326,16 @@ export default function App() {
         <section className="hero">
           <h1>RelayMark</h1>
           <p className="lede">
-            Create a team ERC-20, attach a logo, add it in MetaMask, and send to 0x
-            addresses on the same network.
+            Deploy once, share a receive link, paste their MetaMask <code>0x</code> address, and
+            send. They add the token in MetaMask so it shows with their other tokens.
           </p>
           <p className="note">
-            Uses official{" "}
+            MetaMask ↔ MetaMask on one live EVM network (Ethereum / Polygon / Base / BSC). TRON{" "}
+            <code>T…</code> addresses cannot receive this ERC-20. Uses official{" "}
             <a href="https://github.com/orgs/MetaMask/repositories" target="_blank" rel="noreferrer">
               MetaMask Connect
-            </a>{" "}
-            (<code>@metamask/connect-evm</code>) on live mainnets (default Ethereum). Not TRON —
-            use <code>0x…</code> wallets. Deploy and sends spend real gas.
+            </a>
+            .
           </p>
           <p className="hint wallet-hint">
             {walletReady}{" "}
@@ -392,11 +404,11 @@ export default function App() {
               />
             </label>
             <label>
-              Logo URL (https…)
+              Logo URL (https… — required for share links)
               <input
                 value={logo.startsWith("data:") ? "" : logo}
                 onChange={(e) => setLogo(e.target.value)}
-                placeholder="https://…/logo.png"
+                placeholder="https://…/logo.png (https so every MetaMask can load it)"
               />
             </label>
             <label className="file">
@@ -446,26 +458,48 @@ export default function App() {
                     ? ` · display ${token.displayPrice || displayPrice}`
                     : ""}
                 </p>
-                <a href={explorerTokenUrl(chainId, token.address)} target="_blank" rel="noreferrer">
+                <a
+                  href={explorerTokenUrl(token.chainId || chainId, token.address)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   {shortAddress(token.address)}
                 </a>
               </div>
             </div>
             <p className="balance">
-              Your balance: <strong>{balance || "…"}</strong> {token.symbol}
+              Your balance: <strong>{balance || "…"}</strong> {token.symbol} ·{" "}
+              {CHAINS.find((c) => c.id === (token.chainId || chainId))?.label}
             </p>
-            <button type="button" className="btn ghost" onClick={onWatch} disabled={busy}>
-              Add logo + token to MetaMask
-            </button>
+
+            <div className="share-box">
+              <h3>1. Share receive link</h3>
+              <p className="hint">
+                They open this in a browser, connect MetaMask, add the token (logo + symbol), then
+                copy their <code>0x</code> address back to you.
+              </p>
+              <input className="share-input" readOnly value={shareUrl} />
+              <div className="actions">
+                <button type="button" className="btn primary" onClick={onCopyShare} disabled={!shareUrl}>
+                  {shareCopied ? "Link copied" : "Copy receive link"}
+                </button>
+                <a className="btn ghost" href={shareUrl || "#/receive"}>
+                  Open receive page
+                </a>
+                <button type="button" className="btn ghost" onClick={onWatch} disabled={busy}>
+                  Add token in my MetaMask
+                </button>
+              </div>
+            </div>
 
             <form className="form send" onSubmit={onSend}>
-              <h3>Send via MetaMask</h3>
+              <h3>2. When they send you their MetaMask address — pay out</h3>
               <label>
-                Recipient MetaMask address
+                Their MetaMask receive address
                 <input
                   value={recipient}
                   onChange={(e) => setRecipient(e.target.value)}
-                  placeholder="0x… (not a TRON T… address)"
+                  placeholder="0x… from their receive page (not TRON T…)"
                   required
                 />
               </label>
@@ -485,7 +519,11 @@ export default function App() {
             {lastTx ? (
               <p className="tx">
                 Last tx:{" "}
-                <a href={explorerTxUrl(chainId, lastTx)} target="_blank" rel="noreferrer">
+                <a
+                  href={explorerTxUrl(token.chainId || chainId, lastTx)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   {shortAddress(lastTx)}
                 </a>
               </p>
@@ -497,29 +535,20 @@ export default function App() {
         {error ? <p className="status err">{error}</p> : null}
 
         <section className="panel footnotes">
-          <h2>About logos &amp; price</h2>
+          <h2>How it shows in every MetaMask</h2>
           <ul>
             <li>
-              MetaMask shows your logo when the token is added with{" "}
-              <code>wallet_watchAsset</code> (button above). A public https logo URL is more
-              reliable than a local upload.
+              Recipients must open your receive link and tap <strong>Add token to MetaMask</strong>{" "}
+              once — then logo + symbol appear next to their other tokens. Use an{" "}
+              <code>https://</code> logo URL so every wallet can load it.
             </li>
             <li>
-              MetaMask market price appears only after aggregators list the token (liquidity +
-              CoinGecko/CoinMarketCap). The optional “display price” here is for your team UI
-              only.
+              Built-in market price (like USDC) only appears after CoinGecko/CMC + liquidity. Until
+              then the token still holds and transfers normally.
             </li>
             <li>
-              Trust Wallet’s{" "}
-              <a
-                href="https://github.com/trustwallet/assets/tree/master/blockchains"
-                target="_blank"
-                rel="noreferrer"
-              >
-                assets repo
-              </a>{" "}
-              is a separate listing PR for Trust Wallet — it does not make a token MetaMask-only
-              or set its price.
+              One network per deploy. Everyone must use the same live chain and MetaMask{" "}
+              <code>0x</code> addresses — not TRON.
             </li>
           </ul>
         </section>
