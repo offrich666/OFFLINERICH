@@ -16,6 +16,7 @@ import {
   formatUsd,
   isValidAmountUsd,
   isValidWalletAddress,
+  normalizeWalletAddress,
   parseAmountUsd,
   type ClientNetworkId,
   type OnrampClientNetworkId,
@@ -63,7 +64,9 @@ export function ClientPayCheckout() {
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
   const networks =
     path === "instant" ? ONRAMP_CLIENT_NETWORKS : CLIENT_NETWORKS;
+  const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
+  const walletDirty = wallet.trim().length > 0;
   const canStart = amountOk && walletOk;
 
   // Keep network valid when switching paths (instant only eth/btc).
@@ -182,7 +185,7 @@ export function ClientPayCheckout() {
           amountUsd,
           email: email.trim() || undefined,
           network,
-          wallet: wallet.trim(),
+          wallet: normalizedWallet,
         };
         cardSecretPromiseRef.current = null;
         setCardReady(true);
@@ -199,7 +202,7 @@ export function ClientPayCheckout() {
             amountUsd,
             email: email.trim() || undefined,
             network: network as OnrampClientNetworkId,
-            wallet: wallet.trim(),
+            wallet: normalizedWallet,
           }),
         });
         const data = (await res.json()) as {
@@ -210,9 +213,11 @@ export function ClientPayCheckout() {
           throw new Error(data.error || "Could not start crypto checkout");
         }
         secretRef.current = data.clientSecret;
+        setWallet(normalizedWallet);
         setPaidAmount(amountUsd);
         setMode("onramp");
       }
+      setWallet(normalizedWallet);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
     } finally {
@@ -380,6 +385,13 @@ export function ClientPayCheckout() {
             spellCheck={false}
           />
         </label>
+        {walletDirty && !walletOk ? (
+          <p className="form-error">
+            {network === "bitcoin"
+              ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
+              : "Enter a valid wallet (0x + 40 hex characters)."}
+          </p>
+        ) : null}
 
         <label className="field">
           Email (optional — speeds checkout)

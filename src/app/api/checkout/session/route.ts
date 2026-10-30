@@ -12,6 +12,7 @@ import {
   getNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
+  normalizeWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
 
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
     } catch {
       // empty body
     }
+
+    wallet = normalizeWalletAddress(network, wallet);
 
     if (!isValidAmountUsd(amountUsd)) {
       return NextResponse.json(

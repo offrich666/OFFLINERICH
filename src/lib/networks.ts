@@ -28,13 +28,23 @@ export function isOnrampClientNetwork(id: string): id is OnrampClientNetworkId {
   return ONRAMP_CLIENT_NETWORKS.some((n) => n.id === id);
 }
 
-export function isValidWalletAddress(networkId: string, address: string): boolean {
+export function normalizeWalletAddress(networkId: string, address: string): string {
   const trimmed = address.trim();
+  const net = getNetwork(networkId);
+  if (!net) return trimmed;
+  if (net.kind === "bitcoin") return trimmed;
+  // Accept 0X… and normalize to 0x…
+  if (/^0x/i.test(trimmed)) return `0x${trimmed.slice(2)}`;
+  return trimmed;
+}
+
+export function isValidWalletAddress(networkId: string, address: string): boolean {
+  const trimmed = normalizeWalletAddress(networkId, address);
   if (!trimmed) return false;
   const net = getNetwork(networkId);
   if (!net) return false;
   if (net.kind === "bitcoin") {
-    return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(trimmed);
+    return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/i.test(trimmed);
   }
   return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
 }
