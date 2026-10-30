@@ -89,6 +89,15 @@
   line-height: 1.45;
 }
 
+.note a,
+.wallet-hint a {
+  color: var(--forest);
+}
+
+.wallet-hint {
+  margin: 0.75rem 0 0;
+}
+
 .panel {
   padding: 1.25rem 1.35rem;
   background: rgba(255, 255, 255, 0.62);

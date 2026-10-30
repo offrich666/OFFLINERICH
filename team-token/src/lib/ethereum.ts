@@ -7,85 +7,70 @@ import {
   formatUnits,
   type Address,
   type Hex,
+  type WalletClient,
 } from "viem";
-import { CHAINS, getChain } from "./chains";
+import { CHAINS, getChain, getViemChain } from "./chains";
 import artifact from "./teamTokenArtifact.json";
+import {
+  connectWithMetaMask,
+  formatWalletError,
+  getEvmClient,
+  resolveMetaMaskProvider,
+  switchMetaMaskChain,
+  type EthereumProvider,
+} from "./metamask";
 
-export type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
-};
+export {
+  formatWalletError,
+  getEvmClient,
+  probeMetaMask,
+  resolveMetaMaskProvider,
+  METAMASK_INSTALL_URL,
+} from "./metamask";
 
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
+/** @deprecated prefer resolveMetaMaskProvider */
+export async function getProvider(): Promise<EthereumProvider> {
+  return resolveMetaMaskProvider();
 }
 
-export function getProvider(): EthereumProvider | null {
-  return typeof window !== "undefined" && window.ethereum ? window.ethereum : null;
+function publicClientFor(chainId: number) {
+  const chain = getViemChain(chainId);
+  const option = getChain(chainId);
+  return createPublicClient({
+    chain,
+    transport: http(option?.rpcUrls[0] ?? chain.rpcUrls.default.http[0]),
+  });
+}
+
+async function wallet(): Promise<{
+  client: WalletClient;
+  account: Address;
+  provider: EthereumProvider;
+}> {
+  const mm = await resolveMetaMaskProvider();
+  const accounts = (await mm.request({ method: "eth_accounts", params: [] })) as string[];
+  const account = accounts[0] as Address | undefined;
+  if (!account) {
+    throw new Error("MetaMask has no connected account. Click Connect MetaMask first.");
+  }
+  const client = createWalletClient({
+    account,
+    transport: custom(mm),
+  });
+  return { client, account, provider: mm };
 }
 
 export async function connectWallet(): Promise<{
   address: Address;
   chainId: number;
+  provider: EthereumProvider;
 }> {
-  const provider = getProvider();
-  if (!provider) throw new Error("MetaMask not found. Install the MetaMask extension.");
-
-  const accounts = (await provider.request({
-    method: "eth_requestAccounts",
-  })) as string[];
-  if (!accounts[0]) throw new Error("No account returned from MetaMask.");
-
-  const chainHex = (await provider.request({ method: "eth_chainId" })) as string;
-  return {
-    address: accounts[0] as Address,
-    chainId: Number.parseInt(chainHex, 16),
-  };
+  const { address, chainId, provider } = await connectWithMetaMask();
+  return { address, chainId, provider };
 }
 
 export async function switchChain(chainId: number) {
-  const provider = getProvider();
-  if (!provider) throw new Error("MetaMask not found.");
-  const hex = `0x${chainId.toString(16)}`;
-  try {
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: hex }],
-    });
-  } catch (err) {
-    const code = (err as { code?: number }).code;
-    if (code !== 4902) throw err;
-    const chain = getChain(chainId);
-    if (!chain) throw err;
-    await provider.request({
-      method: "wallet_addEthereumChain",
-      params: [
-        {
-          chainId: hex,
-          chainName: chain.label,
-          nativeCurrency: chain.nativeCurrency,
-          rpcUrls: chain.rpcUrls,
-          blockExplorerUrls: chain.blockExplorerUrls,
-        },
-      ],
-    });
-  }
-}
-
-function walletClient() {
-  const provider = getProvider();
-  if (!provider) throw new Error("MetaMask not found.");
-  return createWalletClient({ transport: custom(provider) });
-}
-
-function publicClientFor(chainId: number) {
-  const chain = getChain(chainId);
-  return createPublicClient({
-    transport: http(chain?.rpcUrls[0]),
-  });
+  await switchMetaMaskChain(chainId);
 }
 
 export async function deployTeamToken(input: {
@@ -98,14 +83,28 @@ export async function deployTeamToken(input: {
 }): Promise<Address> {
   const decimals = input.decimals ?? 18;
   const supply = parseUnits(input.initialSupply, decimals);
-  const wallet = walletClient();
-  const hash = await wallet.deployContract({
-    abi: artifact.abi,
-    bytecode: artifact.bytecode as Hex,
-    args: [input.name, input.symbol, supply, input.account],
-    account: input.account,
-    chain: undefined,
-  });
+  const chain = getViemChain(input.chainId);
+  const { client, account } = await wallet();
+  if (account.toLowerCase() !== input.account.toLowerCase()) {
+    throw new Error("Connected MetaMask account changed. Connect again.");
+  }
+
+  // Ensure wallet is on the selected live chain before deploy.
+  await switchMetaMaskChain(input.chainId);
+
+  let hash: Hex;
+  try {
+    hash = await client.deployContract({
+      abi: artifact.abi,
+      bytecode: artifact.bytecode as Hex,
+      args: [input.name, input.symbol, supply, input.account],
+      account,
+      chain,
+    });
+  } catch (err) {
+    throw new Error(formatWalletError(err));
+  }
+
   const publicClient = publicClientFor(input.chainId);
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
   if (!receipt.contractAddress) throw new Error("Deploy succeeded but no contract address.");
@@ -118,22 +117,24 @@ export async function addTokenToMetaMask(input: {
   decimals?: number;
   image?: string;
 }) {
-  const provider = getProvider();
-  if (!provider) throw new Error("MetaMask not found.");
-  const ok = await provider.request({
-    method: "wallet_watchAsset",
-    params: {
-      type: "ERC20",
-      options: {
-        address: input.address,
-        symbol: input.symbol.slice(0, 11),
-        decimals: input.decimals ?? 18,
-        image: input.image || undefined,
-      },
-    // MetaMask expects an object for wallet_watchAsset, not a params array.
-    } as never,
-  });
-  return Boolean(ok);
+  const mm = await resolveMetaMaskProvider();
+  try {
+    const ok = await mm.request({
+      method: "wallet_watchAsset",
+      params: {
+        type: "ERC20",
+        options: {
+          address: input.address,
+          symbol: input.symbol.slice(0, 11),
+          decimals: input.decimals ?? 18,
+          image: input.image || undefined,
+        },
+      } as never,
+    });
+    return Boolean(ok);
+  } catch (err) {
+    throw new Error(formatWalletError(err));
+  }
 }
 
 export async function readBalance(
@@ -168,15 +169,28 @@ export async function sendToken(input: {
 }): Promise<Hex> {
   const decimals = input.decimals ?? 18;
   const value = parseUnits(input.amount, decimals);
-  const wallet = walletClient();
-  const hash = await wallet.writeContract({
-    address: input.token,
-    abi: artifact.abi,
-    functionName: "transfer",
-    args: [input.to, value],
-    account: input.account,
-    chain: undefined,
-  });
+  const chain = getViemChain(input.chainId);
+  const { client, account } = await wallet();
+  if (account.toLowerCase() !== input.account.toLowerCase()) {
+    throw new Error("Connected MetaMask account changed. Connect again.");
+  }
+
+  await switchMetaMaskChain(input.chainId);
+
+  let hash: Hex;
+  try {
+    hash = await client.writeContract({
+      address: input.token,
+      abi: artifact.abi,
+      functionName: "transfer",
+      args: [input.to, value],
+      account,
+      chain,
+    });
+  } catch (err) {
+    throw new Error(formatWalletError(err));
+  }
+
   const publicClient = publicClientFor(input.chainId);
   await publicClient.waitForTransactionReceipt({ hash });
   return hash;
@@ -196,4 +210,27 @@ export function explorerTxUrl(chainId: number, hash: string) {
   const chain = getChain(chainId) ?? CHAINS[0];
   const base = chain.blockExplorerUrls?.[0] ?? "https://etherscan.io";
   return `${base}/tx/${hash}`;
+}
+
+export async function subscribeWalletEvents(handlers: {
+  onAccounts: (accounts: string[]) => void;
+  onChain: (chainId: number) => void;
+}) {
+  const client = await getEvmClient();
+  const provider = client.getProvider();
+
+  const onAccounts = (accounts: unknown) => {
+    handlers.onAccounts((accounts as string[]) ?? []);
+  };
+  const onChain = (hex: unknown) => {
+    handlers.onChain(Number.parseInt(String(hex), 16));
+  };
+
+  provider.on("accountsChanged", onAccounts);
+  provider.on("chainChanged", onChain);
+
+  return () => {
+    provider.off("accountsChanged", onAccounts);
+    provider.off("chainChanged", onChain);
+  };
 }

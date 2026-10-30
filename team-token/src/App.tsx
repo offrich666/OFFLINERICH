@@ -12,10 +12,12 @@ import {
   deployTeamToken,
   explorerTokenUrl,
   explorerTxUrl,
-  getProvider,
+  METAMASK_INSTALL_URL,
+  probeMetaMask,
   readBalance,
   sendToken,
   shortAddress,
+  subscribeWalletEvents,
   switchChain,
 } from "./lib/ethereum";
 import type { Address, Hex } from "viem";
@@ -63,26 +65,34 @@ export default function App() {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [lastTx, setLastTx] = useState<Hex | null>(null);
+  const [walletReady, setWalletReady] = useState("Checking MetaMask Connect…");
 
   useEffect(() => {
     const saved = loadSaved();
     if (saved) setToken(saved);
 
-    const provider = getProvider();
-    if (!provider?.on) return;
+    let cancelled = false;
+    let unsub: (() => void) | undefined;
 
-    const onAccounts = (accounts: unknown) => {
-      const list = accounts as string[];
-      setAccount(list[0] ? (list[0] as Address) : null);
-    };
-    const onChain = (hex: unknown) => {
-      setChainId(Number.parseInt(String(hex), 16));
-    };
-    provider.on("accountsChanged", onAccounts);
-    provider.on("chainChanged", onChain);
+    (async () => {
+      const probe = await probeMetaMask();
+      if (cancelled) return;
+      setWalletReady(probe.detail);
+      unsub = await subscribeWalletEvents({
+        onAccounts: (accounts) => {
+          setAccount(accounts[0] ? (accounts[0] as Address) : null);
+        },
+        onChain: (id) => setChainId(id),
+      });
+    })().catch((e) => {
+      if (!cancelled) {
+        setWalletReady(e instanceof Error ? e.message : "MetaMask Connect failed");
+      }
+    });
+
     return () => {
-      provider.removeListener?.("accountsChanged", onAccounts);
-      provider.removeListener?.("chainChanged", onChain);
+      cancelled = true;
+      unsub?.();
     };
   }, []);
 
@@ -107,18 +117,19 @@ export default function App() {
   async function onConnect() {
     setError("");
     setBusy(true);
+    setStatus("Opening MetaMask Connect…");
     try {
       const { address, chainId: id } = await connectWallet();
       setAccount(address);
-      // Always land on a live mainnet — switch to Ethereum if wallet is on a testnet/other chain.
       if (!isSupportedLiveChain(id)) {
         await switchChain(DEFAULT_CHAIN_ID);
         setChainId(DEFAULT_CHAIN_ID);
         setStatus(`Connected ${shortAddress(address)} on Ethereum (live)`);
       } else {
         setChainId(id);
-        setStatus(`Connected ${shortAddress(address)}`);
+        setStatus(`Connected ${shortAddress(address)} via MetaMask Connect`);
       }
+      setWalletReady("Connected with official MetaMask Connect");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connect failed");
     } finally {
@@ -295,7 +306,7 @@ export default function App() {
           </div>
         </div>
         <button type="button" className="btn primary" onClick={onConnect} disabled={busy}>
-          {account ? shortAddress(account) : "Connect MetaMask"}
+          {busy && !account ? "Connecting…" : account ? shortAddress(account) : "Connect MetaMask"}
         </button>
       </header>
 
@@ -307,9 +318,23 @@ export default function App() {
             addresses on the same network.
           </p>
           <p className="note">
-            Live mainnets only (default Ethereum). MetaMask does not support TRON — use{" "}
-            <code>0x…</code> wallets on Ethereum, Polygon, Base, or BSC. Deploy and sends spend
-            real gas.
+            Uses official{" "}
+            <a href="https://github.com/orgs/MetaMask/repositories" target="_blank" rel="noreferrer">
+              MetaMask Connect
+            </a>{" "}
+            (<code>@metamask/connect-evm</code>) on live mainnets (default Ethereum). Not TRON —
+            use <code>0x…</code> wallets. Deploy and sends spend real gas.
+          </p>
+          <p className="hint wallet-hint">
+            {walletReady}{" "}
+            {!account ? (
+              <>
+                ·{" "}
+                <a href={METAMASK_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Install MetaMask
+                </a>
+              </>
+            ) : null}
           </p>
         </section>
 
