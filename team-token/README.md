@@ -6,15 +6,17 @@ Standalone tool (separate from the OFFLINERICH checkout app) to:
 2. Attach a logo (URL or upload) and add the token in MetaMask
 3. Send tokens MetaMask → MetaMask (`0x` addresses)
 
-## MetaMask ≠ TRON
+## MetaMask + TRON vs this desk
 
-| | MetaMask (this app) | TRON |
+MetaMask (latest) can **hold** TRON / TRC-20 assets like USDT in the wallet. That is not the same as this desk:
+
+| | This desk (RelayMark) | Listed TRON asset (e.g. USDT) |
 |---|---|---|
-| Address | `0x…` | `T…` |
-| Wallet | MetaMask | TronLink (or similar) |
-| Token standard | ERC-20 | TRC-20 |
+| What you deploy | Custom ERC-20 on EVM | Already on TRON token lists |
+| Address for payouts | MetaMask `0x…` on same EVM chain | MetaMask TRON `T…` |
+| Logo + price without import | No — use receive link / Add token; price needs CoinGecko | Yes — MetaMask already knows it |
 
-If someone sends you a TRON address, this app cannot deliver to it. Use the same EVM network on both sides.
+Custom tokens do not magically get USDT-style logo/price. [MetaMask token display](https://support.metamask.io/manage-crypto/tokens/how-to-display-tokens-in-metamask/) / [price source](https://support.metamask.io/manage-crypto/tokens/where-does-metamask-source-the-tokens-price/).
 
 ## MetaMask Connect
 

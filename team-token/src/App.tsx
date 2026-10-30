@@ -221,7 +221,7 @@ export default function App() {
     const addr = existingAddress.trim();
     if (isTronAddress(addr)) {
       setError(
-        "That is a TRON address (starts with T). MetaMask only uses EVM 0x addresses. Use TronLink for TRON, or deploy/send an ERC-20 here.",
+        "That is a TRON T… address. This desk sends custom ERC-20 on EVM (0x). Paste the ERC-20 contract 0x address, or have them share an EVM MetaMask address via the receive link.",
       );
       return;
     }
@@ -268,7 +268,7 @@ export default function App() {
     const to = recipient.trim();
     if (isTronAddress(to)) {
       setError(
-        "Recipient looks like TRON (T…). MetaMask cannot send to TRON. Ask for a 0x MetaMask address on the same chain.",
+        "Recipient is a TRON T… address. This transfer is ERC-20 on an EVM chain — ask for their MetaMask 0x address on the same network (from your receive link).",
       );
       return;
     }
@@ -330,12 +330,11 @@ export default function App() {
             send. They add the token in MetaMask so it shows with their other tokens.
           </p>
           <p className="note">
-            MetaMask ↔ MetaMask on one live EVM network (Ethereum / Polygon / Base / BSC). TRON{" "}
-            <code>T…</code> addresses cannot receive this ERC-20. Uses official{" "}
-            <a href="https://github.com/orgs/MetaMask/repositories" target="_blank" rel="noreferrer">
-              MetaMask Connect
-            </a>
-            .
+            MetaMask can hold TRON assets (e.g. USDT TRC-20) in-wallet, but this desk deploys/sends a{" "}
+            <strong>custom ERC-20</strong> on Ethereum / Polygon / Base / BSC. A brand-new custom
+            token does <strong>not</strong> auto-show logo + CoinGecko price for recipients — that
+            only happens for listed tokens (USDT, etc.). Recipients use your receive link (or Add
+            custom token). Price needs a CoinGecko listing + markets.
           </p>
           <p className="hint wallet-hint">
             {walletReady}{" "}
@@ -535,20 +534,21 @@ export default function App() {
         {error ? <p className="status err">{error}</p> : null}
 
         <section className="panel footnotes">
-          <h2>How it shows in every MetaMask</h2>
+          <h2>Logo + price without importing?</h2>
           <ul>
             <li>
-              Recipients must open your receive link and tap <strong>Add token to MetaMask</strong>{" "}
-              once — then logo + symbol appear next to their other tokens. Use an{" "}
-              <code>https://</code> logo URL so every wallet can load it.
+              <strong>USDT / popular listed tokens:</strong> MetaMask already knows them (including
+              on TRON after MetaMask’s TRON update), so logo + price show without a custom import.
             </li>
             <li>
-              Built-in market price (like USDC) only appears after CoinGecko/CMC + liquidity. Until
-              then the token still holds and transfers normally.
+              <strong>Your newly deployed team token:</strong> not on those lists yet. Recipients
+              open your receive link → <strong>Add token to MetaMask</strong> (or Add custom token).
+              MetaMask’s enhanced auto-detect covers major EVM + Solana lists — not arbitrary new
+              contracts, and not TRON custom TRC-20s.
             </li>
             <li>
-              One network per deploy. Everyone must use the same live chain and MetaMask{" "}
-              <code>0x</code> addresses — not TRON.
+              <strong>Price:</strong> MetaMask pulls from CoinGecko. List there + have markets, or
+              there is no in-wallet USD price — transfers still work.
             </li>
           </ul>
         </section>

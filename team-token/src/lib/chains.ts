@@ -10,7 +10,7 @@ export type ChainOption = {
   viem: Chain;
 };
 
-/** Live EVM networks only (no testnets). TRON is not supported. */
+/** Live EVM networks for this ERC-20 desk (no testnets). MetaMask also holds TRON in-wallet separately. */
 export const DEFAULT_CHAIN_ID = 1;
 
 export const CHAINS: ChainOption[] = [

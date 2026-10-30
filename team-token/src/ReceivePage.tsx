@@ -45,8 +45,9 @@ export default function ReceivePage({ initial = null }: Props) {
           <section className="panel">
             <h2>Invalid receive link</h2>
             <p className="hint">
-              Ask the sender for a RelayMark receive link (MetaMask <code>0x</code> token on a live
-              EVM network). TRON <code>T…</code> addresses are not supported in MetaMask.
+              Ask the sender for a RelayMark receive link (custom ERC-20 on a live EVM network).
+              MetaMask can hold TRON assets in-wallet, but this receive flow is for the team’s EVM
+              token (<code>0x</code>).
             </p>
             <a className="btn ghost" href="#/">
               Back to desk
@@ -147,8 +148,10 @@ export default function ReceivePage({ initial = null }: Props) {
             {chain?.label ?? "the network"}.
           </p>
           <p className="note">
-            MetaMask ↔ MetaMask only on this live chain. Do not send a TRON <code>T…</code> address —
-            it cannot receive this ERC-20.
+            Same live EVM chain as the sender. A brand-new custom token needs{" "}
+            <strong>Add token</strong> once for logo/symbol — it will not look like USDT (auto logo
+            + price) until it is listed. Do not paste a TRON <code>T…</code> address for this ERC-20
+            payout.
           </p>
         </section>
 
