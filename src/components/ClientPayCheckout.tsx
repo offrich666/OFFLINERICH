@@ -49,8 +49,14 @@ export function ClientPayCheckout() {
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const secretRef = useRef<string | null>(null);
-  const cardSecretRef = useRef<string | null>(null);
-  const [cardSecret, setCardSecret] = useState<string | null>(null);
+  const cardRequestRef = useRef<{
+    amountUsd: number;
+    email?: string;
+    network: string;
+    wallet: string;
+  } | null>(null);
+  const cardSecretPromiseRef = useRef<Promise<string> | null>(null);
+  const [cardReady, setCardReady] = useState(false);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -76,8 +82,26 @@ export function ClientPayCheckout() {
   }, [mode]);
 
   const fetchCardClientSecret = useCallback(async () => {
-    if (!cardSecretRef.current) throw new Error("Card checkout not ready");
-    return cardSecretRef.current;
+    if (!cardSecretPromiseRef.current) {
+      const req = cardRequestRef.current;
+      if (!req) throw new Error("Card checkout not ready");
+      cardSecretPromiseRef.current = (async () => {
+        const res = await fetch("/api/checkout/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(req),
+        });
+        const data = (await res.json()) as {
+          clientSecret?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.clientSecret) {
+          throw new Error(data.error || "Could not start card checkout");
+        }
+        return data.clientSecret;
+      })();
+    }
+    return cardSecretPromiseRef.current;
   }, []);
 
   const cardOptions = useMemo(
@@ -154,25 +178,14 @@ export function ClientPayCheckout() {
     setLoading(true);
     try {
       if (path === "easy") {
-        const res = await fetch("/api/checkout/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amountUsd,
-            email: email.trim() || undefined,
-            network,
-            wallet: wallet.trim(),
-          }),
-        });
-        const data = (await res.json()) as {
-          clientSecret?: string;
-          error?: string;
+        cardRequestRef.current = {
+          amountUsd,
+          email: email.trim() || undefined,
+          network,
+          wallet: wallet.trim(),
         };
-        if (!res.ok || !data.clientSecret) {
-          throw new Error(data.error || "Could not start card checkout");
-        }
-        cardSecretRef.current = data.clientSecret;
-        setCardSecret(data.clientSecret);
+        cardSecretPromiseRef.current = null;
+        setCardReady(true);
         setPaidAmount(amountUsd);
         setMode("card");
       } else {
@@ -209,8 +222,9 @@ export function ClientPayCheckout() {
 
   function resetToPick() {
     secretRef.current = null;
-    cardSecretRef.current = null;
-    setCardSecret(null);
+    cardRequestRef.current = null;
+    cardSecretPromiseRef.current = null;
+    setCardReady(false);
     setPaidAmount(null);
     setStatus("");
     setMode("pick");
@@ -231,7 +245,7 @@ export function ClientPayCheckout() {
     );
   }
 
-  if (mode === "card" && paidAmount != null && cardSecret && stripePromise) {
+  if (mode === "card" && paidAmount != null && cardReady && stripePromise) {
     return (
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
@@ -248,7 +262,11 @@ export function ClientPayCheckout() {
           After payment clears, we send crypto to your wallet.
         </p>
         <div className="stripe-embed">
-          <EmbeddedCheckoutProvider stripe={stripePromise} options={cardOptions}>
+          <EmbeddedCheckoutProvider
+            key={`${paidAmount}-${wallet.trim()}`}
+            stripe={stripePromise}
+            options={cardOptions}
+          >
             <EmbeddedCheckout />
           </EmbeddedCheckoutProvider>
         </div>
