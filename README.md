@@ -6,7 +6,17 @@
 
 ## Checkout paths (`/checkout`)
 
-### Easy card (default) — no crypto KYC
+### Instant crypto (default) — Onramp (KYC)
+```
+Client: amount + wallet → Stripe Crypto Onramp locked to THEIR wallet
+        │
+        ▼
+USDC/BTC settles on-chain to the client (Stripe handles KYC)
+```
+
+Use this when treasury has **no** crypto inventory — Stripe creates the crypto.
+
+### Easy card — no crypto KYC (needs treasury funding)
 ```
 Client: amount + wallet → Stripe Embedded Checkout (card / Apple Pay / Google Pay)
         │
@@ -14,20 +24,10 @@ Client: amount + wallet → Stripe Embedded Checkout (card / Apple Pay / Google 
 USD settles in Stripe (GN Labs) → ops queue paid_pending_treasury
         │
         ▼
-Ops funds treasury / buys crypto → sends to clientWallet → mark sent
+Ops must already have (or buy) crypto → send to clientWallet → mark sent
 ```
 
-Stripe cannot auto-buy crypto for the merchant after a normal card payment
-without putting the *customer* through Crypto Onramp KYC. Easy card keeps
-checkout simple; crypto delivery is the ops step.
-
-### Instant crypto — Onramp (KYC)
-```
-Client: amount + wallet → Stripe Crypto Onramp locked to THEIR wallet
-        │
-        ▼
-USDC/BTC settles on-chain to the client (Stripe handles KYC)
-```
+Do not use Easy card as the main path if treasury is empty.
 
 ## Env
 

@@ -16,8 +16,8 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $5–$9,000. Easy card (no crypto KYC) or instant crypto to your
-          wallet.
+          Pay $5–$9,000. Instant crypto to your wallet, or easy card if we
+          already hold crypto to send.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">

@@ -314,23 +314,23 @@ export function ClientPayCheckout() {
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
           <button
             type="button"
-            className={path === "easy" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("easy")}
-          >
-            Easy card
-          </button>
-          <button
-            type="button"
             className={path === "instant" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("instant")}
           >
             Instant crypto
           </button>
+          <button
+            type="button"
+            className={path === "easy" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("easy")}
+          >
+            Easy card (USD)
+          </button>
         </div>
         <p className="form-hint">
-          {path === "easy"
-            ? "Card only — no crypto KYC. We deliver crypto to your wallet after payment clears."
-            : "Stripe Onramp — short KYC, crypto settles straight to your wallet."}
+          {path === "instant"
+            ? "Stripe Onramp — short KYC. Crypto goes straight to your wallet (no treasury needed)."
+            : "Card only — no crypto KYC. Pays USD to us; crypto is sent later only after treasury is funded."}
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -415,9 +415,9 @@ export function ClientPayCheckout() {
         >
           {loading
             ? "Starting…"
-            : path === "easy"
-              ? `Continue with card ${amountOk ? amountLabel : rangeLabel}`
-              : `Continue to crypto ${amountOk ? amountLabel : rangeLabel}`}
+            : path === "instant"
+              ? `Continue to crypto ${amountOk ? amountLabel : rangeLabel}`
+              : `Continue with card ${amountOk ? amountLabel : rangeLabel}`}
         </button>
       </div>
     </div>
