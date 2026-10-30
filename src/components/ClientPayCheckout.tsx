@@ -32,13 +32,14 @@ type Mode = "pick" | "card" | "onramp" | "done";
 
 /**
  * Two paths:
- * - Easy card: normal Stripe Checkout (no crypto KYC). USD lands in Stripe;
- *   ops delivers crypto to the client's wallet from treasury.
- * - Instant crypto: Stripe Onramp (KYC). Crypto settles straight to their wallet.
+ * - Instant crypto (default): Stripe Onramp (KYC). Crypto settles straight to
+ *   the client's wallet — no treasury balance required.
+ * - Easy card: USD only in Stripe (no crypto KYC). Only use if treasury is
+ *   funded (or you buy crypto after) so ops can send to the client.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("easy");
+  const [path, setPath] = useState<PayPath>("instant");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
   const [network, setNetwork] = useState<ClientNetworkId>("ethereum");

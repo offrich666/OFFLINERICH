@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
           <p>
-            Enter your wallet, then pay. Easy card needs no crypto KYC — we
-            deliver after payment. Instant crypto settles on-chain via Stripe.
+            Enter your wallet, then pay. Instant crypto (default) settles
+            on-chain via Stripe. Easy card is USD only until treasury is funded.
           </p>
         </div>
 
