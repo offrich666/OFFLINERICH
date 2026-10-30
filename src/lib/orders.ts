@@ -168,8 +168,8 @@ export async function upsertPaidTransferOrder(input: {
     stripePaymentIntentId: input.stripePaymentIntentId || undefined,
     customerEmail: input.customerEmail,
     notes: input.clientWallet.startsWith("(awaiting")
-      ? "Simple pay — USD in Stripe. Ask customer (email) for delivery wallet, fund treasury, then send."
-      : "USD Checkout — convert/fund treasury, then send to clientWallet.",
+      ? "Easy card — USD in Stripe. Ask customer for delivery wallet, fund treasury, then send."
+      : "Easy card — USD in Stripe. Fund treasury → send to clientWallet, then mark sent.",
   };
 
   orders.unshift(order);

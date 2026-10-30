@@ -19,6 +19,8 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
   let paymentStatus = "paid";
   let email: string | null = null;
   let amount: string | null = null;
+  let wallet: string | null = null;
+  let network: string | null = null;
 
   try {
     const stripe = getStripe();
@@ -31,6 +33,8 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
     status = session.status || status;
     paymentStatus = session.payment_status || paymentStatus;
     email = session.customer_details?.email || session.customer_email || null;
+    wallet = session.metadata?.client_wallet || null;
+    network = session.metadata?.client_network || null;
 
     if (typeof session.amount_total === "number") {
       amount = new Intl.NumberFormat("en-US", {
@@ -62,7 +66,9 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
           <h1>{paid ? "Payment received" : "Payment status"}</h1>
           <p>
             {paid
-              ? "Thanks. Reply to your receipt email with the wallet where you want crypto delivered — we convert from Stripe and send."
+              ? wallet
+                ? `Thanks. We’ll send crypto to ${wallet}${network ? ` on ${network}` : ""} after the payment clears.`
+                : "Thanks. We’ll deliver crypto to the wallet from your order after the payment clears."
               : `Status: ${status} / ${paymentStatus}.`}
           </p>
           <dl className="meta-list">
@@ -70,6 +76,14 @@ export default async function CheckoutReturnPage({ searchParams }: Props) {
               <div>
                 <dt>Amount</dt>
                 <dd>{amount}</dd>
+              </div>
+            ) : null}
+            {wallet ? (
+              <div>
+                <dt>Delivery wallet</dt>
+                <dd>
+                  <code className="break">{wallet}</code>
+                </dd>
               </div>
             ) : null}
             {email ? (

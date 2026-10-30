@@ -4,28 +4,30 @@
 
 **Stripe Crypto Onramp is APPROVED** for G N LABS LLC (`acct_1UCk64QWCzdANStk`).
 
-Paste **live API keys** to go live:
+## Checkout paths (`/checkout`)
 
-1. https://dashboard.stripe.com/apikeys → `pk_live_…` + `sk_live_…` / `rk_live_…`
-2. ~~Domain allowlist~~ — `www.walletchainsign.com` + `localhost`
-3. https://dashboard.stripe.com/crypto-onramp/onboarding
-4. Deploy this branch to https://www.walletchainsign.com (set live Stripe env vars on Vercel)
-
-Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
-
-## Flow (main `/checkout`)
-
+### Easy card (default) — no crypto KYC
 ```
-Client: amount + THEIR wallet → Stripe Crypto Onramp (card / Apple Pay / Google Pay + KYC)
+Client: amount + wallet → Stripe Embedded Checkout (card / Apple Pay / Google Pay)
         │
         ▼
-USDC/BTC locked to the client's own wallet (Stripe always shows this address)
+USD settles in Stripe (GN Labs) → ops queue paid_pending_treasury
+        │
+        ▼
+Ops funds treasury / buys crypto → sends to clientWallet → mark sent
 ```
 
-Why not treasury-first? Stripe’s Onramp UI always shows the locked destination
-(“Confirm your wallet”). Locking to treasury inevitably exposes the treasury
-address. Locking to the client’s wallet keeps that screen about *their* address
-and Stripe delivers crypto directly — no pre-funded inventory needed.
+Stripe cannot auto-buy crypto for the merchant after a normal card payment
+without putting the *customer* through Crypto Onramp KYC. Easy card keeps
+checkout simple; crypto delivery is the ops step.
+
+### Instant crypto — Onramp (KYC)
+```
+Client: amount + wallet → Stripe Crypto Onramp locked to THEIR wallet
+        │
+        ▼
+USDC/BTC settles on-chain to the client (Stripe handles KYC)
+```
 
 ## Env
 
@@ -39,10 +41,3 @@ npm run dev
 - Checkout: `/checkout`
 - Ops: `/ops/transfers?key=$OPS_SECRET`
 - Status: `GET /api/onramp/status`
-
-## Live Stripe (USD fallback)
-
-| | |
-| --- | --- |
-| Flexible price | `price_1UVgRDQWCzdANStksBqKZ5BL` ($5–$9,000) |
-| Payment Link | https://buy.stripe.com/aFafZj4TvdLq8WAboDds408 |

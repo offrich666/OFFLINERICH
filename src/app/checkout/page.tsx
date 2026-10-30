@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
           <p>
-            Enter your wallet, then pay with card, Apple Pay, or Google Pay.
-            Crypto goes straight to your wallet.
+            Enter your wallet, then pay. Easy card needs no crypto KYC — we
+            deliver after payment. Instant crypto settles on-chain via Stripe.
           </p>
         </div>
 

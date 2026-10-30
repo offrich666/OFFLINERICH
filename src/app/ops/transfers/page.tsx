@@ -37,10 +37,9 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
           <p className="eyebrow">Ops</p>
           <h1>Transfer queue</h1>
           <p>
-            Preferred path: Onramp locks to <code>clientWallet</code> → status{" "}
-            <code>sent_to_client</code> on fulfillment. Legacy USD Checkout
-            rows stay <code>paid_pending_treasury</code> until you fund
-            manually.
+            Instant Onramp → <code>sent_to_client</code> when Stripe delivers.
+            Easy card → <code>paid_pending_treasury</code>: fund treasury, send
+            to <code>clientWallet</code>, mark sent.
           </p>
         </div>
 

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** Fiat-only path retired — product is Onramp → internal settle → client. */
-export default function FiatCheckoutRetired() {
+/** Alias — easy card lives on main /checkout (default path). */
+export default function FiatCheckoutAlias() {
   redirect("/checkout");
 }
