@@ -7,7 +7,9 @@ export type ChainOption = {
   blockExplorerUrls?: string[];
 };
 
-/** EVM networks MetaMask can use. TRON is not supported here. */
+/** Live EVM networks only (no testnets). TRON is not supported. */
+export const DEFAULT_CHAIN_ID = 1;
+
 export const CHAINS: ChainOption[] = [
   {
     id: 1,
@@ -16,14 +18,6 @@ export const CHAINS: ChainOption[] = [
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: ["https://ethereum.publicnode.com"],
     blockExplorerUrls: ["https://etherscan.io"],
-  },
-  {
-    id: 11155111,
-    key: "sepolia",
-    label: "Sepolia (test)",
-    nativeCurrency: { name: "Sepolia ETH", symbol: "ETH", decimals: 18 },
-    rpcUrls: ["https://ethereum-sepolia.publicnode.com"],
-    blockExplorerUrls: ["https://sepolia.etherscan.io"],
   },
   {
     id: 137,
@@ -53,6 +47,10 @@ export const CHAINS: ChainOption[] = [
 
 export function getChain(id: number) {
   return CHAINS.find((c) => c.id === id) ?? null;
+}
+
+export function isSupportedLiveChain(id: number) {
+  return CHAINS.some((c) => c.id === id);
 }
 
 export function isTronAddress(value: string) {

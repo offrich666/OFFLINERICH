@@ -25,7 +25,7 @@ npm run compile   # rebuild contract artifact after Solidity changes
 npm run dev
 ```
 
-Open the Vite URL, install MetaMask, connect, prefer **Sepolia** for cheap tests, deploy, then send.
+Open the Vite URL, install MetaMask, connect. Defaults to **Ethereum mainnet** (live). You can switch to Polygon, Base, or BNB Smart Chain — also live. Deploy and sends cost real gas.
 
 ## Logo & price
 

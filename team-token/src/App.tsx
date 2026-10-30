@@ -1,5 +1,11 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { CHAINS, isEvmAddress, isTronAddress } from "./lib/chains";
+import {
+  CHAINS,
+  DEFAULT_CHAIN_ID,
+  isEvmAddress,
+  isSupportedLiveChain,
+  isTronAddress,
+} from "./lib/chains";
 import {
   addTokenToMetaMask,
   connectWallet,
@@ -40,7 +46,7 @@ function saveToken(token: TokenState) {
 
 export default function App() {
   const [account, setAccount] = useState<Address | null>(null);
-  const [chainId, setChainId] = useState<number>(11155111);
+  const [chainId, setChainId] = useState<number>(DEFAULT_CHAIN_ID);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -104,8 +110,15 @@ export default function App() {
     try {
       const { address, chainId: id } = await connectWallet();
       setAccount(address);
-      setChainId(id);
-      setStatus(`Connected ${shortAddress(address)}`);
+      // Always land on a live mainnet — switch to Ethereum if wallet is on a testnet/other chain.
+      if (!isSupportedLiveChain(id)) {
+        await switchChain(DEFAULT_CHAIN_ID);
+        setChainId(DEFAULT_CHAIN_ID);
+        setStatus(`Connected ${shortAddress(address)} on Ethereum (live)`);
+      } else {
+        setChainId(id);
+        setStatus(`Connected ${shortAddress(address)}`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Connect failed");
     } finally {
@@ -294,14 +307,17 @@ export default function App() {
             addresses on the same network.
           </p>
           <p className="note">
-            MetaMask does not support TRON. TRON <code>T…</code> addresses will not work here —
-            use an EVM chain (Ethereum, Polygon, Base, BSC) and MetaMask <code>0x…</code> wallets.
+            Live mainnets only (default Ethereum). MetaMask does not support TRON — use{" "}
+            <code>0x…</code> wallets on Ethereum, Polygon, Base, or BSC. Deploy and sends spend
+            real gas.
           </p>
         </section>
 
         <section className="panel">
-          <h2>Network</h2>
-          <p className="hint">Current: {chainLabel}</p>
+          <h2>Live network</h2>
+          <p className="hint">
+            Current: {chainLabel} · mainnet only (real gas). Deploy and sends use real funds.
+          </p>
           <div className="chips">
             {CHAINS.map((c) => (
               <button
