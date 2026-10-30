@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripe } from "@/lib/stripe";
 import {
-  markOnrampTreasuryFunded,
+  markOnrampDeliveredToClient,
   upsertAwaitingCryptoOrder,
   upsertPaidTransferOrder,
 } from "@/lib/orders";
@@ -82,9 +82,8 @@ async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
 }
 
 /**
- * Onramp: client paid fiat → crypto locked to OUR treasury.
- * When status is fulfillment_complete, mark treasury_funded so ops can
- * send treasury → clientWallet.
+ * Onramp: client paid fiat → crypto locked to THEIR wallet.
+ * fulfillment_complete ⇒ already delivered; mark sent_to_client.
  */
 async function fulfillOnrampSession(session: OnrampSessionObject) {
   const status = session.status || "";
@@ -98,7 +97,7 @@ async function fulfillOnrampSession(session: OnrampSessionObject) {
   }
 
   const meta = session.metadata || {};
-  const network = meta.client_network || "polygon";
+  const network = meta.client_network || "ethereum";
   const clientWallet = meta.client_wallet || "";
   const asset =
     meta.client_asset || (network === "bitcoin" ? "BTC" : "USDC");
@@ -118,7 +117,7 @@ async function fulfillOnrampSession(session: OnrampSessionObject) {
     });
   }
 
-  const order = await markOnrampTreasuryFunded(session.id);
+  const order = await markOnrampDeliveredToClient(session.id);
   if (!order) {
     console.error(
       "[stripe webhook] onramp fulfillment_complete but no order",
@@ -127,11 +126,10 @@ async function fulfillOnrampSession(session: OnrampSessionObject) {
     return;
   }
 
-  console.info("[stripe webhook] treasury funded via onramp", {
+  console.info("[stripe webhook] onramp delivered to client wallet", {
     orderId: order.id,
     network: order.network,
     clientWallet: order.clientWallet,
-    treasuryWallet: order.treasuryWallet,
     amountCents: order.amountCents,
   });
 }

@@ -1,9 +1,6 @@
 import "server-only";
 import Stripe from "stripe";
 import {
-  ONRAMP_CURRENCIES,
-  ONRAMP_NETWORKS,
-  treasuryWalletAddresses,
   type OnrampCurrency,
   type OnrampNetwork,
 } from "@/lib/treasury";
@@ -85,47 +82,54 @@ type CustomerInfo = {
 type CreateOnrampInput = {
   customerIpAddress?: string;
   sourceAmountUsd: string;
-  /** Optional — collected after pay for treasury → client delivery */
-  clientNetwork?: string;
-  clientWallet?: string;
+  /** Required — Stripe locks Onramp to THIS wallet (client's own). */
+  clientNetwork: string;
+  clientWallet: string;
   clientAsset?: string;
   customer?: CustomerInfo;
 };
 
 /**
- * Mint Crypto Onramp session: client pays fiat → USDC locked to OUR treasury.
- * Destination wallet is locked to treasury so the client never picks a network
- * or address during pay. Stripe still runs required KYC inside the widget.
+ * Mint Crypto Onramp session: client pays fiat → crypto locked to THEIR wallet.
+ *
+ * Stripe always shows the locked destination in "Confirm your wallet".
+ * Locking to the client's own address means they never see the treasury.
+ * (Locking to treasury always surfaces the treasury address — unavoidable.)
  */
-export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
+export async function createClientOnrampSession(input: CreateOnrampInput) {
   const stripe = getStripe();
   const clientNetwork = input.clientNetwork || "ethereum";
   const destinationNetwork = onrampNetworkForClientNetwork(clientNetwork);
   const destinationCurrency = onrampCurrencyForNetwork(destinationNetwork);
-  const wallets = treasuryWalletAddresses();
+  const wallet = input.clientWallet.trim();
+  if (!wallet) {
+    throw new Error("Client wallet required for Onramp session");
+  }
+
+  // Only the client's destination — never treasury — goes into the session.
+  const wallets: Record<string, string> =
+    destinationNetwork === "bitcoin"
+      ? { bitcoin: wallet }
+      : { ethereum: wallet };
 
   const params: Record<string, unknown> = {
-    // Prefill so the widget skips destination picking; cards + wallets globally
-    // where Stripe Onramp is available (US + EU today).
     source_currency: "usd",
     source_amount: input.sourceAmountUsd,
     destination_currency: destinationCurrency,
     destination_network: destinationNetwork,
-    destination_currencies: [...ONRAMP_CURRENCIES],
-    destination_networks: [...ONRAMP_NETWORKS],
+    // Lock to a single currency/network so the widget stays simple.
+    destination_currencies: [destinationCurrency],
+    destination_networks: [destinationNetwork],
     lock_wallet_address: true,
     wallet_addresses: wallets,
     metadata: {
       project: "offlinerich",
-      flow: "onramp_to_treasury_easy_pay",
+      flow: "onramp_to_client_wallet",
       client_network: clientNetwork,
-      client_wallet: input.clientWallet || "",
-      client_asset: input.clientAsset || "USDC",
+      client_wallet: wallet,
+      client_asset: input.clientAsset || (destinationCurrency === "btc" ? "BTC" : "USDC"),
       onramp_network: destinationNetwork,
       onramp_currency: destinationCurrency,
-      treasury_evm: wallets.ethereum,
-      treasury_btc: wallets.bitcoin,
-      eu_note: "settle_usdc_ethereum_or_btc",
     },
   };
 
@@ -133,7 +137,6 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
     params.customer_ip_address = input.customerIpAddress;
   }
 
-  // Prefill what we have so Stripe KYC asks for less typing.
   const customerInformation: Record<string, unknown> = {};
   if (input.customer?.email) {
     customerInformation.email = input.customer.email;
@@ -161,4 +164,9 @@ export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
     redirect_url?: string | null;
     livemode?: boolean;
   };
+}
+
+/** @deprecated Prefer createClientOnrampSession — treasury lock always shows the address in Stripe UI. */
+export async function createTreasuryOnrampSession(input: CreateOnrampInput) {
+  return createClientOnrampSession(input);
 }

@@ -1,4 +1,4 @@
-/** Client-facing networks (treasury internals stay server-side). */
+/** All networks we may deliver to (ops / legacy). */
 export const CLIENT_NETWORKS = [
   { id: "polygon", label: "Polygon", kind: "evm", asset: "USDC" },
   { id: "ethereum", label: "Ethereum", kind: "evm", asset: "USDC" },
@@ -7,10 +7,25 @@ export const CLIENT_NETWORKS = [
   { id: "bitcoin", label: "Bitcoin", kind: "bitcoin", asset: "BTC" },
 ] as const;
 
+/**
+ * Networks Stripe Crypto Onramp can settle to for this EU merchant.
+ * Only these appear in client checkout — wallet is locked to the client's
+ * own address so Stripe never shows the treasury.
+ */
+export const ONRAMP_CLIENT_NETWORKS = [
+  { id: "ethereum", label: "Ethereum", kind: "evm", asset: "USDC" },
+  { id: "bitcoin", label: "Bitcoin", kind: "bitcoin", asset: "BTC" },
+] as const;
+
 export type ClientNetworkId = (typeof CLIENT_NETWORKS)[number]["id"];
+export type OnrampClientNetworkId = (typeof ONRAMP_CLIENT_NETWORKS)[number]["id"];
 
 export function getNetwork(id: string) {
   return CLIENT_NETWORKS.find((n) => n.id === id) ?? null;
+}
+
+export function isOnrampClientNetwork(id: string): id is OnrampClientNetworkId {
+  return ONRAMP_CLIENT_NETWORKS.some((n) => n.id === id);
 }
 
 export function isValidWalletAddress(networkId: string, address: string): boolean {

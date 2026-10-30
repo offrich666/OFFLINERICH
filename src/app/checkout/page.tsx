@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
           <p>
-            Card, Apple Pay, or Google Pay. After you pay, enter your wallet —
-            we deliver crypto there.
+            Enter your wallet, then pay with card, Apple Pay, or Google Pay.
+            Crypto goes straight to your wallet.
           </p>
         </div>
 

@@ -101,8 +101,8 @@ export async function upsertAwaitingCryptoOrder(input: {
     treasuryWallet: treasuryForNetwork(input.network),
     onrampSessionId: input.onrampSessionId,
     notes: input.clientWallet.startsWith("(awaiting")
-      ? "Onramp → treasury funded. Ask customer for delivery wallet, then send treasury → client and mark sent."
-      : "Onramp path: client pays → crypto locked to treasury. When fulfillment_complete, send to clientWallet.",
+      ? "Onramp order awaiting client wallet."
+      : "Onramp → client wallet (locked). Stripe delivers on fulfillment_complete.",
   };
 
   orders.unshift(order);
@@ -191,7 +191,7 @@ export async function markOrderSent(
   return order;
 }
 
-/** Client submits delivery wallet after Onramp pay (treasury stays internal). */
+/** Client submits delivery wallet after Onramp pay (legacy / ops fallback). */
 export async function attachDeliveryWallet(input: {
   onrampSessionId: string;
   network: string;
@@ -210,6 +210,22 @@ export async function attachDeliveryWallet(input: {
   order.updatedAt = new Date().toISOString();
   order.notes =
     "Client delivery wallet attached. When treasury_funded, send treasury → clientWallet.";
+  await saveOrders(orders);
+  return order;
+}
+
+/** Onramp delivered crypto straight to the client's locked wallet. */
+export async function markOnrampDeliveredToClient(
+  onrampSessionId: string,
+): Promise<TransferOrder | null> {
+  const orders = await listTransferOrders();
+  const order = orders.find((o) => o.onrampSessionId === onrampSessionId);
+  if (!order) return null;
+  order.status = "sent_to_client";
+  order.updatedAt = new Date().toISOString();
+  order.notes =
+    "Stripe Onramp delivered crypto directly to clientWallet (no treasury hop).";
+  order.outboundTxHash = order.outboundTxHash || "onramp_direct";
   await saveOrders(orders);
   return order;
 }

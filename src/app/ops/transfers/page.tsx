@@ -19,8 +19,8 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
             <h2>Ops access required</h2>
             <p>
               Open <code>/ops/transfers?key=YOUR_OPS_SECRET</code> after setting{" "}
-              <code>OPS_SECRET</code> in env. This queue is internal — treasury
-              → client sends.
+              <code>OPS_SECRET</code> in env. Onramp orders deliver direct to
+              the client wallet; legacy fiat rows may still need a manual send.
             </p>
           </div>
         </section>
@@ -35,12 +35,12 @@ export default async function OpsTransfersPage({ searchParams }: Props) {
       <section className="checkout-layout" style={{ gridTemplateColumns: "1fr" }}>
         <div className="checkout-copy">
           <p className="eyebrow">Ops</p>
-          <h1>Treasury → client transfers</h1>
+          <h1>Transfer queue</h1>
           <p>
-            Preferred path: Onramp funds treasury → status{" "}
-            <code>treasury_funded</code> → send to <code>clientWallet</code> →
-            mark sent. USD Checkout fallback stays{" "}
-            <code>paid_pending_treasury</code> until you fund manually.
+            Preferred path: Onramp locks to <code>clientWallet</code> → status{" "}
+            <code>sent_to_client</code> on fulfillment. Legacy USD Checkout
+            rows stay <code>paid_pending_treasury</code> until you fund
+            manually.
           </p>
         </div>
 

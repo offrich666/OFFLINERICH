@@ -1,4 +1,4 @@
-# OFFLINERICH — pay $5–$9,000 → crypto to treasury → client wallet
+# OFFLINERICH — pay $5–$9,000 → crypto to client wallet
 
 ## Status
 
@@ -16,21 +16,16 @@ Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 ## Flow (main `/checkout`)
 
 ```
-Client: amount → Stripe Crypto Onramp (card / Apple Pay / Google Pay + KYC)
+Client: amount + THEIR wallet → Stripe Crypto Onramp (card / Apple Pay / Google Pay + KYC)
         │
         ▼
-USDC locked to OFFLINERICH treasury (server-side only — client never sees it)
-        │
-        ▼
-Client enters THEIR delivery wallet → ops sends treasury → client
+USDC/BTC locked to the client's own wallet (Stripe always shows this address)
 ```
 
-Client UI never shows treasury addresses. Some banks block crypto MCC; try another card.
-
-Treasury (internal):
-
-- EVM: `0x1dbB04Fe817A2C49DB853f2C49d29Db441355FE9`
-- BTC: `bc1qly9n852q3j5csvgd59lcmazhfu74fc77x88vrj`
+Why not treasury-first? Stripe’s Onramp UI always shows the locked destination
+(“Confirm your wallet”). Locking to treasury inevitably exposes the treasury
+address. Locking to the client’s wallet keeps that screen about *their* address
+and Stripe delivers crypto directly — no pre-funded inventory needed.
 
 ## Env
 
