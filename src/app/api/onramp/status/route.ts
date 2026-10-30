@@ -87,7 +87,7 @@ export async function GET() {
     },
     settleNetworks: ["ethereum", "bitcoin"],
     settleNote:
-      "EU Onramp settles USDC to Ethereum treasury (not Polygon/Base). Ops then sends to client network.",
+      "EU Onramp settles USDC to Ethereum (not Polygon/Base). Ops then delivers to the client's wallet.",
     nextSteps: !publishableProbe.valid
       ? [
           "Publishable key is INVALID — open https://dashboard.stripe.com/apikeys (Live)",

@@ -13,20 +13,19 @@ Paste **live API keys** to go live:
 
 Roadmap: [`docs/CRYPTO_RECEIVE_ROADMAP.md`](docs/CRYPTO_RECEIVE_ROADMAP.md)
 
-## Flow (main `/checkout` — Onramp → treasury)
+## Flow (main `/checkout`)
 
 ```
-Client picks amount → Stripe Crypto Onramp
-        │  (card / Apple Pay / Google Pay)
-        ▼
-USDC locked to OFFLINERICH treasury (Ethereum)
+Client: amount → Stripe Crypto Onramp (card / Apple Pay / Google Pay + KYC)
         │
         ▼
-Client sends delivery wallet → ops sends treasury → client
+USDC locked to OFFLINERICH treasury (server-side only — client never sees it)
+        │
+        ▼
+Client enters THEIR delivery wallet → ops sends treasury → client
 ```
 
-Note: some banks block crypto MCC (“not allowed merchant category”). That is the
-bank, not the site — try another card. Fiat-only checkout is NOT the product path.
+Client UI never shows treasury addresses. Some banks block crypto MCC; try another card.
 
 Treasury (internal):
 

@@ -190,3 +190,26 @@ export async function markOrderSent(
   await saveOrders(orders);
   return order;
 }
+
+/** Client submits delivery wallet after Onramp pay (treasury stays internal). */
+export async function attachDeliveryWallet(input: {
+  onrampSessionId: string;
+  network: string;
+  asset: string;
+  clientWallet: string;
+  customerEmail?: string | null;
+}): Promise<TransferOrder | null> {
+  const orders = await listTransferOrders();
+  const order = orders.find((o) => o.onrampSessionId === input.onrampSessionId);
+  if (!order) return null;
+  order.network = input.network;
+  order.asset = input.asset;
+  order.clientWallet = input.clientWallet;
+  order.treasuryWallet = treasuryForNetwork(input.network);
+  if (input.customerEmail) order.customerEmail = input.customerEmail;
+  order.updatedAt = new Date().toISOString();
+  order.notes =
+    "Client delivery wallet attached. When treasury_funded, send treasury → clientWallet.";
+  await saveOrders(orders);
+  return order;
+}

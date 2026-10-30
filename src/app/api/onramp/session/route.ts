@@ -13,8 +13,9 @@ import { upsertAwaitingCryptoOrder } from "@/lib/orders";
 
 /**
  * Easy Onramp path: amount (+ optional email) only.
- * Crypto settles to OFFLINERICH treasury (locked). Client delivery wallet
- * is collected after pay via email / ops — not required to start.
+ * Crypto settles to OFFLINERICH treasury (locked server-side).
+ * Client delivery wallet is collected after pay via /api/onramp/delivery.
+ * Response never includes treasury addresses or internal settle labels.
  */
 export async function POST(request: Request) {
   try {
@@ -92,14 +93,13 @@ export async function POST(request: Request) {
         : "(awaiting wallet — contact after pay)",
     });
 
+    // Client-safe payload only — no treasury address or settle jargon.
     return NextResponse.json({
       clientSecret: session.client_secret,
       sessionId: session.id,
       status: session.status,
       redirectUrl: session.redirect_url ?? null,
       livemode: session.livemode ?? isLiveStripeKey(),
-      mode: "onramp_to_treasury",
-      settlesTo: "treasury_usdc_ethereum",
     });
   } catch (error) {
     const message =
