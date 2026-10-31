@@ -125,8 +125,29 @@ def load_state() -> dict:
 
 
 def save_state(data: dict) -> None:
+    """Atomic write with retries — cursor store mounts can return EAGAIN briefly."""
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(data, indent=2))
+    payload = json.dumps(data, indent=2)
+    tmp = STATE_PATH.with_suffix(".json.tmp")
+    last_err: Exception | None = None
+    for attempt in range(8):
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, STATE_PATH)
+            return
+        except OSError as exc:
+            last_err = exc
+            # Errno 11 = EAGAIN / resource temporarily unavailable on some mounts
+            time.sleep(0.05 * (attempt + 1))
+    # Never crash the live terminal for a state flush
+    if last_err is not None:
+        try:
+            sys.stderr.write(f"{DIM}state save deferred: {last_err}{RESET}\n")
+        except Exception:
+            pass
 
 
 def progress_for(state: dict) -> tuple[float, float]:
