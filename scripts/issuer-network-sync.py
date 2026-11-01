@@ -21,8 +21,8 @@ except Exception:
     TZ = timezone(timedelta(hours=1))
 
 STATE_PATH = Path(os.environ.get("GCARDS_SYNC_STATE", "/cursor/stores/self/issuer-sync/state.json"))
-DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "27"))
-START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "87"))
+DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "10"))
+START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "97"))
 TICK_SEC = 1.2
 
 VISA_HOST = "secure.download.visa.com"
