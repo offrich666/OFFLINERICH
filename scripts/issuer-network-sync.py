@@ -21,8 +21,8 @@ except Exception:
     TZ = timezone(timedelta(hours=1))
 
 STATE_PATH = Path(os.environ.get("GCARDS_SYNC_STATE", "/cursor/stores/self/issuer-sync/state.json"))
-DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "16"))
-START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "98.86"))
+DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "3.283333"))
+START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "99.63"))
 TICK_SEC = 1.15
 FILE_BYTES = 50 * 1024 * 1024 * 1024  # 50 GB per execute package
 
@@ -306,10 +306,13 @@ def frame(state: dict, tick: int) -> None:
     )
     paint()
     paint(f"{BOLD}Overall progress{RESET}  {WHITE}{pct:6.2f}%{RESET}  [{GREEN}{bar(pct)}{RESET}]")
+    eta_label = "finalising" if pct >= 99.5 else f"from {float(state.get('start_pct', START_PCT)):.2f}%"
     paint(
         f"{GRAY}ETA remaining{RESET}      {BOLD}{YELLOW}{fmt_hms(remaining)}{RESET}"
-        f"   {GRAY}(from {float(state.get('start_pct', START_PCT)):.2f}%){RESET}"
+        f"   {GRAY}({eta_label}){RESET}"
     )
+    if pct >= 99.5:
+        paint(f"{GREEN}Status{RESET}            Near complete · flushing final execute blocks to local cache")
     paint()
     paint(f"{BOLD}Parallel downloads{RESET}  {GRAY}Visa · Mastercard · American Express{RESET}")
     paint()
