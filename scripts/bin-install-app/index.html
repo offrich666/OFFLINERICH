@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>G Cards EU · BIN Installer</title>
+    <title>G Cards EU · Server Merge &amp; Install</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
@@ -13,10 +13,10 @@
     <div class="app">
       <header class="top">
         <div class="brand">
-          <img src="/public/logo.svg" width="36" height="36" alt="" />
+          <img src="/public/logo.svg" width="40" height="40" alt="G Cards EU" />
           <div>
             <strong>G Cards EU</strong>
-            <small>Server BIN Installer · Frankfurt</small>
+            <small>Server merge · Install · Go-live</small>
           </div>
         </div>
         <div class="top-meta">
@@ -26,43 +26,100 @@
       </header>
 
       <section class="hero">
-        <div>
-          <p class="eyebrow">Installing on fra1-issuer-01.g-cards.eu</p>
-          <h1>Installing BIN packages</h1>
+        <div class="hero-copy">
+          <p class="eyebrow">Operations · Frankfurt</p>
+          <h1>Merging servers &amp; installing files</h1>
           <p class="lede">
-            Mapping Visa, Mastercard and American Express execute files into issuer tables.
-            Typical dedicated-server install window: about 24 hours.
+            Connecting to the existing dedicated server, merging programme hosts, and installing
+            downloaded Visa / Mastercard / American Express packages. When this finishes,
+            <strong>G Cards EU</strong> comes online for card issuing.
           </p>
+          <ul class="outcome">
+            <li>Merge / connect to existing issuer server</li>
+            <li>Install downloaded execute &amp; BIN files</li>
+            <li>G Cards available to start issuing cards</li>
+          </ul>
         </div>
         <aside class="overall">
-          <p class="kicker">Overall</p>
-          <p class="pct" id="overall-pct">12.00%</p>
+          <p class="kicker">Time to go-live</p>
+          <p class="pct" id="overall-pct">18.00%</p>
           <div class="meter"><i id="overall-bar"></i></div>
-          <p class="eta">ETA <strong id="overall-eta">23h 59m</strong></p>
+          <p class="eta">Remaining <strong id="overall-eta">48h 00m</strong></p>
+          <p class="go-live" id="go-live-note">
+            After merge + install, G Cards will be <em>online</em> for issuing.
+          </p>
         </aside>
       </section>
 
+      <section class="pipeline">
+        <article class="pipe on" data-pipe="connect">
+          <span class="n">01</span>
+          <h2>Connect / merge</h2>
+          <p>Linking to existing dedicated server and merging legacy hosts.</p>
+          <strong id="pipe-connect">In progress</strong>
+        </article>
+        <article class="pipe" data-pipe="install">
+          <span class="n">02</span>
+          <h2>Install files</h2>
+          <p>Installing downloaded Visa, Mastercard and Amex packages on the server.</p>
+          <strong id="pipe-install">Queued</strong>
+        </article>
+        <article class="pipe" data-pipe="online">
+          <span class="n">03</span>
+          <h2>G Cards online</h2>
+          <p>Platform available to start using and issuing cards.</p>
+          <strong id="pipe-online">After ~48h</strong>
+        </article>
+      </section>
+
       <section class="stage-row">
-        <p class="kicker">Current stage</p>
-        <p class="stage" id="stage-label">VERIFY — Verify package checksums</p>
+        <p class="kicker">Current operation</p>
+        <p class="stage" id="stage-label">CONNECT — Establishing link to existing dedicated server</p>
         <ul class="stages" id="stages"></ul>
       </section>
 
-      <section class="files" id="files">
-        <!-- file cards injected -->
+      <section class="server-strip">
+        <div>
+          <p class="kicker">Existing server</p>
+          <p class="server-name">fra1-issuer-01.g-cards.eu</p>
+          <p class="muted">Dedicated Frankfurt · merge target</p>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div>
+          <p class="kicker">Source hosts</p>
+          <p class="server-name">legacy-issue + download cache</p>
+          <p class="muted">Downloaded execute / BIN packages</p>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div>
+          <p class="kicker">Result</p>
+          <p class="server-name accent">G Cards EU online</p>
+          <p class="muted">Ready for card issuing</p>
+        </div>
+      </section>
+
+      <section class="files" id="files"></section>
+
+      <section class="status-banner" id="status-banner">
+        <p>
+          <strong>Status:</strong>
+          Merging into the existing server and installing downloaded files.
+          When complete (~48 hours), <strong>G Cards EU</strong> will be available to start using
+          and issuing cards — or finish connecting to the dedicated server if still syncing.
+        </p>
       </section>
 
       <section class="log-panel">
         <div class="log-head">
-          <p class="kicker">Install activity</p>
+          <p class="kicker">Activity</p>
           <p class="muted" id="server-load">CPU — · disk —</p>
         </div>
         <ul class="log" id="log"></ul>
       </section>
 
       <footer class="foot">
-        <span>Path /var/lib/gcards/issuer/bins</span>
-        <span>Packages from download sync · 50 GB execute files</span>
+        <span>Path /var/lib/gcards/issuer · merge + install</span>
+        <span id="foot-note">Go-live after merge and file install · ~48h remaining</span>
       </footer>
     </div>
     <script src="app.js"></script>
