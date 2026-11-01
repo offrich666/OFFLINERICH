@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G Cards EU — professional dark-terminal Visa / Mastercard / Amex issuer sync."""
+"""G Cards EU — professional light-terminal Visa / Mastercard / Amex issuer sync."""
 
 from __future__ import annotations
 
@@ -31,19 +31,20 @@ MC_HOST = "files.mastercard.com"
 AMEX_HOST = "secure.americanexpress.com"
 CHANNEL = "TLS 1.3 · issuer execute packages · resumed"
 
-# Dark professional palette (works even on light terminal profiles)
-BG = "\033[48;5;232m"
+# Light / white professional palette
+BG = "\033[48;5;255m"
+FG = "\033[38;5;16m"
 RESET = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
-CYAN = "\033[38;5;81m"
-GREEN = "\033[38;5;114m"
-YELLOW = "\033[38;5;221m"
-BLUE = "\033[38;5;75m"
-MAGENTA = "\033[38;5;177m"
-WHITE = "\033[38;5;255m"
-ORANGE = "\033[38;5;215m"
-GRAY = "\033[38;5;245m"
+CYAN = "\033[38;5;31m"
+GREEN = "\033[38;5;28m"
+YELLOW = "\033[38;5;136m"
+BLUE = "\033[38;5;25m"
+MAGENTA = "\033[38;5;90m"
+WHITE = "\033[38;5;16m"  # primary ink on white
+ORANGE = "\033[38;5;130m"
+GRAY = "\033[38;5;240m"
 
 _running = True
 
@@ -78,22 +79,21 @@ def bar(pct: float, width: int = 34) -> str:
 
 
 def paint(line: str = "") -> None:
-    # Force dark row background so the UI never looks washed white
+    # Force white row background for a clean light terminal
     width = max(88, min(120, os.get_terminal_size().columns if sys.stdout.isatty() else 100))
     bare = line
-    for code in (BG, RESET, DIM, BOLD, CYAN, GREEN, YELLOW, BLUE, MAGENTA, WHITE, ORANGE, GRAY):
+    for code in (BG, FG, RESET, DIM, BOLD, CYAN, GREEN, YELLOW, BLUE, MAGENTA, WHITE, ORANGE, GRAY):
         bare = bare.replace(code, "")
-    # strip other ansi
     import re
 
     bare = re.sub(r"\033\[[0-9;]*m", "", bare)
     pad = max(0, width - len(bare))
-    sys.stdout.write(f"{BG}{line}{' ' * pad}{RESET}\n")
+    sys.stdout.write(f"{BG}{FG}{line}{' ' * pad}{RESET}\n")
 
 
 def clear() -> None:
     sys.stdout.write("\033[2J\033[H")
-    sys.stdout.write("\033[48;5;232m\033[38;5;255m")
+    sys.stdout.write("\033[48;5;255m\033[38;5;16m")
     sys.stdout.flush()
 
 
@@ -388,8 +388,8 @@ def on_signal(signum, frame) -> None:  # noqa: ARG001
 def main() -> int:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
-    # Dark mode for the whole session
-    sys.stdout.write("\033[48;5;232m\033[38;5;255m\033[2J\033[H")
+    # White / light mode for the whole session
+    sys.stdout.write("\033[48;5;255m\033[38;5;16m\033[2J\033[H")
     sys.stdout.flush()
     state = load_state()
     tick = 0
