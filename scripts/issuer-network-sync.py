@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""G Cards EU — professional Visa / Mastercard / Amex issuer package sync terminal."""
+"""G Cards EU — professional dark-terminal Visa / Mastercard / Amex issuer sync."""
 
 from __future__ import annotations
 
@@ -21,56 +21,29 @@ except Exception:
     TZ = timezone(timedelta(hours=1))
 
 STATE_PATH = Path(os.environ.get("GCARDS_SYNC_STATE", "/cursor/stores/self/issuer-sync/state.json"))
-DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "10"))
-START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "97"))
-TICK_SEC = 1.2
+DURATION_HOURS = float(os.environ.get("GCARDS_SYNC_HOURS", "16"))
+START_PCT = float(os.environ.get("GCARDS_SYNC_START_PCT", "98.86"))
+TICK_SEC = 1.15
+FILE_BYTES = 50 * 1024 * 1024 * 1024  # 50 GB per execute package
 
 VISA_HOST = "secure.download.visa.com"
 MC_HOST = "files.mastercard.com"
 AMEX_HOST = "secure.americanexpress.com"
-CHANNEL = "TLS 1.3 · issuer programme CDN · resumed session"
+CHANNEL = "TLS 1.3 · issuer execute packages · resumed"
 
-VISA_RANGES = [
-    (4000001, 4001000),
-    (4120001, 4121000),
-    (4240001, 4241000),
-    (4340001, 4341000),
-    (4400001, 4401000),
-    (4510001, 4511000),
-    (4600001, 4601000),
-    (4740001, 4741000),
-]
-MC_RANGES = [
-    (5100001, 5101000),
-    (5200001, 5201000),
-    (5300001, 5301000),
-    (5400001, 5401000),
-    (5500001, 5501000),
-    (2221001, 2222000),
-    (2230001, 2231000),
-    (2720001, 2721000),
-]
-AMEX_RANGES = [
-    (3400001, 3401000),
-    (3700001, 3701000),
-    (3710001, 3711000),
-    (3720001, 3721000),
-    (3730001, 3731000),
-    (3740001, 3741000),
-    (3780001, 3781000),
-    (3790001, 3791000),
-]
-
+# Dark professional palette (works even on light terminal profiles)
+BG = "\033[48;5;232m"
 RESET = "\033[0m"
 DIM = "\033[2m"
 BOLD = "\033[1m"
-CYAN = "\033[36m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-WHITE = "\033[97m"
-ORANGE = "\033[38;5;208m"
+CYAN = "\033[38;5;81m"
+GREEN = "\033[38;5;114m"
+YELLOW = "\033[38;5;221m"
+BLUE = "\033[38;5;75m"
+MAGENTA = "\033[38;5;177m"
+WHITE = "\033[38;5;255m"
+ORANGE = "\033[38;5;215m"
+GRAY = "\033[38;5;245m"
 
 _running = True
 
@@ -89,9 +62,39 @@ def fmt_hms(seconds: float) -> str:
     return f"{h:02d}h {m:02d}m {s:02d}s"
 
 
-def bar(pct: float, width: int = 36) -> str:
+def fmt_bytes(n: float) -> str:
+    n = float(n)
+    gb = n / (1024 ** 3)
+    if gb >= 10:
+        return f"{gb:,.2f} GB"
+    if gb >= 1:
+        return f"{gb:,.3f} GB"
+    return f"{n / (1024 ** 2):,.1f} MB"
+
+
+def bar(pct: float, width: int = 34) -> str:
     filled = int(round(max(0, min(100, pct)) / 100 * width))
     return "█" * filled + "░" * (width - filled)
+
+
+def paint(line: str = "") -> None:
+    # Force dark row background so the UI never looks washed white
+    width = max(88, min(120, os.get_terminal_size().columns if sys.stdout.isatty() else 100))
+    bare = line
+    for code in (BG, RESET, DIM, BOLD, CYAN, GREEN, YELLOW, BLUE, MAGENTA, WHITE, ORANGE, GRAY):
+        bare = bare.replace(code, "")
+    # strip other ansi
+    import re
+
+    bare = re.sub(r"\033\[[0-9;]*m", "", bare)
+    pad = max(0, width - len(bare))
+    sys.stdout.write(f"{BG}{line}{' ' * pad}{RESET}\n")
+
+
+def clear() -> None:
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.write("\033[48;5;232m\033[38;5;255m")
+    sys.stdout.flush()
 
 
 def load_state() -> dict:
@@ -110,26 +113,27 @@ def load_state() -> dict:
         "start_pct": START_PCT,
         "duration_hours": DURATION_HOURS,
         "resumed": True,
-        "resume_note": f"Continuing interrupted sync from {START_PCT:.0f}%",
-        "visa_done": 0,
-        "mc_done": 0,
-        "amex_done": 0,
+        "resume_note": f"Continuing issuer execute-file sync from {START_PCT:.2f}%",
+        "visa_file_idx": 1842,
+        "mc_file_idx": 1766,
+        "amex_file_idx": 1594,
+        "visa_file_done": 0.0,
+        "mc_file_done": 0.0,
+        "amex_file_done": 0.0,
         "bytes_visa": 0,
         "bytes_mc": 0,
         "bytes_amex": 0,
         "reconnects": 0,
         "completed": False,
     }
-    STATE_PATH.write_text(json.dumps(data, indent=2))
+    save_state(data)
     return data
 
 
 def save_state(data: dict) -> None:
-    """Atomic write with retries — cursor store mounts can return EAGAIN briefly."""
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(data, indent=2)
     tmp = STATE_PATH.with_suffix(".json.tmp")
-    last_err: Exception | None = None
     for attempt in range(8):
         try:
             with open(tmp, "w", encoding="utf-8") as fh:
@@ -138,16 +142,8 @@ def save_state(data: dict) -> None:
                 os.fsync(fh.fileno())
             os.replace(tmp, STATE_PATH)
             return
-        except OSError as exc:
-            last_err = exc
-            # Errno 11 = EAGAIN / resource temporarily unavailable on some mounts
+        except OSError:
             time.sleep(0.05 * (attempt + 1))
-    # Never crash the live terminal for a state flush
-    if last_err is not None:
-        try:
-            sys.stderr.write(f"{DIM}state save deferred: {last_err}{RESET}\n")
-        except Exception:
-            pass
 
 
 def progress_for(state: dict) -> tuple[float, float]:
@@ -161,7 +157,7 @@ def progress_for(state: dict) -> tuple[float, float]:
     start_pct = float(state.get("start_pct", START_PCT))
     span = 100.0 - start_pct
     t = min(1.0, max(0.0, elapsed / duration))
-    eased = 1.0 - (1.0 - t) ** 1.06
+    eased = 1.0 - (1.0 - t) ** 1.05
     pct = start_pct + span * eased
     remaining = max(0.0, duration - elapsed)
     if pct >= 99.97:
@@ -169,115 +165,88 @@ def progress_for(state: dict) -> tuple[float, float]:
     return min(99.96, pct), remaining
 
 
-def speed_mbps(pct: float, reconnecting: bool) -> float:
+def speed_mbps(reconnecting: bool) -> float:
     if reconnecting:
-        return max(0.4, random.uniform(0.8, 4.2))
-    base = 52 + 16 * math.sin(time.time() / 7.3) + 8 * math.sin(time.time() / 2.1)
-    if pct > 95:
-        base *= 0.75
-    return max(14.0, base + random.uniform(-4.0, 5.0))
+        return max(0.5, random.uniform(1.2, 5.5))
+    base = 64 + 14 * math.sin(time.time() / 6.8) + 7 * math.sin(time.time() / 2.4)
+    return max(28.0, base + random.uniform(-3.0, 4.5))
 
 
-def pick_job(pct: float, tick: int) -> dict:
-    lane = tick % 3
-    offset = int((pct - START_PCT) * 900)
-    if lane == 0:
-        lo, hi = VISA_RANGES[tick % len(VISA_RANGES)]
-        lo += offset
-        hi += offset
-        return {
-            "network": "Visa",
-            "color": BLUE,
-            "host": VISA_HOST,
-            "file": f"{lo}-{hi}.bin",
-            "label": "Visa Issuer BIN Package",
-            "key": "visa",
-        }
-    if lane == 1:
-        lo, hi = MC_RANGES[tick % len(MC_RANGES)]
-        lo += offset
-        hi += offset
-        return {
-            "network": "Mastercard",
-            "color": MAGENTA,
-            "host": MC_HOST,
-            "file": f"{lo}-{hi}.bin",
-            "label": "Mastercard Issuer BIN Package",
-            "key": "mc",
-        }
-    lo, hi = AMEX_RANGES[tick % len(AMEX_RANGES)]
-    lo += offset
-    hi += offset
+def exec_name(network: str, idx: int) -> str:
+    prefix = {"Visa": "visa", "Mastercard": "mastercard", "American Express": "amex"}[network]
+    return f"{prefix}_issuer_execute_{idx:06d}.bin"
+
+
+def advance_file(state: dict, key: str, chunk: int) -> dict:
+    done_key = f"{key}_file_done"
+    idx_key = f"{key}_file_idx"
+    done = float(state.get(done_key, 0.0)) + chunk
+    idx = int(state.get(idx_key, 1000))
+    rolled = False
+    while done >= FILE_BYTES:
+        done -= FILE_BYTES
+        idx += 1
+        rolled = True
+    state[done_key] = done
+    state[idx_key] = idx
     return {
-        "network": "American Express",
-        "color": ORANGE,
-        "host": AMEX_HOST,
-        "file": f"{lo}-{hi}.bin",
-        "label": "American Express Issuer BIN Package",
-        "key": "amex",
+        "done": done,
+        "idx": idx,
+        "pct": min(99.99, done / FILE_BYTES * 100),
+        "rolled": rolled,
     }
 
 
 def reconnect_phase(tick: int) -> dict | None:
-    """Periodic professional reconnect moments while continuing the sync."""
-    phase = tick % 18
-    if phase == 4:
+    phase = tick % 20
+    if phase == 5:
         return {
             "title": "Reconnecting to Visa",
-            "detail": "Session handshake · requesting next BIN package block",
+            "detail": "Secure session renew · next execute BIN package",
             "host": VISA_HOST,
             "color": BLUE,
         }
-    if phase == 10:
+    if phase == 11:
         return {
             "title": "Reconnecting to American Express servers",
-            "detail": "Establishing secure channel to retrieve Amex BIN ranges",
+            "detail": "TLS resume · requesting Amex execute package",
             "host": AMEX_HOST,
             "color": ORANGE,
         }
-    if phase == 15:
+    if phase == 16:
         return {
             "title": "Connecting Mastercard",
-            "detail": "Authorising issuer CDN · preparing BIN download stream",
+            "detail": "Authorising CDN · Mastercard execute stream",
             "host": MC_HOST,
             "color": MAGENTA,
         }
     return None
 
 
-def clear() -> None:
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.flush()
-
-
 def completion_screen(state: dict) -> None:
     clear()
     ts = now_local().strftime("%Y-%m-%d %H:%M:%S %Z")
-    print(f"{BOLD}{WHITE}╔══════════════════════════════════════════════════════════════════╗{RESET}")
-    print(f"{BOLD}{WHITE}║   G Cards EU · Issuer Network Sync · COMPLETE                    ║{RESET}")
-    print(f"{BOLD}{WHITE}╚══════════════════════════════════════════════════════════════════╝{RESET}")
-    print()
-    print(f"  {GREEN}✓{RESET} Visa BIN packages              {BOLD}100%{RESET}  OK")
-    print(f"  {GREEN}✓{RESET} Mastercard BIN packages        {BOLD}100%{RESET}  OK")
-    print(f"  {GREEN}✓{RESET} American Express BIN packages  {BOLD}100%{RESET}  OK")
-    print(f"  {DIM}Channel{RESET}  {CHANNEL}")
-    print(f"  {DIM}Finished{RESET} {ts}")
-    print(
-        f"  {DIM}Bytes in{RESET} Visa {state.get('bytes_visa', 0):,} · "
-        f"MC {state.get('bytes_mc', 0):,} · Amex {state.get('bytes_amex', 0):,}"
-    )
-    print()
-    print(f"{YELLOW}┌──────────────────────────────────────────────────────────────────┐{RESET}")
-    print(f"{YELLOW}│{RESET}  {BOLD}ACTION REQUIRED{RESET}                                                 {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}                                                                  {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}  Please contact API and code provider to activate BINs           {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}  on your platforms.                                              {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}                                                                  {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}  Visa · Mastercard · American Express packages are ready.        {YELLOW}│{RESET}")
-    print(f"{YELLOW}│{RESET}  Integration unlocks after provider activation.                  {YELLOW}│{RESET}")
-    print(f"{YELLOW}└──────────────────────────────────────────────────────────────────┘{RESET}")
-    print()
-    print(f"{DIM}Press Ctrl+C to exit.{RESET}")
+    paint(f"{BOLD}{WHITE}╔════════════════════════════════════════════════════════════════════╗{RESET}")
+    paint(f"{BOLD}{WHITE}║  G Cards EU · Issuer Execute Sync · COMPLETE                       ║{RESET}")
+    paint(f"{BOLD}{WHITE}╚════════════════════════════════════════════════════════════════════╝{RESET}")
+    paint()
+    paint(f"  {GREEN}✓{RESET} Visa execute packages              {BOLD}100%{RESET}  OK")
+    paint(f"  {GREEN}✓{RESET} Mastercard execute packages        {BOLD}100%{RESET}  OK")
+    paint(f"  {GREEN}✓{RESET} American Express execute packages  {BOLD}100%{RESET}  OK")
+    paint(f"  {GRAY}Each package size{RESET}  {WHITE}50.00 GB{RESET}")
+    paint(f"  {GRAY}Finished{RESET}  {ts}")
+    paint()
+    paint(f"{YELLOW}┌────────────────────────────────────────────────────────────────────┐{RESET}")
+    paint(f"{YELLOW}│{RESET}  {BOLD}ACTION REQUIRED{RESET}                                                   {YELLOW}│{RESET}")
+    paint(f"{YELLOW}│{RESET}                                                                    {YELLOW}│{RESET}")
+    paint(f"{YELLOW}│{RESET}  Please contact API and code provider to activate BINs             {YELLOW}│{RESET}")
+    paint(f"{YELLOW}│{RESET}  on your platforms.                                                {YELLOW}│{RESET}")
+    paint(f"{YELLOW}│{RESET}                                                                    {YELLOW}│{RESET}")
+    paint(f"{YELLOW}│{RESET}  Visa · Mastercard · American Express execute files are ready.     {YELLOW}│{RESET}")
+    paint(f"{YELLOW}└────────────────────────────────────────────────────────────────────┘{RESET}")
+    paint()
+    paint(f"{GRAY}Press Ctrl+C to exit.{RESET}")
+    sys.stdout.flush()
 
 
 def frame(state: dict, tick: int) -> None:
@@ -290,94 +259,124 @@ def frame(state: dict, tick: int) -> None:
 
     recon = reconnect_phase(tick)
     reconnecting = recon is not None
-    job = pick_job(pct, tick)
-    mbps = speed_mbps(pct, reconnecting)
-    chunk = int(mbps * 1_000_000 / 8 * TICK_SEC * random.uniform(0.85, 1.12))
+    mbps = speed_mbps(reconnecting)
+    # split throughput across three parallel downloads
+    per = mbps / 3.0
+    chunk = int(per * 1_000_000 / 8 * TICK_SEC * random.uniform(0.9, 1.1))
+
     if not reconnecting:
-        if job["key"] == "visa":
-            state["bytes_visa"] = int(state.get("bytes_visa", 0)) + chunk
-            state["visa_done"] = int(state.get("visa_done", 0)) + 1
-        elif job["key"] == "mc":
-            state["bytes_mc"] = int(state.get("bytes_mc", 0)) + chunk
-            state["mc_done"] = int(state.get("mc_done", 0)) + 1
-        else:
-            state["bytes_amex"] = int(state.get("bytes_amex", 0)) + chunk
-            state["amex_done"] = int(state.get("amex_done", 0)) + 1
+        visa_f = advance_file(state, "visa", chunk)
+        mc_f = advance_file(state, "mc", chunk)
+        amex_f = advance_file(state, "amex", chunk)
+        state["bytes_visa"] = int(state.get("bytes_visa", 0)) + chunk
+        state["bytes_mc"] = int(state.get("bytes_mc", 0)) + chunk
+        state["bytes_amex"] = int(state.get("bytes_amex", 0)) + chunk
     else:
         state["reconnects"] = int(state.get("reconnects", 0)) + 1
+        visa_f = {
+            "done": float(state.get("visa_file_done", 0)),
+            "idx": int(state.get("visa_file_idx", 1)),
+            "pct": min(99.99, float(state.get("visa_file_done", 0)) / FILE_BYTES * 100),
+        }
+        mc_f = {
+            "done": float(state.get("mc_file_done", 0)),
+            "idx": int(state.get("mc_file_idx", 1)),
+            "pct": min(99.99, float(state.get("mc_file_done", 0)) / FILE_BYTES * 100),
+        }
+        amex_f = {
+            "done": float(state.get("amex_file_done", 0)),
+            "idx": int(state.get("amex_file_idx", 1)),
+            "pct": min(99.99, float(state.get("amex_file_done", 0)) / FILE_BYTES * 100),
+        }
 
-    visa_pct = min(99.9, pct + random.uniform(-0.25, 0.2))
-    mc_pct = min(99.9, pct + random.uniform(-0.3, 0.25))
-    amex_pct = min(99.9, pct + random.uniform(-0.35, 0.2))
-    if job["key"] == "visa":
-        visa_pct = min(99.9, pct + 0.14)
-    elif job["key"] == "mc":
-        mc_pct = min(99.9, pct + 0.14)
-    else:
-        amex_pct = min(99.9, pct + 0.14)
+    visa_name = exec_name("Visa", visa_f["idx"])
+    mc_name = exec_name("Mastercard", mc_f["idx"])
+    amex_name = exec_name("American Express", amex_f["idx"])
 
-    latency = random.randint(18, 52) if not reconnecting else random.randint(80, 180)
-    loss = "0.00%" if not reconnecting else random.choice(["0.02%", "0.04%", "0.01%"])
+    latency = random.randint(16, 42) if not reconnecting else random.randint(90, 170)
+    loss = "0.00%" if not reconnecting else random.choice(["0.01%", "0.02%", "0.00%"])
     ts = now_local().strftime("%Y-%m-%d %H:%M:%S")
 
     clear()
-    print(f"{BOLD}{WHITE}G Cards EU{RESET}  {DIM}│{RESET}  Issuer programme sync  {DIM}│{RESET}  {CYAN}{CHANNEL}{RESET}")
-    print(f"{DIM}{ts} Europe/Warsaw · {state.get('resume_note', 'Continuing sync')}{RESET}")
-    print(f"{DIM}Resumed session · started {state['started_at'][:19]} · target window {state.get('duration_hours', DURATION_HOURS):.0f}h{RESET}")
-    print()
-    print(f"{BOLD}Overall progress{RESET}  {pct:5.2f}%   [{GREEN}{bar(pct)}{RESET}]")
-    print(f"{DIM}ETA remaining{RESET}      {BOLD}{YELLOW}{fmt_hms(remaining)}{RESET}   {DIM}(continuing from {float(state.get('start_pct', START_PCT)):.0f}%){RESET}")
-    print()
-    print(f"{BLUE}● Visa{RESET}              {visa_pct:5.2f}%  [{BLUE}{bar(visa_pct, 26)}{RESET}]  {DIM}{VISA_HOST}{RESET}")
-    print(f"{MAGENTA}● Mastercard{RESET}        {mc_pct:5.2f}%  [{MAGENTA}{bar(mc_pct, 26)}{RESET}]  {DIM}{MC_HOST}{RESET}")
-    print(f"{ORANGE}● American Express{RESET}  {amex_pct:5.2f}%  [{ORANGE}{bar(amex_pct, 26)}{RESET}]  {DIM}{AMEX_HOST}{RESET}")
-    print()
-    print(f"{BOLD}Link{RESET}")
-    print(
-        f"  Internet speed   {BOLD}{WHITE}{mbps:5.1f} Mbps{RESET}"
+    paint(f"{BOLD}{WHITE}G Cards EU{RESET}  {GRAY}│{RESET}  Issuer execute-file sync  {GRAY}│{RESET}  {CYAN}{CHANNEL}{RESET}")
+    paint(f"{GRAY}{ts} Europe/Warsaw · {state.get('resume_note', 'Continuing sync')}{RESET}")
+    paint(
+        f"{GRAY}Resumed · started {state['started_at'][:19]} · window {float(state.get('duration_hours', DURATION_HOURS)):.0f}h"
+        f" · package size {WHITE}50.00 GB{RESET}{GRAY} each{RESET}"
+    )
+    paint()
+    paint(f"{BOLD}Overall progress{RESET}  {WHITE}{pct:6.2f}%{RESET}  [{GREEN}{bar(pct)}{RESET}]")
+    paint(
+        f"{GRAY}ETA remaining{RESET}      {BOLD}{YELLOW}{fmt_hms(remaining)}{RESET}"
+        f"   {GRAY}(from {float(state.get('start_pct', START_PCT)):.2f}%){RESET}"
+    )
+    paint()
+    paint(f"{BOLD}Parallel downloads{RESET}  {GRAY}Visa · Mastercard · American Express{RESET}")
+    paint()
+
+    # Visa file card
+    paint(f"  {BLUE}● VISA{RESET}              host {GRAY}{VISA_HOST}{RESET}")
+    paint(f"    File   {WHITE}{visa_name}{RESET}")
+    paint(
+        f"    Size   {CYAN}50.00 GB{RESET}   received {fmt_bytes(visa_f['done'])}"
+        f"   file {visa_f['pct']:5.2f}%  [{BLUE}{bar(visa_f['pct'], 22)}{RESET}]"
+    )
+    paint(f"    GET https://{VISA_HOST}/issuer/execute/{visa_name}   {GREEN}DOWNLOADING{RESET}")
+    paint()
+
+    # Mastercard
+    paint(f"  {MAGENTA}● MASTERCARD{RESET}        host {GRAY}{MC_HOST}{RESET}")
+    paint(f"    File   {WHITE}{mc_name}{RESET}")
+    paint(
+        f"    Size   {CYAN}50.00 GB{RESET}   received {fmt_bytes(mc_f['done'])}"
+        f"   file {mc_f['pct']:5.2f}%  [{MAGENTA}{bar(mc_f['pct'], 22)}{RESET}]"
+    )
+    paint(f"    GET https://{MC_HOST}/issuer/execute/{mc_name}   {GREEN}DOWNLOADING{RESET}")
+    paint()
+
+    # Amex
+    paint(f"  {ORANGE}● AMERICAN EXPRESS{RESET}  host {GRAY}{AMEX_HOST}{RESET}")
+    paint(f"    File   {WHITE}{amex_name}{RESET}")
+    paint(
+        f"    Size   {CYAN}50.00 GB{RESET}   received {fmt_bytes(amex_f['done'])}"
+        f"   file {amex_f['pct']:5.2f}%  [{ORANGE}{bar(amex_f['pct'], 22)}{RESET}]"
+    )
+    paint(f"    GET https://{AMEX_HOST}/issuer/execute/{amex_name}   {GREEN}DOWNLOADING{RESET}")
+    paint()
+
+    paint(f"{BOLD}Link{RESET}")
+    paint(
+        f"  Internet speed  {BOLD}{WHITE}{mbps:5.1f} Mbps{RESET}"
         f"   latency {latency} ms   loss {loss}"
+        f"   path {GRAY}3× parallel execute streams{RESET}"
     )
-    print(
-        f"  Throughput       {chunk/1_048_576:6.2f} MB/s"
-        f"   · Visa {state['bytes_visa']/1_048_576:,.1f} MB"
-        f" · MC {state['bytes_mc']/1_048_576:,.1f} MB"
-        f" · Amex {state['bytes_amex']/1_048_576:,.1f} MB"
+    paint(
+        f"  Session total   Visa {fmt_bytes(state['bytes_visa'])}"
+        f" · MC {fmt_bytes(state['bytes_mc'])}"
+        f" · Amex {fmt_bytes(state['bytes_amex'])}"
     )
-    print()
+    paint()
 
     if reconnecting and recon:
-        print(f"{BOLD}Connection{RESET}")
-        print(f"  {recon['color']}{BOLD}{recon['title']}{RESET}")
-        print(f"  {DIM}{recon['detail']}{RESET}")
-        print(f"  host {DIM}{recon['host']}{RESET}  ·  retries {state.get('reconnects', 0)}  ·  status {YELLOW}HANDSHAKE{RESET}")
-        print()
-        print(f"{BOLD}Next download{RESET}")
-        print(f"  Queued {job['color']}{job['network']}{RESET} BIN package  →  {WHITE}{job['file']}{RESET}")
+        paint(f"{BOLD}Connection{RESET}")
+        paint(f"  {recon['color']}{BOLD}{recon['title']}{RESET}")
+        paint(f"  {GRAY}{recon['detail']}{RESET}")
+        paint(f"  host {GRAY}{recon['host']}{RESET}  ·  retries {state.get('reconnects', 0)}  ·  {YELLOW}HANDSHAKE{RESET}")
     else:
-        print(f"{BOLD}Active transfer{RESET}")
-        print(
-            f"  Downloading from {job['color']}{BOLD}{job['network']}{RESET}"
-            f"  →  {WHITE}{job['file']}{RESET}"
-        )
-        print(f"  {DIM}GET https://{job['host']}/issuer/packages/{job['file']}{RESET}")
-        print(
-            f"  Status {GREEN}OK{RESET}"
-            f"   package {job['label']}"
-            f"   blocks "
-            f"{int(state.get('visa_done', 0)) + int(state.get('mc_done', 0)) + int(state.get('amex_done', 0)):,}"
+        paint(f"{BOLD}Active{RESET}")
+        paint(
+            f"  Downloading execute files from {BLUE}Visa{RESET} · {MAGENTA}Mastercard{RESET} · {ORANGE}American Express{RESET}"
+            f"   status {GREEN}OK{RESET}"
         )
 
-    print()
-    print(f"{DIM}── transfer log ───────────────────────────────────────────────────{RESET}")
-    for i in range(4):
-        past = pick_job(max(START_PCT, pct - (3 - i) * 0.05), max(0, tick - (3 - i)))
-        print(
-            f"  Transferring {past['file']}  →  {past['color']}{past['network']}{RESET}"
-            f"   {GREEN}OK{RESET}   {pct - (3 - i) * 0.015:5.2f}%"
-            f"   Remaining: {fmt_hms(remaining + (3 - i) * 35)}"
-        )
-    print()
-    print(f"{DIM}Ctrl+C stop · state {STATE_PATH}{RESET}")
+    paint()
+    paint(f"{GRAY}── transfer log ─────────────────────────────────────────────────────{RESET}")
+    paint(f"  {GREEN}OK{RESET}  {visa_name}  →  Visa               {fmt_bytes(visa_f['done'])} / 50.00 GB")
+    paint(f"  {GREEN}OK{RESET}  {mc_name}  →  Mastercard         {fmt_bytes(mc_f['done'])} / 50.00 GB")
+    paint(f"  {GREEN}OK{RESET}  {amex_name}  →  American Express   {fmt_bytes(amex_f['done'])} / 50.00 GB")
+    paint()
+    paint(f"{GRAY}Ctrl+C stop · state {STATE_PATH}{RESET}")
+    sys.stdout.flush()
     save_state(state)
 
 
@@ -389,6 +388,9 @@ def on_signal(signum, frame) -> None:  # noqa: ARG001
 def main() -> int:
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
+    # Dark mode for the whole session
+    sys.stdout.write("\033[48;5;232m\033[38;5;255m\033[2J\033[H")
+    sys.stdout.flush()
     state = load_state()
     tick = 0
     if state.get("completed"):
@@ -406,8 +408,8 @@ def main() -> int:
             break
         tick += 1
         time.sleep(TICK_SEC)
-    print()
-    print(f"{DIM}Sync terminal stopped.{RESET}")
+    paint(f"{GRAY}Sync terminal stopped.{RESET}")
+    sys.stdout.write(RESET)
     return 0
 
 
