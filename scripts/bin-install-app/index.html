@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G Cards EU · BIN Installer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="brand">
+          <img src="/public/logo.svg" width="36" height="36" alt="" />
+          <div>
+            <strong>G Cards EU</strong>
+            <small>Server BIN Installer · Frankfurt</small>
+          </div>
+        </div>
+        <div class="top-meta">
+          <span id="clock">—</span>
+          <span class="pill live">LIVE</span>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Installing on fra1-issuer-01.g-cards.eu</p>
+          <h1>Installing BIN packages</h1>
+          <p class="lede">
+            Mapping Visa, Mastercard and American Express execute files into issuer tables.
+            Typical dedicated-server install window: about 24 hours.
+          </p>
+        </div>
+        <aside class="overall">
+          <p class="kicker">Overall</p>
+          <p class="pct" id="overall-pct">12.00%</p>
+          <div class="meter"><i id="overall-bar"></i></div>
+          <p class="eta">ETA <strong id="overall-eta">23h 59m</strong></p>
+        </aside>
+      </section>
+
+      <section class="stage-row">
+        <p class="kicker">Current stage</p>
+        <p class="stage" id="stage-label">VERIFY — Verify package checksums</p>
+        <ul class="stages" id="stages"></ul>
+      </section>
+
+      <section class="files" id="files">
+        <!-- file cards injected -->
+      </section>
+
+      <section class="log-panel">
+        <div class="log-head">
+          <p class="kicker">Install activity</p>
+          <p class="muted" id="server-load">CPU — · disk —</p>
+        </div>
+        <ul class="log" id="log"></ul>
+      </section>
+
+      <footer class="foot">
+        <span>Path /var/lib/gcards/issuer/bins</span>
+        <span>Packages from download sync · 50 GB execute files</span>
+      </footer>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
