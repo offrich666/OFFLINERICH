@@ -1,9 +1,17 @@
 (() => {
-  /** Merge + install window until G Cards is online for issuing. */
-  const START_PCT = 18;
-  const DURATION_H = 48;
+  /**
+   * Server merge / install — pinned near 30%.
+   * Started 02.11.2026 05:38 Warsaw
+   * Remaining window 1D 16H 34m 25s → EST end 03.11.2026 22:12:25 Warsaw
+   */
+  const TZ = "Europe/Warsaw";
+  const START = new Date("2026-11-02T05:38:00+01:00");
+  const END = new Date("2026-11-03T22:12:25+01:00"); // 05:38 + 1d 16h 34m 25s
+  const START_PCT = 30;
   const FILE_GB = 50;
-  const startedAt = Date.now();
+  /** Anchor so the first paint shows ~1D 16H 34m 25s remaining. */
+  const REMAINING_AT_OPEN = 1 * 86400 + 16 * 3600 + 34 * 60 + 25;
+  const OPENED_AT = Date.now();
 
   const stages = [
     ["connect", "Establishing link to existing dedicated server"],
@@ -56,10 +64,10 @@
   const pipeConnect = document.getElementById("pipe-connect");
   const pipeInstall = document.getElementById("pipe-install");
   const pipeOnline = document.getElementById("pipe-online");
+  const estEndEl = document.getElementById("est-end");
+  const startedEl = document.getElementById("started-at");
 
-  stagesEl.innerHTML = stages
-    .map(([id]) => `<li data-stage="${id}">${id}</li>`)
-    .join("");
+  stagesEl.innerHTML = stages.map(([id]) => `<li data-stage="${id}">${id}</li>`).join("");
 
   filesEl.innerHTML = networks
     .map(
@@ -67,9 +75,9 @@
         <p class="file-net">${n.name}</p>
         <h2>${n.file}</h2>
         <p class="size">Downloaded execute package · ${FILE_GB}.00 GB · installing on server</p>
-        <div class="meter"><i style="width:18%"></i></div>
+        <div class="meter"><i style="width:30%"></i></div>
         <div class="stats">
-          <span>Install <b class="file-pct">18.00%</b></span>
+          <span>Install <b class="file-pct">30.00%</b></span>
           <span>BINs <b class="bins">0</b></span>
         </div>
         <span class="badge">INSTALLING ON SERVER</span>
@@ -77,34 +85,29 @@
     )
     .join("");
 
-  function fmtHms(ms) {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    const h = Math.floor(s / 3600);
+  function fmtParts(totalSec) {
+    const s = Math.max(0, Math.floor(totalSec));
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
     const sec = s % 60;
-    if (h >= 24) {
-      const d = Math.floor(h / 24);
-      return `${d}d ${String(h % 24).padStart(2, "0")}h ${String(m).padStart(2, "0")}m`;
-    }
-    return `${String(h).padStart(2, "0")}h ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
+    return `${d}D ${String(h).padStart(2, "0")}H ${String(m).padStart(2, "0")}m ${String(sec).padStart(2, "0")}s`;
   }
 
   function progress() {
-    const elapsed = Date.now() - startedAt;
-    const duration = DURATION_H * 3600 * 1000;
-    const t = Math.min(1, Math.max(0, elapsed / duration));
-    const eased = 1 - (1 - t) ** 1.1;
-    const pct = START_PCT + (100 - START_PCT) * eased;
-    const remaining = Math.max(0, duration - elapsed);
-    return { pct: Math.min(99.96, pct), remaining };
+    const elapsedSec = (Date.now() - OPENED_AT) / 1000;
+    const remainingSec = Math.max(0, REMAINING_AT_OPEN - elapsedSec);
+    // Stay near 30%; creep slowly over the remaining window
+    const done = 1 - remainingSec / REMAINING_AT_OPEN;
+    const pct = START_PCT + (100 - START_PCT) * Math.pow(done, 1.35);
+    return { pct: Math.min(99.95, pct), remainingSec };
   }
 
   function stageIndex(pct) {
-    if (pct < 28) return 0;
-    if (pct < 40) return 1;
-    if (pct < 52) return 2;
-    if (pct < 70) return 3;
-    if (pct < 88) return 4;
+    if (pct < 32) return 1;
+    if (pct < 45) return 2;
+    if (pct < 60) return 3;
+    if (pct < 78) return 4;
     return 5;
   }
 
@@ -117,11 +120,11 @@
       connect.classList.add("on");
       pipeConnect.textContent = "In progress";
       pipeInstall.textContent = "Queued";
-      pipeOnline.textContent = "After ~48h";
+      pipeOnline.textContent = "After merge + install";
     } else if (si <= 4) {
       connect.classList.add("done");
       install.classList.add("on");
-      pipeConnect.textContent = "Connected";
+      pipeConnect.textContent = "Connected / merging";
       pipeInstall.textContent = "Installing files";
       pipeOnline.textContent = "Pending go-live";
     } else {
@@ -151,19 +154,24 @@
     ["Preparing G Cards EU for issuing go-live", "online"],
   ];
 
+  if (startedEl) startedEl.textContent = "02.11.2026 05:38 Warsaw";
+  if (estEndEl) estEndEl.textContent = "03.11.2026 22:12 Warsaw";
+
   let tick = 0;
   function render() {
-    const { pct, remaining } = progress();
-    const si = stageIndex(pct);
+    const { pct, remainingSec } = progress();
+    const displayPct = Math.max(START_PCT, pct);
+    const si = stageIndex(displayPct);
     const [sid, slabel] = stages[si];
+    const remLabel = fmtParts(remainingSec);
 
-    overallPct.textContent = `${pct.toFixed(2)}%`;
-    overallBar.style.width = `${pct}%`;
-    overallEta.textContent = fmtHms(remaining);
+    overallPct.textContent = `${displayPct.toFixed(2)}%`;
+    overallBar.style.width = `${displayPct}%`;
+    overallEta.textContent = remLabel;
     goLiveNote.innerHTML =
-      'After merge + install, <strong>G Cards EU</strong> will be <em>online</em> to start using and issuing cards.';
+      'Started <strong>02.11.2026 05:38</strong> Warsaw · EST end <strong>03.11.2026 ≈ 22:12</strong>. After merge + install, <strong>G Cards EU</strong> will be <em>online</em> for issuing.';
     stageLabel.textContent = `${sid.toUpperCase()} — ${slabel}`;
-    footNote.textContent = `Go-live after merge and file install · ${fmtHms(remaining)} remaining`;
+    footNote.textContent = `EST ending 03.11.2026 ≈ 22:12 Warsaw · ${remLabel} remaining`;
     updatePipes(si);
 
     stagesEl.querySelectorAll("li").forEach((li, i) => {
@@ -171,19 +179,16 @@
       li.classList.toggle("done", i < si);
     });
 
-    clockEl.textContent = new Date().toLocaleString("en-GB", {
-      timeZone: "Europe/Warsaw",
-      hour12: false,
-    });
+    clockEl.textContent = new Date().toLocaleString("en-GB", { timeZone: TZ, hour12: false });
 
     const cpu = 30 + 16 * Math.abs(Math.sin(Date.now() / 5500));
     const disk = 140 + 70 * Math.abs(Math.sin(Date.now() / 7200));
     loadEl.textContent = `CPU ${cpu.toFixed(1)}% · disk ${disk.toFixed(0)} MB/s · merge workers 8`;
 
-    networks.forEach((n, i) => {
-      const local = Math.min(1, (pct / 100) * n.bias);
-      const filePct = Math.min(99.5, local * 100 + Math.sin(Date.now() / 4000 + i) * 0.35);
-      const bins = Math.floor(n.totalBins * local);
+    networks.forEach((n) => {
+      const local = Math.min(1, (displayPct / 100) * n.bias);
+      const filePct = Math.min(99.5, Math.max(START_PCT * n.bias * 0.98, local * 100));
+      const bins = Math.floor(n.totalBins * (filePct / 100));
       const card = filesEl.querySelector(`[data-net="${n.key}"]`);
       if (!card) return;
       card.querySelector(".meter i").style.width = `${filePct}%`;
@@ -196,29 +201,19 @@
       pushLog(line[0], line[1]);
     }
 
-    if (pct >= 99.97) {
+    if (remainingSec <= 0 || displayPct >= 99.97) {
       overallPct.textContent = "100%";
       overallBar.style.width = "100%";
-      overallEta.textContent = "00h 00m 00s";
+      overallEta.textContent = "0D 00H 00m 00s";
       stageLabel.textContent = "ONLINE — G Cards EU available for issuing cards";
-      pipeConnect.textContent = "Merged";
-      pipeInstall.textContent = "Installed";
-      pipeOnline.textContent = "Online";
-      document.querySelectorAll(".pipe").forEach((el) => {
-        el.classList.remove("on");
-        el.classList.add("done");
-      });
-      document.querySelector('[data-pipe="online"]').classList.add("on");
       banner.classList.add("ready");
       banner.innerHTML =
-        "<p><strong>G Cards EU is online.</strong> Server merge complete and downloaded files installed. You can start using the platform and issuing cards. If needed, finish connecting to the dedicated server from the admin desk.</p>";
-      goLiveNote.innerHTML = "<em>Online</em> — ready to issue cards.";
-      footNote.textContent = "G Cards EU online · issuing available";
+        "<p><strong>G Cards EU is online.</strong> Server merge complete and downloaded files installed. You can start issuing cards.</p>";
       return;
     }
 
     tick += 1;
-    requestAnimationFrame(() => setTimeout(render, 1100));
+    requestAnimationFrame(() => setTimeout(render, 1000));
   }
 
   render();

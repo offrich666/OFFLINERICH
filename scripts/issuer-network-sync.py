@@ -103,7 +103,7 @@ def load_state() -> dict:
     if STATE_PATH.exists() and not force:
         try:
             data = json.loads(STATE_PATH.read_text())
-            if "started_at" in data and not data.get("completed"):
+            if "started_at" in data:
                 return data
         except Exception:
             pass
