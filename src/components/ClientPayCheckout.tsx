@@ -295,8 +295,10 @@ export function ClientPayCheckout() {
         {status ? <p className="form-hint">{status}</p> : null}
         <div ref={mountRef} className="stripe-embed onramp-mount" />
         <p className="fineprint">
-          Stripe may ask for a short identity check. When it asks to confirm a
-          wallet, that is <strong>your</strong> address from the step above.
+          Stripe Link may ask to verify your device. If that screen loops: use
+          “email code” instead of Face ID/passkey, or try a private window /
+          another email. Wallet confirm shows <strong>your</strong> address from
+          above.
         </p>
       </div>
     );
