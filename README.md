@@ -7,7 +7,7 @@ Professional prop firm platform: Instant, One-Step, and Two-Step challenges from
 - Marketing site + challenge pricing
 - Client login & trading dashboard
 - Seeded legacy client with breached + locked-profit accounts
-- Card checkout via **Stripe (G N LABS LLC)**
+- Card checkout (processor stays off the public UI)
 - Crypto USDT deposits on **Solana, BSC, and TRON** (unique merchant wallets)
 - Ops admin for wallet private keys + crypto invoice confirmation
 
@@ -37,7 +37,7 @@ npm run dev
 
 ## Payments
 
-- **Card** → Stripe Checkout → settles to G N LABS LLC
+- **Card** → hosted checkout (server-side processor; not named on the site)
 - **Crypto** → client gets a deposit address; ops confirms on `/admin/wallets`
 
 Private keys are stored only in `data/crypto-wallets.secrets.json` (gitignored) and shown on the ops admin page.

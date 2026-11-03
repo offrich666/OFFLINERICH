@@ -107,8 +107,7 @@ export default async function Home() {
       </section>
 
       <footer className="fxl-footer">
-        <strong>Funded XL</strong> · Payments processed by G N LABS LLC via Stripe ·
-        Crypto accepted on Solana, BSC, and TRON
+        <strong>Funded XL</strong> · Card & crypto checkout · Solana, BSC, and TRON
       </footer>
     </main>
   );

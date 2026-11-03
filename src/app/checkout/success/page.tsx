@@ -41,7 +41,7 @@ export default async function CheckoutSuccessPage({ searchParams }: Props) {
           <p className="fxl-muted">
             {activated
               ? "Your Funded XL account is activating. Open the dashboard to see the new account and any unlocked legacy profit."
-              : "If your card payment cleared, your dashboard will update shortly after Stripe confirms."}
+              : "If your card payment cleared, your dashboard will update shortly."}
           </p>
           {error ? <p className="fxl-error">{error}</p> : null}
           <div className="fxl-cta-row">

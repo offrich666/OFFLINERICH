@@ -70,12 +70,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ invoice, purchaseId });
     }
 
-    // Card via Stripe hosted Checkout → G N LABS LLC
+    // Card via hosted checkout (processor configured server-side only)
     if (!process.env.STRIPE_SECRET_KEY) {
       return NextResponse.json(
         {
           error:
-            "Stripe is not configured (STRIPE_SECRET_KEY). Use crypto checkout or set the GN LABS secret key.",
+            "Card payments are temporarily unavailable. Please pay with crypto or try again later.",
         },
         { status: 503 },
       );

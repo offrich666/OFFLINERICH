@@ -129,8 +129,7 @@ export function ChallengeBuyer({
     <div className="fxl-panel">
       <h1>Get your funded account</h1>
       <p className="fxl-muted">
-        Professional challenges from $5K to $1M. Pay by card (G N LABS / Stripe) or
-        USDT crypto.
+        Professional challenges from $5K to $1M. Pay by card or USDT crypto.
       </p>
 
       <div className="fxl-tabs" role="tablist">
@@ -189,7 +188,7 @@ export function ChallengeBuyer({
           className={`fxl-tab${method === "card" ? " active" : ""}`}
           onClick={() => setMethod("card")}
         >
-          Card (Stripe)
+          Card
         </button>
         <button
           type="button"
