@@ -221,6 +221,28 @@
   cursor: not-allowed;
 }
 
+.bp-share {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--bp-line);
+  border-bottom: 1px solid var(--bp-line);
+}
+
+.bp-share p {
+  margin: 0;
+  color: var(--bp-soft);
+  line-height: 1.45;
+}
+
+.bp-share-url {
+  display: block;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--bp-line);
+  background: rgba(12, 18, 24, 0.75);
+  word-break: break-all;
+}
+
 .bp-lan {
   margin-top: 1.5rem;
   padding-top: 1.5rem;

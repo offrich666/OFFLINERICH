@@ -2,13 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { makeRoomCode } from "@/lib/babyphone/peerIds";
 import type { DeviceRole } from "@/lib/babyphone/types";
-
-type LanInfo = {
-  host: string;
-  urls: string[];
-  tip: string;
-};
 
 export function JoinPanel() {
   const router = useRouter();
@@ -17,13 +12,10 @@ export function JoinPanel() {
   const [name, setName] = useState("Nursery camera");
   const [role, setRole] = useState<DeviceRole>("camera");
   const [error, setError] = useState<string | null>(null);
-  const [lan, setLan] = useState<LanInfo | null>(null);
+  const [publicUrl, setPublicUrl] = useState("");
 
   useEffect(() => {
-    void fetch("/api/babyphone/lan")
-      .then((r) => r.json())
-      .then((data: LanInfo) => setLan(data))
-      .catch(() => setLan(null));
+    setPublicUrl(`${window.location.origin}/babyphone`);
   }, []);
 
   function pickRole(next: DeviceRole) {
@@ -35,48 +27,25 @@ export function JoinPanel() {
     });
   }
 
-  async function createAndJoin() {
-    setError(null);
-    const created = await fetch("/api/babyphone/rooms", { method: "POST" });
-    const data = (await created.json()) as { roomId?: string; error?: string };
-    if (!created.ok || !data.roomId) {
-      setError(data.error || "Could not create room");
-      return;
-    }
-    await join(data.roomId);
-  }
-
-  async function join(id: string) {
-    setError(null);
+  function go(id: string) {
     const trimmed = id.trim().toUpperCase();
     if (!trimmed) {
       setError("Enter a room code");
       return;
     }
-    const res = await fetch(`/api/babyphone/rooms/${trimmed}/join`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim() || (role === "camera" ? "Camera" : "Remoter"),
-        role,
-      }),
-    });
-    const data = (await res.json()) as {
-      peer?: { id: string; name: string; role: DeviceRole };
-      error?: string;
-    };
-    if (!res.ok || !data.peer) {
-      setError(data.error || "Could not join");
-      return;
-    }
+    const device = name.trim() || (role === "camera" ? "Camera" : "Remoter");
     const q = new URLSearchParams({
-      peer: data.peer.id,
-      role: data.peer.role,
-      name: data.peer.name,
+      role,
+      name: device,
     });
     startTransition(() => {
       router.push(`/babyphone/${trimmed}?${q.toString()}`);
     });
+  }
+
+  function createAndJoin() {
+    setError(null);
+    go(makeRoomCode());
   }
 
   return (
@@ -100,7 +69,7 @@ export function JoinPanel() {
           onClick={() => pickRole("remoter")}
         >
           <span className="bp-role-label">Remoter</span>
-          <span className="bp-role-help">Parent phone sees & hears from afar</span>
+          <span className="bp-role-help">Parent phone — any Wi‑Fi or mobile data</span>
         </button>
       </div>
 
@@ -139,7 +108,7 @@ export function JoinPanel() {
           type="button"
           className="bp-primary"
           disabled={pending}
-          onClick={() => void createAndJoin()}
+          onClick={createAndJoin}
         >
           Create nursery room
         </button>
@@ -147,32 +116,31 @@ export function JoinPanel() {
           type="button"
           className="bp-secondary"
           disabled={pending || !roomId.trim()}
-          onClick={() => void join(roomId)}
+          onClick={() => {
+            setError(null);
+            go(roomId);
+          }}
         >
           Join with code
         </button>
       </div>
 
-      <section className="bp-lan" aria-label="Local network addresses">
-        <h2>Open on both phones (same Wi‑Fi)</h2>
+      <section className="bp-lan" aria-label="Anywhere access">
+        <h2>Works from any network</h2>
         <p>
-          Run <code>npm run babyphone</code> on a computer at home. Then open one of these
-          addresses on the nursery phone and the parent phone.
+          Nursery phone and parent phone do <strong>not</strong> need the same Wi‑Fi. Dad can watch
+          from work or mobile data. Both open this site, same room code (or the remoter link).
         </p>
-        {lan?.urls?.length ? (
+        {publicUrl ? (
           <ul className="bp-url-list">
-            {lan.urls
-              .filter((u) => u.startsWith("https://"))
-              .map((url) => (
-                <li key={url}>
-                  <code>{url}</code>
-                </li>
-              ))}
+            <li>
+              <code>{publicUrl}</code>
+            </li>
           </ul>
-        ) : (
-          <p className="bp-muted">LAN addresses appear when the server is running locally.</p>
-        )}
-        <p className="bp-muted">{lan?.tip}</p>
+        ) : null}
+        <p className="bp-muted">
+          Tip: create the room on the camera, then copy the remoter link and send it by SMS or chat.
+        </p>
       </section>
     </div>
   );

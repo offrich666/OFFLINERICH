@@ -11,8 +11,8 @@ export default function BabyphoneHome() {
         </Link>
       </header>
       <p className="bp-hero-copy">
-        Local babyphone for home Wi‑Fi. One phone is the nursery camera. The other is the
-        parent remoter — see and hear how the baby is sleeping from another room.
+        Babyphone from anywhere. One phone is the nursery camera. The other is the parent remoter —
+        watch how the baby is sleeping from another room, another network, or on the go.
       </p>
       <JoinPanel />
     </main>

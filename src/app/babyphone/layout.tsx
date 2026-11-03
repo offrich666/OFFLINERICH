@@ -15,9 +15,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "CribLink — local babyphone",
+  title: "CribLink — babyphone from anywhere",
   description:
-    "Name one phone Camera and another Remoter. Watch your baby over the home Wi‑Fi.",
+    "Name one phone Camera and another Remoter. Watch your baby from any network — home Wi‑Fi or mobile data.",
 };
 
 export default function BabyphoneLayout({
