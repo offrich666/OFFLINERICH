@@ -31,11 +31,9 @@ type PayPath = "easy" | "instant";
 type Mode = "pick" | "card" | "onramp" | "done";
 
 /**
- * Two paths:
- * - Instant crypto (default): Stripe Onramp (KYC). Crypto settles straight to
- *   the client's wallet — no treasury balance required.
- * - Easy card: USD only in Stripe (no crypto KYC). Only use if treasury is
- *   funded (or you buy crypto after) so ops can send to the client.
+ * Two paths (client copy branded Crossmint; payment rails via integrated APIs):
+ * - Instant crypto (default): onramp → client wallet.
+ * - Easy card: USD checkout → ops delivers crypto when treasury is funded.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
@@ -133,21 +131,21 @@ export function ClientPayCheckout() {
           } else if (next === "fulfillment_processing") {
             setStatus("Payment received — finishing…");
           } else if (next === "initialized" || next === "requires_payment") {
-            setStatus("Complete the short Stripe steps below to pay.");
+            setStatus("");
           } else if (next) {
-            setStatus(`Status: ${next}`);
+            setStatus("");
           }
         });
         if (mountRef.current && !cancelled) {
           session.mount(mountRef.current);
-          setStatus("Complete the short Stripe steps below to pay.");
+          setStatus("");
           requestAnimationFrame(() => {
             mountRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
           });
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Could not open payment");
+          setError(err instanceof Error ? err.message : "Could not open Crossmint checkout");
           setMode("pick");
         }
       }
@@ -175,7 +173,7 @@ export function ClientPayCheckout() {
       return;
     }
     if (!publishableKey) {
-      setError("Stripe publishable key missing.");
+      setError("Checkout is not configured. Try again later.");
       return;
     }
 
@@ -256,7 +254,7 @@ export function ClientPayCheckout() {
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Easy card · <strong>{formatUsd(paidAmount)}</strong> →{" "}
+            Crossmint card · <strong>{formatUsd(paidAmount)}</strong> →{" "}
             <code className="break">{wallet.trim()}</code>
           </p>
           <button type="button" className="ghost-link" onClick={resetToPick}>
@@ -264,8 +262,8 @@ export function ClientPayCheckout() {
           </button>
         </div>
         <p className="form-hint">
-          Pay with card / Apple Pay / Google Pay. No crypto identity check.
-          After payment clears, we send crypto to your wallet.
+          Pay with card / Apple Pay / Google Pay via Crossmint. No crypto
+          identity check. After payment clears, we send crypto to your wallet.
         </p>
         <div className="stripe-embed">
           <EmbeddedCheckoutProvider
@@ -285,7 +283,7 @@ export function ClientPayCheckout() {
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Instant crypto · <strong>{formatUsd(paidAmount)}</strong> →{" "}
+            Crossmint · <strong>{formatUsd(paidAmount)}</strong> →{" "}
             <code className="break">{wallet.trim()}</code>
           </p>
           <button type="button" className="ghost-link" onClick={resetToPick}>
@@ -295,10 +293,9 @@ export function ClientPayCheckout() {
         {status ? <p className="form-hint">{status}</p> : null}
         <div ref={mountRef} className="stripe-embed onramp-mount" />
         <p className="fineprint">
-          Stripe Link may ask to verify your device. If that screen loops: use
-          “email code” instead of Face ID/passkey, or try a private window /
-          another email. Wallet confirm shows <strong>your</strong> address from
-          above.
+          Crossmint may ask to verify your device or identity. If device verify
+          loops: use an email code, a private window, or another email. Wallet
+          confirm shows <strong>your</strong> address from above.
         </p>
       </div>
     );
@@ -309,8 +306,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Pay</h2>
         <p>
-          Enter your wallet and amount. Choose easy card (no crypto KYC) or
-          instant crypto (Stripe Onramp).
+          Enter your wallet and amount. Checkout is powered by Crossmint —
+          instant crypto or easy card.
         </p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
@@ -331,7 +328,7 @@ export function ClientPayCheckout() {
         </div>
         <p className="form-hint">
           {path === "instant"
-            ? "Stripe Onramp — short KYC. Crypto goes straight to your wallet (no treasury needed)."
+            ? "Crossmint — short check, then crypto goes straight to your wallet."
             : "Card only — no crypto KYC. Pays USD to us; crypto is sent later only after treasury is funded."}
         </p>
 

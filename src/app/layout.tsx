@@ -17,7 +17,7 @@ const figtree = Figtree({
 export const metadata: Metadata = {
   title: "OFFLINERICH",
   description:
-    "OFFLINERICH — pay $5–$9,000. Easy card (no crypto KYC) or instant crypto to your wallet.",
+    "OFFLINERICH — pay $5–$9,000 with Crossmint. Instant crypto or easy card to your wallet.",
 };
 
 export default function RootLayout({
