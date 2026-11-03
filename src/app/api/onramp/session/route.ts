@@ -21,6 +21,17 @@ import { upsertAwaitingCryptoOrder } from "@/lib/orders";
  */
 export async function POST(request: Request) {
   try {
+    // Local-only hook for UI tests (never set in production).
+    if (process.env.MOCK_ONRAMP_REDIRECT === "1") {
+      return NextResponse.json({
+        clientSecret: "cos_mock_secret_local_only",
+        sessionId: "cos_mock_session_local_only",
+        status: "initialized",
+        redirectUrl: "https://example.com/mock-hosted-onramp",
+        livemode: false,
+      });
+    }
+
     if (!process.env.STRIPE_SECRET_KEY) {
       return NextResponse.json(
         {
