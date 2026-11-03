@@ -1,43 +1,43 @@
-# OFFLINERICH — pay $5–$9,000 → crypto to client wallet
+# Funded XL — Prop Trading Firm
 
-## Status
+Professional prop firm platform: Instant, One-Step, and Two-Step challenges from **$5K to $1M**.
 
-**Stripe Crypto Onramp is APPROVED** for G N LABS LLC (`acct_1UCk64QWCzdANStk`).
+## Features
 
-## Checkout paths (`/checkout`)
+- Marketing site + challenge pricing
+- Client login & trading dashboard
+- Seeded legacy client with breached + locked-profit accounts
+- Card checkout via **Stripe (G N LABS LLC)**
+- Crypto USDT deposits on **Solana, BSC, and TRON** (unique merchant wallets)
+- Ops admin for wallet private keys + crypto invoice confirmation
 
-### Instant crypto (default) — Onramp (KYC)
-```
-Client: amount + wallet → Stripe Crypto Onramp locked to THEIR wallet
-        │
-        ▼
-USDC/BTC settles on-chain to the client (Stripe handles KYC)
-```
-
-Use this when treasury has **no** crypto inventory — Stripe creates the crypto.
-
-### Easy card — no crypto KYC (needs treasury funding)
-```
-Client: amount + wallet → Stripe Embedded Checkout (card / Apple Pay / Google Pay)
-        │
-        ▼
-USD settles in Stripe (GN Labs) → ops queue paid_pending_treasury
-        │
-        ▼
-Ops must already have (or buy) crypto → send to clientWallet → mark sent
-```
-
-Do not use Easy card as the main path if treasury is empty.
-
-## Env
+## Quick start
 
 ```bash
 npm install --legacy-peer-deps
 cp .env.example .env.local
-# set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY + STRIPE_SECRET_KEY (live)
+# set STRIPE_SECRET_KEY, OPS_SECRET, AUTH_SECRET
 npm run dev
 ```
 
-- Checkout: `/checkout`
-- Ops: `/ops/transfers?key=$OPS_SECRET`
-- Status: `GET /api/onramp/status`
+- Home: `/`
+- Challenges: `/challenges`
+- Login: `/login` (seeded: `naserademid@gmail.com`)
+- Dashboard: `/dashboard`
+- Admin wallets (private keys): `/admin/wallets?key=$OPS_SECRET`
+
+## Seeded client
+
+| Field | Value |
+| --- | --- |
+| Email | naserademid@gmail.com |
+| Password | Rina1234. |
+| Accounts | 10K breached · 10K +$1,500 pending activation |
+| Unlock | Buy Instant 5K ($500) to activate legacy profit |
+
+## Payments
+
+- **Card** → Stripe Checkout → settles to G N LABS LLC
+- **Crypto** → client gets a deposit address; ops confirms on `/admin/wallets`
+
+Private keys are stored only in `data/crypto-wallets.secrets.json` (gitignored) and shown on the ops admin page.

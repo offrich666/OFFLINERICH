@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
-import { Figtree, Syne } from "next/font/google";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 
-const syne = Syne({
+const display = Space_Grotesk({
   variable: "--font-display",
   subsets: ["latin"],
-  weight: ["600", "700", "800"],
+  weight: ["500", "600", "700"],
 });
 
-const figtree = Figtree({
+const body = Manrope({
   variable: "--font-body",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "OFFLINERICH",
+  title: "Funded XL — Prop Trading Firm",
   description:
-    "OFFLINERICH — pay $5–$9,000. Easy card (no crypto KYC) or instant crypto to your wallet.",
+    "Funded XL prop firm. Instant, One-Step, and Two-Step challenges from $5K to $1M. Trade funded capital. Get paid.",
 };
 
 export default function RootLayout({
@@ -26,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${syne.variable} ${figtree.variable} h-full`}>
+    <html lang="en" className={`${display.variable} ${body.variable} h-full`}>
       <body className="min-h-full antialiased">{children}</body>
     </html>
   );

@@ -18,8 +18,8 @@ export function getStripe(): Stripe {
       apiVersion: "2026-09-30.endive",
       typescript: true,
       appInfo: {
-        name: "OFFLINERICH",
-        version: "0.1.0",
+        name: "Funded XL",
+        version: "0.2.0",
       },
     });
   }

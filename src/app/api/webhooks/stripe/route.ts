@@ -6,6 +6,7 @@ import {
   upsertAwaitingCryptoOrder,
   upsertPaidTransferOrder,
 } from "@/lib/orders";
+import { markPurchasePaid } from "@/lib/users";
 
 type OnrampSessionObject = {
   id: string;
@@ -43,6 +44,22 @@ async function fulfillCheckoutSession(session: Stripe.Checkout.Session) {
   }
 
   const meta = session.metadata || {};
+
+  // Funded XL challenge fee — activate trading account
+  if (meta.project === "fundedxl" || meta.flow === "challenge_fee") {
+    const user = await markPurchasePaid({
+      stripeSessionId: session.id,
+      userId: meta.user_id,
+    });
+    console.info("[stripe webhook] fundedxl challenge paid", {
+      sessionId: session.id,
+      userId: meta.user_id,
+      purchaseId: meta.purchase_id,
+      activated: Boolean(user),
+    });
+    return;
+  }
+
   const network =
     meta.client_network ||
     customFieldValue(session.custom_fields, "network") ||
