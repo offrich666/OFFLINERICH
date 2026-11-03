@@ -90,23 +90,38 @@ export function ClientPayCheckout() {
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
-  // Resume after hosted Link (buyer comes back to /checkout — no embed remount).
-  useEffect(() => {
+  const resumeFromPending = useCallback(() => {
     try {
       const raw = sessionStorage.getItem(PENDING_KEY);
-      if (!raw) return;
+      if (!raw) return false;
       const next = JSON.parse(raw) as PendingOnramp;
-      if (!next.sessionId && !next.wallet) return;
+      if (!next.sessionId && !next.wallet) return false;
       setPending(next);
       if (next.wallet) setWallet(next.wallet);
       if (next.network) setNetwork(next.network);
       if (next.amountUsd) setPaidAmount(next.amountUsd);
       setMode("returning");
       setStatus("Checking whether your payment finished…");
+      return true;
     } catch {
-      /* ignore */
+      return false;
     }
   }, []);
+
+  // Resume after hosted Link (buyer comes back to /checkout — no embed remount).
+  useEffect(() => {
+    resumeFromPending();
+  }, [resumeFromPending]);
+
+  // Browser Back from crypto.link.com often restores bfcache on "redirecting".
+  // Flip to the resume panel instead of leaving them stuck on "Opening…".
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) resumeFromPending();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [resumeFromPending]);
 
   const stopStatusPoll = useCallback(() => {
     if (statusPollRef.current) {
