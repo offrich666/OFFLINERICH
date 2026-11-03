@@ -84,6 +84,12 @@ code {
   padding: 1.25rem 1.5rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .brand-mark {
   font-family: var(--font-display), sans-serif;
   font-weight: 700;

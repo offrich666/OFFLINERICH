@@ -41,3 +41,4 @@ npm run dev
 - Checkout: `/checkout`
 - Ops: `/ops/transfers?key=$OPS_SECRET`
 - Status: `GET /api/onramp/status`
+- Babyphone (anywhere): `/babyphone` — nursery Camera + parent Remoter; works across networks via the public site URL (not same-Wi‑Fi only). Optional local HTTPS: `npm run babyphone`

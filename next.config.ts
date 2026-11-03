@@ -5,6 +5,12 @@ const STRIPE_PK_LIVE =
   "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
 
 const nextConfig: NextConfig = {
+  // Allow phones on the LAN to hit the babyphone dev server by IP.
+  allowedDevOrigins: [
+    "127.0.0.1",
+    "localhost",
+    "*.local",
+  ],
   // Force correct pk into client+server bundles (Vercel Hobby can't edit env).
   env: {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: STRIPE_PK_LIVE,

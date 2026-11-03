@@ -8,9 +8,14 @@ export default function Home() {
 
       <header className="topbar">
         <span className="brand-mark">OFFLINERICH</span>
-        <Link href="/checkout" className="top-cta">
-          Pay
-        </Link>
+        <div className="topbar-actions">
+          <Link href="/babyphone" className="ghost-link">
+            CribLink
+          </Link>
+          <Link href="/checkout" className="top-cta">
+            Pay
+          </Link>
+        </div>
       </header>
 
       <section className="hero">
