@@ -78,7 +78,7 @@ async function ensureWallet(email: string, chain: OnrampChain) {
       status,
       message:
         data.message ||
-        "Could not create or load a Crossmint wallet for this email.",
+        "Could not create or load a wallet for this email.",
     };
   }
 

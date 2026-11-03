@@ -320,7 +320,7 @@ export function ClientPayCheckout() {
 
       // Full navigation to hosted Link — device verify works there (no iframe remount).
       setMode("redirecting");
-      setStatus("Opening secure checkout…");
+      setStatus("Opening payment…");
       window.location.assign(data.redirectUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
@@ -369,18 +369,16 @@ export function ClientPayCheckout() {
     return (
       <div className="payment-stack client-pay">
         <div className="setup-panel soft">
-          <h2>Opening checkout…</h2>
+          <h2>Opening payment…</h2>
           <p>
-            Taking you to the secure payment page. Device verify works there —
-            this site will not reload the form underneath. After you pay, come
-            back to this tab or reopen{" "}
-            <a href="/checkout">/checkout</a>.
+            Continue on the secure payment page. When you’re done, return here
+            or reopen Pay.
           </p>
           {status ? <p className="form-hint">{status}</p> : null}
           {pending?.redirectUrl ? (
             <p className="form-hint">
               If nothing opens,{" "}
-              <a href={pending.redirectUrl}>continue to checkout</a>.
+              <a href={pending.redirectUrl}>continue to pay</a>.
             </p>
           ) : null}
         </div>
@@ -400,14 +398,14 @@ export function ClientPayCheckout() {
                 <code className="break">{wallet.trim()}</code> on {network}.
               </>
             ) : (
-              <>You have a crypto checkout in progress.</>
+              <>You have a payment in progress.</>
             )}
           </p>
           {status ? <p className="form-hint">{status}</p> : null}
           <div className="cta-row" style={{ marginTop: "1rem", gap: "0.75rem" }}>
             {pending?.redirectUrl ? (
               <a className="primary-cta" href={pending.redirectUrl}>
-                Continue secure checkout
+                Continue payment
               </a>
             ) : null}
             {pending?.sessionId ? (
@@ -436,10 +434,6 @@ export function ClientPayCheckout() {
               Start over
             </button>
           </div>
-          <p className="fineprint">
-            Prefer email code if device verify loops. We never remount the
-            payment form under you.
-          </p>
         </div>
       </div>
     );
@@ -450,7 +444,7 @@ export function ClientPayCheckout() {
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Crossmint card · <strong>{formatUsd(paidAmount)}</strong> →{" "}
+            Pay <strong>{formatUsd(paidAmount)}</strong> →{" "}
             <code className="break">{wallet.trim()}</code>
           </p>
           <button type="button" className="ghost-link" onClick={resetToPick}>
@@ -458,8 +452,8 @@ export function ClientPayCheckout() {
           </button>
         </div>
         <p className="form-hint">
-          Pay with card / Apple Pay / Google Pay via Crossmint. No crypto
-          identity check. After payment clears, we send crypto to your wallet.
+          Pay with card, Apple Pay, or Google Pay. We’ll send crypto to your
+          wallet after payment clears.
         </p>
         <div className="stripe-embed">
           <EmbeddedCheckoutProvider
@@ -478,10 +472,7 @@ export function ClientPayCheckout() {
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
         <h2>Pay</h2>
-        <p>
-          Enter your wallet and amount. Checkout is powered by Crossmint —
-          instant crypto or easy card.
-        </p>
+        <p>Enter amount and wallet, then pay. That’s it.</p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
           <button
@@ -489,20 +480,20 @@ export function ClientPayCheckout() {
             className={path === "instant" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("instant")}
           >
-            Instant crypto
+            Crypto
           </button>
           <button
             type="button"
             className={path === "easy" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("easy")}
           >
-            Easy card (USD)
+            Card
           </button>
         </div>
         <p className="form-hint">
           {path === "instant"
-            ? "Opens secure checkout in one step (no mid-verify reload). Crypto goes to your wallet."
-            : "Card only — no crypto KYC. Pays USD to us; crypto is sent later only after treasury is funded."}
+            ? "Crypto goes to your wallet after you pay."
+            : "Card pay now; crypto is sent when ready."}
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -567,7 +558,7 @@ export function ClientPayCheckout() {
         ) : null}
 
         <label className="field">
-          Email (optional — speeds checkout)
+          Email (optional)
           <input
             type="email"
             autoComplete="email"
@@ -587,9 +578,7 @@ export function ClientPayCheckout() {
         >
           {loading
             ? "Starting…"
-            : path === "instant"
-              ? `Continue to crypto ${amountOk ? amountLabel : rangeLabel}`
-              : `Continue with card ${amountOk ? amountLabel : rangeLabel}`}
+            : `Pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
       </div>
     </div>
