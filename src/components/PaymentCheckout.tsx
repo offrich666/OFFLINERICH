@@ -49,51 +49,12 @@ export function PaymentCheckout({
     return (
       <div className="payment-stack">
         <div className="blocked-hint">
-          <strong>Crossmint still has to unlock this project.</strong>
+          <strong>Payment isn’t available yet.</strong>
           <p>
             {verificationMessage ||
-              "Production checkout/onramp requires Crossmint Order Form + KYB, and this collection must be submitted for review in the Console."}
+              "This checkout path is still being set up. Use the main Pay page, or try again later."}
           </p>
-          <ol>
-            <li>
-              Open{" "}
-              <a
-                href="https://www.crossmint.com/console"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Crossmint Console
-              </a>
-            </li>
-            <li>
-              Whitelist <code>http://localhost:3000</code> (+ your HTTPS domain)
-              on the client API key
-            </li>
-            <li>
-              Open collection <code>{collectionId}</code> → start{" "}
-              <strong>Review</strong> from the left sidebar
-            </li>
-            <li>
-              Contact{" "}
-              <a
-                href="https://www.crossmint.com/contact/sales"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Crossmint Sales
-              </a>{" "}
-              for Order Form + KYB (required for production card/Apple Pay).
-              Use contact email <code>groupgrow64@gmail.com</code>.
-            </li>
-            <li>
-              Payout wallet owner: <code>naserademid@gmail.com</code>
-            </li>
-          </ol>
         </div>
-        <p className="fineprint">
-          Embedded checkout stays unloaded until Crossmint unlocks the project,
-          which also avoids a React development-mode iframe crash on localhost.
-        </p>
       </div>
     );
   }
