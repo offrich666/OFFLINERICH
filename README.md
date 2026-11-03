@@ -41,3 +41,4 @@ npm run dev
 - Checkout: `/checkout`
 - Ops: `/ops/transfers?key=$OPS_SECRET`
 - Status: `GET /api/onramp/status`
+- Babyphone (LAN): `/babyphone` — run `npm run babyphone`, open the HTTPS LAN URL on nursery phone (Camera) + parent phone (Remoter)
