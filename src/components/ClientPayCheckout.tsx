@@ -19,10 +19,9 @@ const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 type Mode = "pick" | "redirecting";
 
 /**
- * Client pay that completes: Stripe hosted Checkout (card / wallets).
- * Crypto Onramp + Crossmint production are not reliable on this account yet,
- * so clients use this path — payment clears in Stripe, crypto is delivered
- * to the wallet after.
+ * Instant crypto: Transak (card / Apple Pay / Google Pay) → USDC/BTC to wallet.
+ * No Stripe. Crossmint production Onramp is Sales-locked; Transak staging works
+ * as soon as API keys are added.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
@@ -33,6 +32,7 @@ export function ClientPayCheckout() {
   const [mode, setMode] = useState<Mode>("pick");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [signupUrl, setSignupUrl] = useState<string | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -46,6 +46,7 @@ export function ClientPayCheckout() {
 
   async function startPay() {
     setError(null);
+    setSignupUrl(null);
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
@@ -69,7 +70,7 @@ export function ClientPayCheckout() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/checkout/session", {
+      const res = await fetch("/api/onramp/transak/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -77,15 +78,17 @@ export function ClientPayCheckout() {
           email: email.trim() || undefined,
           network,
           wallet: normalizedWallet,
-          ui: "hosted",
         }),
       });
       const data = (await res.json()) as {
         url?: string;
         error?: string;
+        code?: string;
+        signupUrl?: string;
       };
       if (!res.ok || !data.url) {
-        throw new Error(data.error || "Could not start checkout");
+        if (data.signupUrl) setSignupUrl(data.signupUrl);
+        throw new Error(data.error || "Could not start instant crypto");
       }
       setWallet(normalizedWallet);
       setMode("redirecting");
@@ -102,8 +105,8 @@ export function ClientPayCheckout() {
     return (
       <div className="payment-stack client-pay">
         <div className="setup-panel soft">
-          <h2>Opening secure payment…</h2>
-          <p>Complete card or wallet pay on the next screen.</p>
+          <h2>Opening instant crypto…</h2>
+          <p>Pay with card, Apple Pay, or Google Pay. Crypto goes to your wallet.</p>
         </div>
       </div>
     );
@@ -112,10 +115,10 @@ export function ClientPayCheckout() {
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
-        <h2>Pay</h2>
+        <h2>Buy crypto</h2>
         <p>
-          Pay with card, Apple Pay, or Google Pay. Crypto is sent to your wallet
-          after payment clears.
+          Instant buy — card / Apple Pay / Google Pay. Crypto is sent to your
+          wallet on-chain.
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -202,6 +205,15 @@ export function ClientPayCheckout() {
         ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
+        {signupUrl ? (
+          <p className="form-hint">
+            Partner setup: open{" "}
+            <a href={signupUrl} target="_blank" rel="noreferrer">
+              {signupUrl}
+            </a>
+            , copy Staging API Key + Secret, add to env, redeploy.
+          </p>
+        ) : null}
 
         <button
           type="button"
@@ -209,10 +221,10 @@ export function ClientPayCheckout() {
           onClick={startPay}
           disabled={loading || !canStart}
         >
-          {loading ? "Starting…" : `Pay ${amountOk ? amountLabel : rangeLabel}`}
+          {loading ? "Starting…" : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
-          You’ll finish on a secure payment page, then return here.
+          You’ll finish on a secure buy page. Crypto lands in the wallet above.
         </p>
       </div>
     </div>
