@@ -18,8 +18,11 @@ export default function CheckoutPage() {
       <section className="checkout-layout checkout-layout-simple">
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
-          <h1>Pay {range}</h1>
-          <p>Enter your wallet and amount, then pay. Crypto goes to your wallet.</p>
+          <h1>Buy crypto {range}</h1>
+          <p>
+            Instant buy with card, Apple Pay, or Google Pay. Crypto is sent
+            straight to your wallet.
+          </p>
         </div>
 
         <div className="checkout-panel">

@@ -17,9 +17,10 @@ import {
 } from "@/lib/networks";
 
 /**
- * Easy card path — regular Stripe Checkout (no Crypto Onramp KYC).
+ * Working client pay path — regular Stripe Checkout (not Crypto Onramp).
  * Client pays USD → we receive in Stripe → ops delivers crypto to their wallet.
- * Banks that block crypto MCC often work here (business payment, not Onramp).
+ * Default: hosted Checkout (redirect) — most reliable completion.
+ * Optional: ui=embedded for on-page form.
  */
 export async function POST(request: Request) {
   try {
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
     let email = "";
     let network = "ethereum";
     let wallet = "";
+    let ui: "hosted" | "embedded" = "hosted";
 
     try {
       const body = (await request.json()) as {
@@ -37,6 +39,7 @@ export async function POST(request: Request) {
         email?: string;
         network?: string;
         wallet?: string;
+        ui?: string;
       };
       if (body?.amountUsd != null) {
         const parsed = parseAmountUsd(body.amountUsd);
@@ -45,6 +48,7 @@ export async function POST(request: Request) {
       if (body?.email) email = String(body.email).trim().toLowerCase();
       if (body?.network) network = String(body.network).trim().toLowerCase();
       if (body?.wallet) wallet = String(body.wallet).trim();
+      if (body?.ui === "embedded") ui = "embedded";
     } catch {
       // empty body
     }
@@ -74,19 +78,81 @@ export async function POST(request: Request) {
           error:
             network === "bitcoin"
               ? "Enter a valid Bitcoin address"
-              : "Enter a valid wallet address (0x…)",
+              : network === "solana"
+                ? "Enter a valid Solana wallet address"
+                : "Enter a valid wallet address (0x…)",
         },
         { status: 400 },
       );
     }
 
     const amountCents = amountUsdToCents(amountUsd);
+    const metadata = {
+      project: "offlinerich",
+      sku: "offlinerich-client-pay",
+      flow: "card_then_crypto",
+      amount_usd: String(amountUsd),
+      client_network: network,
+      client_wallet: wallet,
+      client_asset: net.asset,
+    };
+    const integrationId = checkoutIntegrationId();
+
+    if (ui === "hosted") {
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        // Account has Managed Payments on by default — keep classic Checkout.
+        managed_payments: { enabled: false },
+        billing_address_collection: "auto",
+        phone_number_collection: { enabled: false },
+        ...(email ? { customer_email: email } : {}),
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              unit_amount: amountCents,
+              product_data: {
+                name: "OFFLINERICH payment",
+                description: `Crypto delivery to ${network} after payment clears`,
+                tax_code: "txcd_10000000",
+              },
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: `${origin}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/checkout`,
+        ...(integrationId ? { integration_identifier: integrationId } : {}),
+        metadata,
+        payment_intent_data: {
+          metadata: {
+            amount_usd: String(amountUsd),
+            flow: "card_then_crypto",
+            client_network: network,
+            client_wallet: wallet,
+            client_asset: net.asset,
+          },
+        },
+      });
+
+      if (!session.url) {
+        return NextResponse.json(
+          { error: "Checkout Session missing url" },
+          { status: 500 },
+        );
+      }
+
+      return NextResponse.json({
+        url: session.url,
+        sessionId: session.id,
+        ui: "hosted",
+      });
+    }
 
     const session = await stripe.checkout.sessions.create({
       ui_mode: "embedded_page",
       mode: "payment",
       managed_payments: { enabled: false },
-      allowed_payment_method_types: ["card"],
       billing_address_collection: "auto",
       phone_number_collection: { enabled: false },
       ...(email ? { customer_email: email } : {}),
@@ -105,20 +171,12 @@ export async function POST(request: Request) {
         },
       ],
       return_url: `${origin}/checkout/return?session_id={CHECKOUT_SESSION_ID}`,
-      integration_identifier: checkoutIntegrationId(),
-      metadata: {
-        project: "offlinerich",
-        sku: "offlinerich-easy-card",
-        flow: "easy_card_then_crypto",
-        amount_usd: String(amountUsd),
-        client_network: network,
-        client_wallet: wallet,
-        client_asset: net.asset,
-      },
+      ...(integrationId ? { integration_identifier: integrationId } : {}),
+      metadata,
       payment_intent_data: {
         metadata: {
           amount_usd: String(amountUsd),
-          flow: "easy_card_then_crypto",
+          flow: "card_then_crypto",
           client_network: network,
           client_wallet: wallet,
           client_asset: net.asset,
@@ -136,6 +194,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       clientSecret: session.client_secret,
       sessionId: session.id,
+      ui: "embedded",
       paymentMethodTypes: session.payment_method_types,
     });
   } catch (error) {
