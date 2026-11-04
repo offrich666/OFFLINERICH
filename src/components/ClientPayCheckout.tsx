@@ -7,55 +7,88 @@ import {
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 import {
+  CrossmintCheckoutProvider,
+  CrossmintEmbeddedCheckout,
+  CrossmintProvider,
+  useCrossmintCheckout,
+} from "@crossmint/client-sdk-react-ui";
+import { createOnrampOrder } from "@/app/actions/createOnrampOrder";
+import { CheckoutErrorBoundary } from "@/components/CheckoutErrorBoundary";
+import {
   CLIENT_NETWORKS,
-  ONRAMP_CLIENT_NETWORKS,
+  CROSSMINT_CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
   formatUsd,
+  isCrossmintClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
   type ClientNetworkId,
-  type OnrampClientNetworkId,
+  type CrossmintClientNetworkId,
 } from "@/lib/networks";
+import {
+  checkoutAppearance,
+  getClientApiKey,
+  type OnrampChain,
+} from "@/lib/crossmint";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+const crossmintClientKey = getClientApiKey();
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
-const PENDING_KEY = "offlinerich_onramp_pending";
 
-type PayPath = "easy" | "instant";
-type Mode = "pick" | "card" | "redirecting" | "returning" | "done";
+type PayPath = "crypto" | "card";
+type Mode = "pick" | "card" | "crossmint" | "redirecting" | "done";
 
-type PendingOnramp = {
-  sessionId?: string;
-  wallet?: string;
-  network?: ClientNetworkId;
-  amountUsd?: number;
-  redirectUrl?: string;
+type CrossmintOrder = {
+  orderId: string;
+  clientSecret: string;
+  email: string;
+  walletAddress: string;
 };
 
+function CrossmintPhaseBanner() {
+  const { order } = useCrossmintCheckout();
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!order) return;
+    if (order.phase === "completed") {
+      setNote("Payment complete. Crypto is on the way to your wallet.");
+    } else if (order.phase === "delivery") {
+      setNote("Payment received. Delivering crypto…");
+    } else if (order.phase === "payment") {
+      setNote("Complete payment with card, Apple Pay, or Google Pay.");
+    }
+  }, [order]);
+
+  if (!note) return null;
+  return <p className="form-hint">{note}</p>;
+}
+
 /**
- * Instant crypto uses Stripe's hosted Link page only (full-page redirect).
- * Embedded iframes remount mid–device-verify and loop forever — never embed Instant.
+ * Crypto (default): Crossmint embedded fiat → USDC (card / Apple / Google).
+ * Card: Stripe Embedded Checkout (USD) when treasury delivery is needed later.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("instant");
+  const [path, setPath] = useState<PayPath>("crypto");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
+  const [network, setNetwork] = useState<ClientNetworkId>("polygon");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
-  const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
-  const [pending, setPending] = useState<PendingOnramp | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [crossmintOrder, setCrossmintOrder] = useState<CrossmintOrder | null>(
+    null,
+  );
+  const [mountKey, setMountKey] = useState(0);
   const cardRequestRef = useRef<{
     amountUsd: number;
     email?: string;
@@ -64,147 +97,68 @@ export function ClientPayCheckout() {
   } | null>(null);
   const cardSecretPromiseRef = useRef<Promise<string> | null>(null);
   const [cardReady, setCardReady] = useState(false);
-  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
   const networks =
-    path === "instant" ? ONRAMP_CLIENT_NETWORKS : CLIENT_NETWORKS;
+    path === "crypto" ? CROSSMINT_CLIENT_NETWORKS : CLIENT_NETWORKS;
   const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
   const walletDirty = wallet.trim().length > 0;
-  const canStart = amountOk && walletOk;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const canStart =
+    amountOk &&
+    walletOk &&
+    (path === "card" || emailOk);
 
   useEffect(() => {
-    if (path === "instant" && !ONRAMP_CLIENT_NETWORKS.some((n) => n.id === network)) {
-      setNetwork("ethereum");
+    if (path === "crypto" && !isCrossmintClientNetwork(network)) {
+      setNetwork("polygon");
     }
   }, [path, network]);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "card" || mode === "redirecting" || mode === "returning",
+      mode === "card" || mode === "crossmint" || mode === "redirecting",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
-  const resumeFromPending = useCallback(() => {
-    try {
-      const raw = sessionStorage.getItem(PENDING_KEY);
-      if (!raw) return false;
-      const next = JSON.parse(raw) as PendingOnramp;
-      if (!next.sessionId && !next.wallet) return false;
-      setPending(next);
-      if (next.wallet) setWallet(next.wallet);
-      if (next.network) setNetwork(next.network);
-      if (next.amountUsd) setPaidAmount(next.amountUsd);
-      setMode("returning");
-      setStatus("Checking whether your payment finished…");
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // Resume after hosted Link (buyer comes back to /checkout — no embed remount).
-  useEffect(() => {
-    resumeFromPending();
-  }, [resumeFromPending]);
-
-  // Browser Back from crypto.link.com often restores bfcache on "redirecting".
-  // Flip to the resume panel instead of leaving them stuck on "Opening…".
-  useEffect(() => {
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) resumeFromPending();
+  async function startStripeInstantFallback(
+    amount: number,
+    net: CrossmintClientNetworkId | "ethereum",
+    walletAddr: string,
+    mail?: string,
+  ) {
+    // Stripe Instant only settles ethereum USDC / bitcoin for this merchant.
+    const stripeNetwork = net === "solana" || net === "base" || net === "polygon"
+      ? "ethereum"
+      : net;
+    const res = await fetch("/api/onramp/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountUsd: amount,
+        email: mail || undefined,
+        network: stripeNetwork,
+        wallet: walletAddr,
+      }),
+    });
+    const data = (await res.json()) as {
+      redirectUrl?: string | null;
+      error?: string;
     };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
-  }, [resumeFromPending]);
-
-  const stopStatusPoll = useCallback(() => {
-    if (statusPollRef.current) {
-      clearInterval(statusPollRef.current);
-      statusPollRef.current = null;
+    if (!res.ok || !data.redirectUrl) {
+      throw new Error(
+        data.error ||
+          "Checkout is not fully enabled yet. Try again later or use Card.",
+      );
     }
-  }, []);
-
-  const markDone = useCallback((message?: string) => {
-    stopStatusPoll();
-    try {
-      sessionStorage.removeItem(PENDING_KEY);
-    } catch {
-      /* ignore */
-    }
-    setPending(null);
-    setStatus(
-      message || "Payment complete — crypto is on the way to your wallet.",
-    );
-    setMode("done");
-  }, [stopStatusPoll]);
-
-  const checkPendingStatus = useCallback(
-    async (sessionId: string) => {
-      setCheckingStatus(true);
-      try {
-        const res = await fetch(
-          `/api/onramp/session-status?sessionId=${encodeURIComponent(sessionId)}`,
-        );
-        const data = (await res.json()) as {
-          status?: string;
-          complete?: boolean;
-          error?: string;
-        };
-        if (!res.ok) {
-          setStatus(
-            data.error ||
-              "Could not confirm yet — if you already paid, check your wallet.",
-          );
-          return false;
-        }
-        if (data.complete) {
-          markDone(
-            data.status === "fulfillment_processing"
-              ? "Payment received — crypto delivery finishing…"
-              : "Payment complete — crypto is on the way to your wallet.",
-          );
-          return true;
-        }
-        setStatus(
-          data.status === "requires_payment"
-            ? "Checkout still open — continue payment, then come back here."
-            : data.status === "rejected"
-              ? "This checkout was declined. Start a new payment."
-              : `Status: ${data.status || "pending"}. Finish on the secure page, then refresh here.`,
-        );
-        return false;
-      } catch {
-        setStatus("Could not confirm yet — if you already paid, check your wallet.");
-        return false;
-      } finally {
-        setCheckingStatus(false);
-      }
-    },
-    [markDone],
-  );
-
-  useEffect(() => {
-    if (mode !== "returning" || !pending?.sessionId) return;
-    let cancelled = false;
-    (async () => {
-      const done = await checkPendingStatus(pending.sessionId!);
-      if (cancelled || done) return;
-      stopStatusPoll();
-      statusPollRef.current = setInterval(() => {
-        void checkPendingStatus(pending.sessionId!);
-      }, 8000);
-    })();
-    return () => {
-      cancelled = true;
-      stopStatusPoll();
-    };
-  }, [mode, pending?.sessionId, checkPendingStatus, stopStatusPoll]);
+    setMode("redirecting");
+    window.location.assign(data.redirectUrl);
+  }
 
   const fetchCardClientSecret = useCallback(async () => {
     if (!cardSecretPromiseRef.current) {
@@ -236,7 +190,6 @@ export function ClientPayCheckout() {
 
   async function startPay() {
     setError(null);
-    setStatus("");
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
@@ -245,20 +198,21 @@ export function ClientPayCheckout() {
     }
     if (!walletOk) {
       setError(
-        network === "bitcoin"
-          ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-          : "Enter a valid wallet address (0x + 40 hex).",
+        network === "solana"
+          ? "Enter a valid Solana wallet address."
+          : network === "bitcoin"
+            ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
+            : "Enter a valid wallet address (0x + 40 hex).",
       );
-      return;
-    }
-    if (!publishableKey) {
-      setError("Checkout is not configured. Try again later.");
       return;
     }
 
     setLoading(true);
     try {
-      if (path === "easy") {
+      if (path === "card") {
+        if (!publishableKey) {
+          throw new Error("Card checkout is not configured.");
+        }
         cardRequestRef.current = {
           amountUsd,
           email: email.trim() || undefined,
@@ -273,55 +227,58 @@ export function ClientPayCheckout() {
         return;
       }
 
-      if (!ONRAMP_CLIENT_NETWORKS.some((n) => n.id === network)) {
-        throw new Error("Instant crypto supports Ethereum or Bitcoin only");
+      if (!crossmintClientKey) {
+        throw new Error("Checkout is not configured. Try again later.");
       }
-      const res = await fetch("/api/onramp/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amountUsd,
-          email: email.trim() || undefined,
-          network: network as OnrampClientNetworkId,
-          wallet: normalizedWallet,
-        }),
+      if (!emailOk) {
+        throw new Error("Enter a valid email for checkout.");
+      }
+      if (!isCrossmintClientNetwork(network)) {
+        throw new Error("Choose Polygon, Base, or Solana.");
+      }
+
+      const result = await createOnrampOrder({
+        email: email.trim().toLowerCase(),
+        amount: amountUsd.toFixed(2),
+        chain: network as OnrampChain,
+        walletAddress: normalizedWallet,
       });
-      const data = (await res.json()) as {
-        clientSecret?: string;
-        sessionId?: string;
-        redirectUrl?: string | null;
-        error?: string;
-      };
-      if (!res.ok) {
-        throw new Error(data.error || "Could not start crypto checkout");
-      }
-      if (!data.redirectUrl) {
-        throw new Error(
-          "Secure checkout URL missing. Refresh and try Instant crypto again.",
-        );
+
+      if (!result.ok) {
+        const blocked =
+          /not yet enabled for production|staging\.crossmint|contact.*sales/i.test(
+            result.message || "",
+          );
+        if (blocked) {
+          if (network === "solana") {
+            throw new Error(
+              "This payment path is still being enabled. Choose Polygon or Base, or use Card.",
+            );
+          }
+          // Production Crossmint onramp not unlocked yet — fall back to Stripe Instant.
+          setWallet(normalizedWallet);
+          setPaidAmount(amountUsd);
+          await startStripeInstantFallback(
+            amountUsd,
+            network as CrossmintClientNetworkId,
+            normalizedWallet,
+            email.trim().toLowerCase(),
+          );
+          return;
+        }
+        throw new Error(result.message || "Could not start checkout");
       }
 
-      setWallet(normalizedWallet);
+      setWallet(result.walletAddress || normalizedWallet);
       setPaidAmount(amountUsd);
-
-      const nextPending: PendingOnramp = {
-        sessionId: data.sessionId,
-        wallet: normalizedWallet,
-        network,
-        amountUsd,
-        redirectUrl: data.redirectUrl,
-      };
-      try {
-        sessionStorage.setItem(PENDING_KEY, JSON.stringify(nextPending));
-      } catch {
-        /* ignore */
-      }
-      setPending(nextPending);
-
-      // Full navigation to hosted Link — device verify works there (no iframe remount).
-      setMode("redirecting");
-      setStatus("Opening payment…");
-      window.location.assign(data.redirectUrl);
+      setCrossmintOrder({
+        orderId: result.orderId,
+        clientSecret: result.clientSecret,
+        email: email.trim().toLowerCase(),
+        walletAddress: result.walletAddress || normalizedWallet,
+      });
+      setMountKey((k) => k + 1);
+      setMode("crossmint");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
     } finally {
@@ -330,20 +287,13 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
-    stopStatusPoll();
     cardRequestRef.current = null;
     cardSecretPromiseRef.current = null;
     setCardReady(false);
     setPaidAmount(null);
-    setPending(null);
-    setStatus("");
+    setCrossmintOrder(null);
     setError(null);
     setMode("pick");
-    try {
-      sessionStorage.removeItem(PENDING_KEY);
-    } catch {
-      /* ignore */
-    }
   }
 
   if (mode === "done") {
@@ -356,7 +306,6 @@ export function ClientPayCheckout() {
             {paidAmount ? ` (${formatUsd(paidAmount)})` : ""}. Crypto goes to{" "}
             <code className="break">{wallet.trim()}</code> on {network}.
           </p>
-          {status ? <p className="form-hint">{status}</p> : null}
           <button type="button" className="ghost-link" onClick={resetToPick}>
             New payment
           </button>
@@ -370,71 +319,52 @@ export function ClientPayCheckout() {
       <div className="payment-stack client-pay">
         <div className="setup-panel soft">
           <h2>Opening payment…</h2>
-          <p>
-            Continue on the secure payment page. When you’re done, return here
-            or reopen Pay.
-          </p>
-          {status ? <p className="form-hint">{status}</p> : null}
-          {pending?.redirectUrl ? (
-            <p className="form-hint">
-              If nothing opens,{" "}
-              <a href={pending.redirectUrl}>continue to pay</a>.
-            </p>
-          ) : null}
+          <p>Continue on the secure payment page.</p>
         </div>
       </div>
     );
   }
 
-  if (mode === "returning") {
+  if (mode === "crossmint" && crossmintOrder && crossmintClientKey) {
     return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>Welcome back</h2>
+      <div className="payment-stack onramp-focus">
+        <div className="destination-summary">
           <p>
-            {paidAmount ? (
-              <>
-                You started <strong>{formatUsd(paidAmount)}</strong> to{" "}
-                <code className="break">{wallet.trim()}</code> on {network}.
-              </>
-            ) : (
-              <>You have a payment in progress.</>
-            )}
+            Pay {paidAmount ? <strong>{formatUsd(paidAmount)}</strong> : null}{" "}
+            → <code className="break">{crossmintOrder.walletAddress}</code>
           </p>
-          {status ? <p className="form-hint">{status}</p> : null}
-          <div className="cta-row" style={{ marginTop: "1rem", gap: "0.75rem" }}>
-            {pending?.redirectUrl ? (
-              <a className="primary-cta" href={pending.redirectUrl}>
-                Continue payment
-              </a>
-            ) : null}
-            {pending?.sessionId ? (
-              <button
-                type="button"
-                className="primary-cta"
-                disabled={checkingStatus}
-                onClick={() => void checkPendingStatus(pending.sessionId!)}
-              >
-                {checkingStatus ? "Checking…" : "I finished paying"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="primary-cta"
-                onClick={() =>
-                  markDone(
-                    "If payment went through, crypto is on the way to your wallet.",
-                  )
-                }
-              >
-                I finished paying
-              </button>
-            )}
-            <button type="button" className="ghost-link" onClick={resetToPick}>
-              Start over
-            </button>
-          </div>
+          <button type="button" className="ghost-link" onClick={resetToPick}>
+            Change details
+          </button>
         </div>
+        <CheckoutErrorBoundary onReset={() => setMountKey((k) => k + 1)}>
+          <CrossmintProvider key={mountKey} apiKey={crossmintClientKey}>
+            <CrossmintCheckoutProvider>
+              <div className="checkout-shell onramp-embed">
+                <CrossmintPhaseBanner />
+                <CrossmintEmbeddedCheckout
+                  orderId={crossmintOrder.orderId}
+                  clientSecret={crossmintOrder.clientSecret}
+                  appearance={checkoutAppearance}
+                  payment={{
+                    receiptEmail: crossmintOrder.email,
+                    defaultMethod: "fiat",
+                    crypto: { enabled: false },
+                    fiat: {
+                      enabled: true,
+                      defaultCurrency: "usd",
+                      allowedMethods: {
+                        card: true,
+                        applePay: true,
+                        googlePay: true,
+                      },
+                    },
+                  }}
+                />
+              </div>
+            </CrossmintCheckoutProvider>
+          </CrossmintProvider>
+        </CheckoutErrorBoundary>
       </div>
     );
   }
@@ -477,22 +407,22 @@ export function ClientPayCheckout() {
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
           <button
             type="button"
-            className={path === "instant" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("instant")}
+            className={path === "crypto" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("crypto")}
           >
             Crypto
           </button>
           <button
             type="button"
-            className={path === "easy" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("easy")}
+            className={path === "card" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("card")}
           >
             Card
           </button>
         </div>
         <p className="form-hint">
-          {path === "instant"
-            ? "Crypto goes to your wallet after you pay."
+          {path === "crypto"
+            ? "Card / Apple Pay / Google Pay → USDC to your wallet."
             : "Card pay now; crypto is sent when ready."}
         </p>
 
@@ -544,31 +474,48 @@ export function ClientPayCheckout() {
           <input
             value={wallet}
             onChange={(e) => setWallet(e.target.value)}
-            placeholder={network === "bitcoin" ? "bc1…" : "0x…"}
+            placeholder={
+              network === "solana"
+                ? "Solana address…"
+                : network === "bitcoin"
+                  ? "bc1…"
+                  : "0x…"
+            }
             autoComplete="off"
             spellCheck={false}
           />
         </label>
         {walletDirty && !walletOk ? (
           <p className="form-error">
-            {network === "bitcoin"
-              ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-              : "Enter a valid wallet (0x + 40 hex characters)."}
+            {network === "solana"
+              ? "Enter a valid Solana wallet address."
+              : network === "bitcoin"
+                ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
+                : "Enter a valid wallet (0x + 40 hex characters)."}
           </p>
         ) : null}
 
         <label className="field">
-          Email (optional)
+          {path === "crypto" ? "Email" : "Email (optional)"}
           <input
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
+            required={path === "crypto"}
           />
         </label>
+        {path === "crypto" && email.trim() && !emailOk ? (
+          <p className="form-error">Enter a valid email.</p>
+        ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
+        {path === "crypto" && !crossmintClientKey ? (
+          <p className="form-error">
+            Checkout keys are missing on this deploy. Add them and redeploy.
+          </p>
+        ) : null}
 
         <button
           type="button"
@@ -576,9 +523,7 @@ export function ClientPayCheckout() {
           onClick={startPay}
           disabled={loading || !canStart}
         >
-          {loading
-            ? "Starting…"
-            : `Pay ${amountOk ? amountLabel : rangeLabel}`}
+          {loading ? "Starting…" : `Pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
       </div>
     </div>
