@@ -13,6 +13,7 @@ import {
   parseAmountUsd,
 } from "@/lib/networks";
 import { upsertAwaitingCryptoOrder } from "@/lib/orders";
+import { onrampSourceCurrencyForRequest } from "@/lib/geo";
 
 /**
  * Amount + client's own wallet → Onramp locked to that wallet.
@@ -105,9 +106,13 @@ export async function POST(request: Request) {
       request.headers.get("x-real-ip") ||
       undefined;
 
+    // EU Instant crypto must charge eur (Stripe Onramp). Amount stays the same number.
+    const sourceCurrency = onrampSourceCurrencyForRequest(request);
+
     const session = await createClientOnrampSession({
       customerIpAddress,
       sourceAmountUsd: amountUsd.toFixed(2),
+      sourceCurrency,
       clientNetwork: network,
       clientWallet: wallet,
       clientAsset: net.asset,
@@ -121,10 +126,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const redirectUrl =
+      session.redirect_url ||
+      (session as { redirectUrl?: string | null }).redirectUrl ||
+      null;
+
     await upsertAwaitingCryptoOrder({
       onrampSessionId: session.id,
       amountCents: Math.round(amountUsd * 100),
-      currency: "usd",
+      currency: sourceCurrency,
       network,
       asset: net.asset,
       clientWallet: wallet,
@@ -134,7 +144,8 @@ export async function POST(request: Request) {
       clientSecret: session.client_secret,
       sessionId: session.id,
       status: session.status,
-      redirectUrl: session.redirect_url ?? null,
+      redirectUrl,
+      sourceCurrency,
       livemode: session.livemode ?? isLiveStripeKey(),
     });
   } catch (error) {

@@ -15,6 +15,7 @@ import {
   normalizeWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
+import { onrampSourceCurrencyForRequest } from "@/lib/geo";
 
 /**
  * Easy card path — regular Stripe Checkout (no Crypto Onramp KYC).
@@ -81,6 +82,8 @@ export async function POST(request: Request) {
     }
 
     const amountCents = amountUsdToCents(amountUsd);
+    // EU cards often fail on USD charges; bill local eur for EU buyers.
+    const currency = onrampSourceCurrencyForRequest(request);
 
     const session = await stripe.checkout.sessions.create({
       ui_mode: "embedded_page",
@@ -93,7 +96,7 @@ export async function POST(request: Request) {
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency,
             unit_amount: amountCents,
             product_data: {
               name: "OFFLINERICH payment",
@@ -111,6 +114,7 @@ export async function POST(request: Request) {
         sku: "offlinerich-easy-card",
         flow: "easy_card_then_crypto",
         amount_usd: String(amountUsd),
+        charge_currency: currency,
         client_network: network,
         client_wallet: wallet,
         client_asset: net.asset,
@@ -118,6 +122,7 @@ export async function POST(request: Request) {
       payment_intent_data: {
         metadata: {
           amount_usd: String(amountUsd),
+          charge_currency: currency,
           flow: "easy_card_then_crypto",
           client_network: network,
           client_wallet: wallet,
