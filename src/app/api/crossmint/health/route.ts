@@ -123,8 +123,8 @@ export async function GET() {
     productionUnlock: {
       required: [
         "Whitelist localhost + HTTPS domain on client API key",
-        "Start collection review for offlinerich-drop in Crossmint Console",
-        "Complete Crossmint Order Form + KYB via Sales for production card/Apple Pay/onramp",
+        "Request production onramp enablement via Crossmint Sales (orders.create returns ONRAMP_PRODUCTION_LOCKED until then)",
+        "Optional: create a sellable collection + set NEXT_PUBLIC_CROSSMINT_COLLECTION_ID for NFT drops",
       ],
       salesUrl: "https://www.crossmint.com/contact/sales",
       consoleUrl: "https://www.crossmint.com/console",

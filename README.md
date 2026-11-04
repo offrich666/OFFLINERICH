@@ -34,11 +34,16 @@ Do not use Easy card as the main path if treasury is empty.
 ```bash
 npm install --legacy-peer-deps
 cp .env.example .env.local
-# set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY + STRIPE_SECRET_KEY (live)
+# Stripe Instant pay: NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY + STRIPE_SECRET_KEY (live)
+# Crossmint USDC onramp: CROSSMINT_SERVER_API_KEY + NEXT_PUBLIC_CROSSMINT_API_KEY
 npm run dev
 ```
 
-- Checkout: `/checkout`
+- Checkout (Stripe Instant): `/checkout`
+- Crossmint USDC onramp: `/onramp` — card / Apple Pay / Google Pay → USDC to wallet
+- Crossmint health: `GET /api/crossmint/health`
 - Ops: `/ops/transfers?key=$OPS_SECRET`
 - Status: `GET /api/onramp/status`
 - Babyphone (anywhere): `/babyphone` — nursery Camera + parent Remoter; works across networks via the public site URL (not same-Wi‑Fi only). Optional local HTTPS: `npm run babyphone`
+
+Production Crossmint card onramp requires sales enablement (`crossmint.com/contact/sales`). Wallets + staging work with the same integration.
