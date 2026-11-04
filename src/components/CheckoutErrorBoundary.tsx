@@ -36,7 +36,7 @@ export class CheckoutErrorBoundary extends Component<Props, State> {
           <p>
             {this.state.message?.includes("cross-origin") ||
             this.state.message?.includes("Should not already be working")
-              ? "A known React development-mode conflict with the Crossmint iframe was caught. Reload checkout to continue."
+              ? "Checkout hit a temporary display issue. Reload to continue."
               : this.state.message}
           </p>
           <button

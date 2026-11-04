@@ -21,12 +21,11 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $5–$9,000 with Crossmint. Instant crypto to your wallet, or easy
-          card if we already hold crypto to send.
+          Pay $5–$9,000. Crypto goes to your wallet after payment.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Pay $5–$9,000
+            Pay
           </Link>
         </div>
       </section>

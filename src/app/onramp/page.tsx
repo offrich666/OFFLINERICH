@@ -26,12 +26,9 @@ export default function OnrampPage() {
 
       <section className="checkout-layout">
         <div className="checkout-copy">
-          <p className="eyebrow">USDC onramp</p>
+          <p className="eyebrow">USDC</p>
           <h1>Buy USDC</h1>
-          <p>
-            Separate onramp flow. Production onramp also requires Crossmint
-            Sales (Order Form + KYB).
-          </p>
+          <p>Pay with card, Apple Pay, or Google Pay. USDC goes to your wallet.</p>
           <dl className="meta-list">
             <div>
               <dt>Default amount</dt>

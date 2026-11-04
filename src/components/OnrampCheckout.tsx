@@ -151,7 +151,7 @@ export function OnrampCheckout({
           result.message.toLowerCase().includes("contact our team")
         ) {
           setBlockedHint(
-            "Production onramp is not enabled on this Crossmint project yet. Test with staging keys, or ask Crossmint Sales to enable production (Order Form + KYB).",
+            "This payment path is not enabled yet. Try the main Pay page, or try again later.",
           );
         }
         return;
@@ -194,7 +194,7 @@ export function OnrampCheckout({
           onChange={(e) => setEmail(e.target.value)}
         />
         <span className="field-hint">
-          Receipt + KYC + Crossmint wallet recovery use this address.
+          Used for receipt and wallet recovery.
         </span>
       </div>
 
@@ -252,7 +252,7 @@ export function OnrampCheckout({
             onChange={(e) => setWalletOverride(e.target.value)}
           />
           <span className="field-hint">
-            Leave blank to auto-create a Crossmint wallet for the email.
+            Leave blank to create a wallet for this email.
           </span>
         </div>
       ) : null}

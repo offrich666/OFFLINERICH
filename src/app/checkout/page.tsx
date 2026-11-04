@@ -19,10 +19,7 @@ export default function CheckoutPage() {
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
           <h1>Pay {range}</h1>
-          <p>
-            Enter your wallet, then pay with Crossmint. Instant crypto (default)
-            settles on-chain. Easy card is USD only until treasury is funded.
-          </p>
+          <p>Enter your wallet and amount, then pay. Crypto goes to your wallet.</p>
         </div>
 
         <div className="checkout-panel">
