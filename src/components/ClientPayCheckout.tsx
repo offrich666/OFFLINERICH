@@ -44,7 +44,8 @@ type PendingOnramp = {
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("instant");
+  // Card is default: Instant crypto often fails at final bank auth (crypto MCC).
+  const [path, setPath] = useState<PayPath>("easy");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
   const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
@@ -56,6 +57,7 @@ export function ClientPayCheckout() {
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [pending, setPending] = useState<PendingOnramp | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
+  const [instantDeclined, setInstantDeclined] = useState(false);
   const cardRequestRef = useRef<{
     amountUsd: number;
     email?: string;
@@ -164,6 +166,7 @@ export function ClientPayCheckout() {
           return false;
         }
         if (data.complete) {
+          setInstantDeclined(false);
           markDone(
             data.status === "fulfillment_processing"
               ? "Payment received — crypto delivery finishing…"
@@ -171,12 +174,18 @@ export function ClientPayCheckout() {
           );
           return true;
         }
+        if (data.status === "rejected") {
+          setInstantDeclined(true);
+          setStatus(
+            "Your bank declined the crypto charge at the end. Use Card instead — same wallet, different payment rail.",
+          );
+          return false;
+        }
+        setInstantDeclined(false);
         setStatus(
           data.status === "requires_payment"
-            ? "Checkout still open — continue payment, then come back here."
-            : data.status === "rejected"
-              ? "This checkout was declined. Start a new payment."
-              : `Status: ${data.status || "pending"}. Finish on the secure page, then refresh here.`,
+            ? "Checkout still open — if the bank declined at the end, come back and use Card."
+            : `Status: ${data.status || "pending"}. Finish on the secure page, then refresh here.`,
         );
         return false;
       } catch {
@@ -347,29 +356,46 @@ export function ClientPayCheckout() {
     }
   }
 
-  /** Open the embedded Card form when Instant crypto cannot start. */
+  /** Open the embedded Card form when Instant crypto fails (start or final bank decline). */
   function openCardFallback() {
-    if (!amountOk || amountUsd == null || !walletOk) {
+    const payAmount =
+      (amountOk && amountUsd != null ? amountUsd : null) ??
+      paidAmount ??
+      pending?.amountUsd ??
+      null;
+    const payWallet = normalizedWallet || pending?.wallet || wallet.trim();
+    const payNetwork = (pending?.network || network) as ClientNetworkId;
+    const walletReady = isValidWalletAddress(payNetwork, payWallet);
+
+    if (payAmount == null || !isValidAmountUsd(payAmount) || !walletReady) {
       setError("Enter amount and wallet first, then try Card.");
+      setMode("pick");
+      setPath("easy");
       return;
     }
     if (!publishableKey) {
       setError("Card checkout is not configured. Try again later.");
+      setMode("pick");
+      setPath("easy");
       return;
     }
+    stopStatusPoll();
+    setInstantDeclined(false);
     setError(null);
     setStatus("");
     setPath("easy");
+    setNetwork(payNetwork);
+    setWallet(payWallet);
+    setAmountInput(String(payAmount));
     cardRequestRef.current = {
-      amountUsd,
+      amountUsd: payAmount,
       email: email.trim() || undefined,
-      network,
-      wallet: normalizedWallet,
+      network: payNetwork,
+      wallet: normalizeWalletAddress(payNetwork, payWallet),
     };
     cardSecretPromiseRef.current = null;
-    setWallet(normalizedWallet);
     setCardReady(true);
-    setPaidAmount(amountUsd);
+    setPaidAmount(payAmount);
     setMode("card");
   }
 
@@ -380,6 +406,7 @@ export function ClientPayCheckout() {
     setCardReady(false);
     setPaidAmount(null);
     setPending(null);
+    setInstantDeclined(false);
     setStatus("");
     setError(null);
     setMode("pick");
@@ -445,14 +472,28 @@ export function ClientPayCheckout() {
               <>You have a payment in progress.</>
             )}
           </p>
-          {status ? <p className="form-hint">{status}</p> : null}
+          {status ? (
+            <p className={instantDeclined ? "form-error" : "form-hint"}>
+              {status}
+            </p>
+          ) : null}
           <div className="cta-row" style={{ marginTop: "1rem", gap: "0.75rem" }}>
-            {pending?.redirectUrl ? (
+            {instantDeclined || /declin/i.test(status) ? (
+              <button
+                type="button"
+                className="primary-cta"
+                onClick={openCardFallback}
+                disabled={!walletOk || paidAmount == null}
+              >
+                Open Card payment form
+              </button>
+            ) : null}
+            {!instantDeclined && pending?.redirectUrl ? (
               <a className="primary-cta" href={pending.redirectUrl}>
                 Continue payment
               </a>
             ) : null}
-            {pending?.sessionId ? (
+            {!instantDeclined && pending?.sessionId ? (
               <button
                 type="button"
                 className="primary-cta"
@@ -461,7 +502,8 @@ export function ClientPayCheckout() {
               >
                 {checkingStatus ? "Checking…" : "I finished paying"}
               </button>
-            ) : (
+            ) : null}
+            {!instantDeclined && !pending?.sessionId ? (
               <button
                 type="button"
                 className="primary-cta"
@@ -473,7 +515,7 @@ export function ClientPayCheckout() {
               >
                 I finished paying
               </button>
-            )}
+            ) : null}
             <button type="button" className="ghost-link" onClick={resetToPick}>
               Start over
             </button>
@@ -516,16 +558,12 @@ export function ClientPayCheckout() {
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
         <h2>Pay</h2>
-        <p>Enter amount and wallet, then pay. That’s it.</p>
+        <p>
+          Enter amount and wallet, then pay. Prefer <strong>Card</strong> —
+          Instant crypto often fails at the last bank step.
+        </p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
-          <button
-            type="button"
-            className={path === "instant" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("instant")}
-          >
-            Crypto
-          </button>
           <button
             type="button"
             className={path === "easy" ? "amount-chip active" : "amount-chip"}
@@ -533,11 +571,18 @@ export function ClientPayCheckout() {
           >
             Card
           </button>
+          <button
+            type="button"
+            className={path === "instant" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("instant")}
+          >
+            Instant crypto
+          </button>
         </div>
         <p className="form-hint">
-          {path === "instant"
-            ? "Opens a secure card form, then crypto goes to your wallet. If your bank blocks crypto, use Card."
-            : "Embedded card form (Apple Pay / Google Pay too). Crypto is sent after payment clears."}
+          {path === "easy"
+            ? "Best success rate. Card form on this page; crypto is sent after payment clears."
+            : "Crypto goes straight to your wallet — many banks decline this at the final charge. If that happens, use Card."}
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
