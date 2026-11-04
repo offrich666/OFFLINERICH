@@ -142,13 +142,23 @@ export async function createOnrampOrder(
 
   const orderId = data.order?.orderId || data.order?.id;
   if (!ok || !orderId || !data.clientSecret) {
+    const raw =
+      data.message ||
+      "Failed to create onramp order. Check API key scopes (orders.create) and production access.";
+    const blocked =
+      status === 400 &&
+      /onramp is not yet enabled|contact our team/i.test(raw);
     return {
       ok: false,
       status,
-      message:
-        data.message ||
-        "Failed to create onramp order. Check API key scopes (orders.create) and production access.",
-      code: status === 400 ? "ONRAMP_BLOCKED_OR_INVALID" : undefined,
+      message: blocked
+        ? "Crossmint production onramp is not enabled for this project yet. Keys are valid — request production access at crossmint.com/contact/sales (or test with staging keys)."
+        : raw,
+      code: blocked
+        ? "ONRAMP_PRODUCTION_LOCKED"
+        : status === 400
+          ? "ONRAMP_BLOCKED_OR_INVALID"
+          : undefined,
     };
   }
 

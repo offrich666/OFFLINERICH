@@ -147,11 +147,13 @@ export function OnrampCheckout({
       if (!result.ok) {
         setError(result.message);
         if (
+          result.code === "ONRAMP_PRODUCTION_LOCKED" ||
           result.message.toLowerCase().includes("onramp is not yet enabled") ||
+          result.message.toLowerCase().includes("production onramp is not enabled") ||
           result.message.toLowerCase().includes("contact our team")
         ) {
           setBlockedHint(
-            "This payment path is not enabled yet. Try the main Pay page, or try again later.",
+            "API keys work, but Crossmint still has to unlock production card/Apple Pay onramp. Use /checkout for Stripe Instant pay, or finish Crossmint sales enablement.",
           );
         }
         return;

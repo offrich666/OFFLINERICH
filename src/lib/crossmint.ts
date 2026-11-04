@@ -23,15 +23,30 @@ const DEFAULT_PRODUCTION_WALLETS =
 const DEFAULT_STAGING_WALLETS =
   "https://staging.crossmint.com/api/2025-06-09";
 
+function readServerApiKey() {
+  return (
+    process.env.CROSSMINT_SERVER_API_KEY ||
+    process.env.CROSSMINT_SECRET_API_KEY ||
+    process.env.CROSSMINT_SERVER_SIDE_API_KEY ||
+    ""
+  );
+}
+
+function readClientApiKey() {
+  return (
+    process.env.NEXT_PUBLIC_CROSSMINT_API_KEY ||
+    process.env.NEXT_PUBLIC_CLIENT_API_KEY ||
+    process.env.NEXT_PUBLIC_CROSSMINT_CLIENT_SIDE_API_KEY ||
+    ""
+  );
+}
+
 export function getUsdcEnvironment(): UsdcEnvironment {
   const explicit = process.env.NEXT_PUBLIC_CROSSMINT_ENV?.toLowerCase();
   if (explicit === "staging" || explicit === "production") {
     return explicit;
   }
-  const key =
-    process.env.CROSSMINT_SERVER_API_KEY ||
-    process.env.NEXT_PUBLIC_CROSSMINT_API_KEY ||
-    "";
+  const key = readServerApiKey() || readClientApiKey();
   return key.includes("_staging_") ? "staging" : "production";
 }
 
@@ -54,15 +69,17 @@ export function getWalletsApiBase() {
 }
 
 export function getServerApiKey() {
-  const key = process.env.CROSSMINT_SERVER_API_KEY;
+  const key = readServerApiKey();
   if (!key) {
-    throw new Error("CROSSMINT_SERVER_API_KEY is not set");
+    throw new Error(
+      "CROSSMINT_SERVER_API_KEY (or CROSSMINT_SECRET_API_KEY) is not set",
+    );
   }
   return key;
 }
 
 export function getClientApiKey() {
-  return process.env.NEXT_PUBLIC_CROSSMINT_API_KEY ?? "";
+  return readClientApiKey();
 }
 
 export function getCollectionId() {
