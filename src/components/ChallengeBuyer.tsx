@@ -62,7 +62,8 @@ export function ChallengeBuyer({
     setCryptoResult(null);
     try {
       if (!signedIn) {
-        window.location.href = `/login?next=/challenges?program=${program}`;
+        const next = encodeURIComponent(`/challenges?program=${program}`);
+        window.location.href = `/register?next=${next}`;
         return;
       }
       const res = await fetch("/api/checkout/challenge", {
@@ -88,7 +89,8 @@ export function ChallengeBuyer({
     setBusy(true);
     try {
       if (!signedIn) {
-        window.location.href = `/login?next=/challenges?program=${program}`;
+        const next = encodeURIComponent(`/challenges?program=${program}`);
+        window.location.href = `/register?next=${next}`;
         return;
       }
       await loadDeposits();
@@ -131,6 +133,29 @@ export function ChallengeBuyer({
       <p className="fxl-muted">
         Professional challenges from $5K to $1M. Pay by card or USDT crypto.
       </p>
+
+      {!signedIn ? (
+        <div className="fxl-account" style={{ marginBottom: "1rem" }}>
+          <strong>Create a free account to purchase</strong>
+          <p className="fxl-muted" style={{ margin: 0 }}>
+            Open to all traders. Register once, then checkout securely.
+          </p>
+          <div className="fxl-cta-row" style={{ marginTop: "0.65rem" }}>
+            <a
+              className="fxl-btn"
+              href={`/register?next=${encodeURIComponent(`/challenges?program=${program}`)}`}
+            >
+              Create account
+            </a>
+            <a
+              className="fxl-btn fxl-btn-ghost"
+              href={`/login?next=${encodeURIComponent(`/challenges?program=${program}`)}`}
+            >
+              Sign in
+            </a>
+          </div>
+        </div>
+      ) : null}
 
       <div className="fxl-tabs" role="tablist">
         {PROGRAMS.map((p) => (

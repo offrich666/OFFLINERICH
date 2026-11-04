@@ -3,9 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export function LoginForm() {
+type Props = {
+  nextPath?: string;
+};
+
+export function LoginForm({ nextPath = "/dashboard" }: Props) {
   const router = useRouter();
-  const [email, setEmail] = useState("naserademid@gmail.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,7 +29,7 @@ export function LoginForm() {
         setError(data.error || "Login failed");
         return;
       }
-      router.push("/dashboard");
+      router.push(nextPath);
       router.refresh();
     } catch {
       setError("Network error");
@@ -43,6 +47,7 @@ export function LoginForm() {
           autoComplete="username"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@email.com"
           required
         />
       </label>

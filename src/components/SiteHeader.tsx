@@ -21,8 +21,8 @@ export function SiteHeader({ signedIn }: Props) {
         ) : (
           <>
             <Link href="/login">Login</Link>
-            <Link href="/challenges" className="fxl-nav-cta">
-              Get Funded
+            <Link href="/register" className="fxl-nav-cta">
+              Create account
             </Link>
           </>
         )}

@@ -3,10 +3,18 @@ import { redirect } from "next/navigation";
 import { SiteHeader } from "@/components/SiteHeader";
 import { LoginForm } from "@/components/LoginForm";
 import { getSessionUser } from "@/lib/auth";
+import { safeNextPath } from "@/lib/safeNext";
 
-export default async function LoginPage() {
+type Props = {
+  searchParams: Promise<{ next?: string }>;
+};
+
+export default async function LoginPage({ searchParams }: Props) {
   const user = await getSessionUser();
   if (user) redirect("/dashboard");
+
+  const sp = await searchParams;
+  const nextPath = safeNextPath(sp.next, "/dashboard");
 
   return (
     <main className="fxl-page">
@@ -17,13 +25,16 @@ export default async function LoginPage() {
         <div className="fxl-panel">
           <h1>Client login</h1>
           <p className="fxl-muted">
-            Access your Funded XL dashboard, accounts, and payout status.
+            Access your Funded XL dashboard, trading accounts, and payouts.
           </p>
-          <LoginForm />
+          <LoginForm nextPath={nextPath} />
           <p className="fxl-muted" style={{ marginTop: "1rem", fontSize: "0.88rem" }}>
             New trader?{" "}
-            <Link href="/challenges" style={{ color: "var(--signal)" }}>
-              Buy a challenge
+            <Link
+              href={`/register?next=${encodeURIComponent(nextPath === "/dashboard" ? "/challenges" : nextPath)}`}
+              style={{ color: "var(--signal)" }}
+            >
+              Create a free account
             </Link>
           </p>
         </div>

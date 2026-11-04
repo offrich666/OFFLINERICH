@@ -30,11 +30,14 @@ export default async function Home() {
           Keep up to {RULES.profitSplit} of profits with bi-weekly payouts.
         </p>
         <div className="fxl-cta-row">
-          <Link href="/challenges" className="fxl-btn">
-            Browse challenges
+          <Link href={user ? "/challenges" : "/register?next=/challenges"} className="fxl-btn">
+            {user ? "Browse challenges" : "Create free account"}
           </Link>
-          <Link href={user ? "/dashboard" : "/login"} className="fxl-btn fxl-btn-ghost">
-            {user ? "Open dashboard" : "Client login"}
+          <Link
+            href={user ? "/dashboard" : "/challenges"}
+            className="fxl-btn fxl-btn-ghost"
+          >
+            {user ? "Open dashboard" : "View challenges"}
           </Link>
         </div>
       </section>

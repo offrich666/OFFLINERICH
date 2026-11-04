@@ -157,6 +157,63 @@ export async function authenticateUser(
   return user;
 }
 
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+export type RegisterInput = {
+  name: string;
+  email: string;
+  password: string;
+};
+
+export type RegisterResult =
+  | { ok: true; user: UserRecord }
+  | { ok: false; error: string };
+
+/** Open registration — any trader can create a Funded XL client account. */
+export async function registerUser(input: RegisterInput): Promise<RegisterResult> {
+  const name = String(input.name || "").trim();
+  const email = normalizeEmail(String(input.email || ""));
+  const password = String(input.password || "");
+
+  if (name.length < 2) {
+    return { ok: false, error: "Enter your full name" };
+  }
+  if (!isValidEmail(email)) {
+    return { ok: false, error: "Enter a valid email address" };
+  }
+  if (password.length < 8) {
+    return { ok: false, error: "Password must be at least 8 characters" };
+  }
+
+  const users = await loadUsers();
+  if (users.some((u) => u.email.toLowerCase() === email)) {
+    return { ok: false, error: "An account with this email already exists" };
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  const user: UserRecord = {
+    id: `usr_${Date.now().toString(36)}_${randomBytes(3).toString("hex")}`,
+    email,
+    name,
+    passwordHash: hashPassword(password, salt),
+    passwordSalt: salt,
+    createdAt: new Date().toISOString(),
+    reactivationRequired: false,
+    accounts: [],
+    purchases: [],
+  };
+
+  users.push(user);
+  await saveUsers(users);
+  return { ok: true, user };
+}
+
 export function publicUser(user: UserRecord) {
   const { passwordHash: _, passwordSalt: __, ...rest } = user;
   return rest;

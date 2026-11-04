@@ -5,8 +5,8 @@ Professional prop firm platform: Instant, One-Step, and Two-Step challenges from
 ## Features
 
 - Marketing site + challenge pricing
-- Client login & trading dashboard
-- Seeded legacy client with breached + locked-profit accounts
+- Open registration for all traders + client login & dashboard
+- Seeded legacy client with breached + locked-profit accounts (demo)
 - Card checkout (processor stays off the public UI)
 - Crypto USDT deposits on **Solana, BSC, and TRON** (unique merchant wallets)
 - Ops admin for wallet private keys + crypto invoice confirmation
@@ -22,7 +22,8 @@ npm run dev
 
 - Home: `/`
 - Challenges: `/challenges`
-- Login: `/login` (seeded: `naserademid@gmail.com`)
+- Register: `/register` (open to everyone)
+- Login: `/login`
 - Dashboard: `/dashboard`
 - Admin wallets (private keys): `/admin/wallets?key=$OPS_SECRET`
 
