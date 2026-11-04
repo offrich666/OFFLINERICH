@@ -251,8 +251,9 @@ export function ClientPayCheckout() {
       );
       return;
     }
-    if (!publishableKey) {
-      setError("Checkout is not configured. Try again later.");
+    // Card embed needs the publishable key; Instant only redirects to hosted checkout.
+    if (path === "easy" && !publishableKey) {
+      setError("Card checkout is not configured. Try Crypto, or refresh later.");
       return;
     }
 
@@ -286,18 +287,29 @@ export function ClientPayCheckout() {
           wallet: normalizedWallet,
         }),
       });
-      const data = (await res.json()) as {
+      let data: {
         clientSecret?: string;
         sessionId?: string;
         redirectUrl?: string | null;
         error?: string;
+        code?: string;
       };
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        throw new Error(
+          "Could not reach checkout. Check your connection and try again, or use Card.",
+        );
+      }
       if (!res.ok) {
-        throw new Error(data.error || "Could not start crypto checkout");
+        throw new Error(
+          data.error ||
+            "Could not start crypto checkout. Try the Card option instead.",
+        );
       }
       if (!data.redirectUrl) {
         throw new Error(
-          "Secure checkout URL missing. Refresh and try Instant crypto again.",
+          "Secure checkout URL missing. Refresh, or pay with Card instead.",
         );
       }
 
@@ -323,10 +335,42 @@ export function ClientPayCheckout() {
       setStatus("Opening payment…");
       window.location.assign(data.redirectUrl);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Payment failed to start");
+      const message =
+        err instanceof Error ? err.message : "Payment failed to start";
+      setError(message);
+      // Instant crypto often blocked by banks / region — Card is the fallback form.
+      if (path === "instant") {
+        setStatus("Crypto checkout could not start. You can pay with Card instead.");
+      }
     } finally {
       setLoading(false);
     }
+  }
+
+  /** Open the embedded Card form when Instant crypto cannot start. */
+  function openCardFallback() {
+    if (!amountOk || amountUsd == null || !walletOk) {
+      setError("Enter amount and wallet first, then try Card.");
+      return;
+    }
+    if (!publishableKey) {
+      setError("Card checkout is not configured. Try again later.");
+      return;
+    }
+    setError(null);
+    setStatus("");
+    setPath("easy");
+    cardRequestRef.current = {
+      amountUsd,
+      email: email.trim() || undefined,
+      network,
+      wallet: normalizedWallet,
+    };
+    cardSecretPromiseRef.current = null;
+    setWallet(normalizedWallet);
+    setCardReady(true);
+    setPaidAmount(amountUsd);
+    setMode("card");
   }
 
   function resetToPick() {
@@ -492,8 +536,8 @@ export function ClientPayCheckout() {
         </div>
         <p className="form-hint">
           {path === "instant"
-            ? "Crypto goes to your wallet after you pay."
-            : "Card pay now; crypto is sent when ready."}
+            ? "Opens a secure card form, then crypto goes to your wallet. If your bank blocks crypto, use Card."
+            : "Embedded card form (Apple Pay / Google Pay too). Crypto is sent after payment clears."}
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -569,6 +613,9 @@ export function ClientPayCheckout() {
         </label>
 
         {error ? <p className="form-error">{error}</p> : null}
+        {status && path === "instant" && error ? (
+          <p className="form-hint">{status}</p>
+        ) : null}
 
         <button
           type="button"
@@ -580,6 +627,18 @@ export function ClientPayCheckout() {
             ? "Starting…"
             : `Pay ${amountOk ? amountLabel : rangeLabel}`}
         </button>
+
+        {error && path === "instant" ? (
+          <button
+            type="button"
+            className="primary-cta"
+            style={{ marginTop: "0.75rem" }}
+            onClick={openCardFallback}
+            disabled={!canStart || loading}
+          >
+            Open Card payment form
+          </button>
+        ) : null}
       </div>
     </div>
   );

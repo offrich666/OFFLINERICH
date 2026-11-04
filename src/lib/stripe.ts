@@ -81,7 +81,10 @@ type CustomerInfo = {
 
 type CreateOnrampInput = {
   customerIpAddress?: string;
+  /** Fiat amount string (e.g. "25.00") in sourceCurrency units. */
   sourceAmountUsd: string;
+  /** EU Onramp sessions must use eur; US uses usd. */
+  sourceCurrency?: "usd" | "eur";
   /** Required — Stripe locks Onramp to THIS wallet (client's own). */
   clientNetwork: string;
   clientWallet: string;
@@ -112,8 +115,10 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       ? { bitcoin: wallet }
       : { ethereum: wallet };
 
+  const sourceCurrency = input.sourceCurrency === "eur" ? "eur" : "usd";
+
   const params: Record<string, unknown> = {
-    source_currency: "usd",
+    source_currency: sourceCurrency,
     source_amount: input.sourceAmountUsd,
     destination_currency: destinationCurrency,
     destination_network: destinationNetwork,
@@ -130,6 +135,7 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       client_asset: input.clientAsset || (destinationCurrency === "btc" ? "BTC" : "USDC"),
       onramp_network: destinationNetwork,
       onramp_currency: destinationCurrency,
+      source_currency: sourceCurrency,
     },
   };
 
