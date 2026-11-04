@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>G Cards EU · Server Merge &amp; Install</title>
+    <title>G Cards EU · Server Migration &amp; Install</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&display=swap" rel="stylesheet" />
@@ -16,7 +16,7 @@
           <img src="/public/logo.svg" width="40" height="40" alt="G Cards EU" />
           <div>
             <strong>G Cards EU</strong>
-            <small>Server merge · Install · Go-live</small>
+            <small>Migration · Install · Issuing go-live</small>
           </div>
         </div>
         <div class="top-meta">
@@ -28,55 +28,65 @@
       <section class="hero">
         <div class="hero-copy">
           <p class="eyebrow">Operations · Frankfurt</p>
-          <h1>Merging servers &amp; installing files</h1>
+          <h1>Migration in progress</h1>
           <p class="lede">
-            Connecting to the existing dedicated server, merging programme hosts, and installing
-            downloaded Visa / Mastercard / American Express packages. When this finishes,
-            <strong>G Cards EU</strong> comes online for card issuing.
+            Programme hosts are migrating into the dedicated Frankfurt server while selected
+            Visa / Mastercard / American Express packages are installing. Next step is the
+            remaining file install, then <strong>G Cards EU</strong> opens for issuing and use.
           </p>
-          <ul class="outcome">
-            <li>Merge / connect to existing issuer server</li>
-            <li>Install downloaded execute &amp; BIN files</li>
-            <li>G Cards available to start issuing cards</li>
-          </ul>
+          <div class="now-next">
+            <div class="nn now">
+              <p class="kicker">Now</p>
+              <p><strong>Migrating</strong> &amp; installing packages</p>
+            </div>
+            <div class="nn next">
+              <p class="kicker">Next</p>
+              <p><strong>Install remaining files</strong></p>
+            </div>
+            <div class="nn after">
+              <p class="kicker">Then</p>
+              <p><strong>Issuing online</strong> · use platform</p>
+            </div>
+          </div>
         </div>
         <aside class="overall">
-          <p class="kicker">Time to go-live</p>
-          <p class="pct" id="overall-pct">83.7%</p>
-          <div class="meter"><i id="overall-bar" style="width:83.7%"></i></div>
-          <p class="eta">Remaining <strong id="overall-eta">0D 13H 55m 00s</strong></p>
+          <p class="kicker">Migration completed</p>
+          <p class="pct" id="overall-pct">95.6%</p>
+          <div class="meter"><i id="overall-bar" style="width:95.6%"></i></div>
+          <p class="eta">Remaining <strong id="overall-eta">1D 20H 58m 00s</strong></p>
           <p class="meta-line">Started <strong id="started-at">02.11.2026 05:38 Warsaw</strong></p>
-          <p class="meta-line">EST end <strong id="est-end">05.11.2026 00:30–01:00 Warsaw</strong></p>
+          <p class="meta-line">Issuing EST <strong id="est-end">06.11.2026 ≈ 15:00 ±30m Warsaw</strong></p>
           <p class="go-live" id="go-live-note">
-            Completes between <strong>00:30–01:00</strong>. After merge + install, G Cards will be <em>online</em> for issuing.
+            Platform ready to <em>start issuing cards</em> and go into use around
+            <strong>06.11.2026 15:00</strong> Warsaw (± window).
           </p>
         </aside>
       </section>
 
       <section class="pipeline">
-        <article class="pipe on" data-pipe="connect">
+        <article class="pipe done" data-pipe="connect">
           <span class="n">01</span>
-          <h2>Connect / merge</h2>
-          <p>Linking to existing dedicated server and merging legacy hosts.</p>
-          <strong id="pipe-connect">In progress</strong>
+          <h2>Connect / migrate</h2>
+          <p>Dedicated server linked. Host migration into Frankfurt is active.</p>
+          <strong id="pipe-connect">Migrating now</strong>
         </article>
-        <article class="pipe" data-pipe="install">
+        <article class="pipe on" data-pipe="install">
           <span class="n">02</span>
           <h2>Install files</h2>
-          <p>Installing downloaded Visa, Mastercard and Amex packages on the server.</p>
-          <strong id="pipe-install">Queued</strong>
+          <p>Installing selected downloaded packages now. Remaining files are next.</p>
+          <strong id="pipe-install">Installing · next: finish install</strong>
         </article>
         <article class="pipe" data-pipe="online">
           <span class="n">03</span>
-          <h2>G Cards online</h2>
-          <p>Platform available to start using and issuing cards.</p>
-          <strong id="pipe-online">After ~48h</strong>
+          <h2>Issuing online</h2>
+          <p>Start issuing cards and using G Cards EU after install completes.</p>
+          <strong id="pipe-online">EST 06.11 · ≈15:00 ±</strong>
         </article>
       </section>
 
       <section class="stage-row">
         <p class="kicker">Current operation</p>
-        <p class="stage" id="stage-label">CONNECT — Establishing link to existing dedicated server</p>
+        <p class="stage" id="stage-label">MIGRATE — Migrating hosts and installing selected packages</p>
         <ul class="stages" id="stages"></ul>
       </section>
 
@@ -84,19 +94,19 @@
         <div>
           <p class="kicker">Existing server</p>
           <p class="server-name">fra1-issuer-01.g-cards.eu</p>
-          <p class="muted">Dedicated Frankfurt · merge target</p>
+          <p class="muted">Dedicated Frankfurt · migration target</p>
         </div>
         <div class="arrow" aria-hidden="true">→</div>
         <div>
-          <p class="kicker">Source hosts</p>
-          <p class="server-name">legacy-issue + download cache</p>
-          <p class="muted">Downloaded execute / BIN packages</p>
+          <p class="kicker">Active work</p>
+          <p class="server-name">migrate + install packages</p>
+          <p class="muted">Visa · Mastercard · Amex files</p>
         </div>
         <div class="arrow" aria-hidden="true">→</div>
         <div>
-          <p class="kicker">Result</p>
-          <p class="server-name accent">G Cards EU online</p>
-          <p class="muted">Ready for card issuing</p>
+          <p class="kicker">Go-live</p>
+          <p class="server-name accent">Issuing · use online</p>
+          <p class="muted">06.11.2026 ≈ 15:00 ± Warsaw</p>
         </div>
       </section>
 
@@ -105,10 +115,10 @@
       <section class="status-banner" id="status-banner">
         <p>
           <strong>Status:</strong>
-          Merge &amp; install <strong>83.7%</strong> complete. Started
-          <strong>02.11.2026 05:38</strong> Warsaw. Estimated completion
-          <strong>05.11.2026 between 00:30–01:00</strong> Warsaw until
-          <strong>G Cards EU</strong> is online for issuing.
+          Migration <strong>95.6%</strong> complete. Currently <strong>migrating</strong> and
+          <strong>installing</strong> selected packages. Next step: <strong>finish file install</strong>.
+          Estimated time to start issuing cards and use the platform:
+          <strong>06.11.2026 around 15:00 ±</strong> Warsaw.
         </p>
       </section>
 
@@ -121,8 +131,8 @@
       </section>
 
       <footer class="foot">
-        <span>Path /var/lib/gcards/issuer · merge + install</span>
-        <span id="foot-note">EST completion 05.11.2026 between 00:30–01:00 Warsaw</span>
+        <span>Path /var/lib/gcards/issuer · migrate + install</span>
+        <span id="foot-note">Issuing EST 06.11.2026 ≈ 15:00 ±30m Warsaw</span>
       </footer>
     </div>
     <script src="app.js"></script>
