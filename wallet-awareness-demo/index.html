@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DEMO ONLY — Wallet phishing awareness</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e7ecf3;
+      --muted: #9aa8bc;
+      --danger: #e85d5d;
+      --ok: #3ecf8e;
+      --warn: #f0b429;
+      --line: #2a3648;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #243044, var(--bg));
+      color: var(--text);
+      line-height: 1.45;
+    }
+    .banner {
+      background: var(--danger);
+      color: #fff;
+      text-align: center;
+      font-weight: 700;
+      padding: 0.75rem 1rem;
+      letter-spacing: 0.02em;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.35rem; margin: 1rem 0 0.35rem; }
+    p, li { color: var(--muted); }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem;
+      margin: 1rem 0;
+    }
+    .fake-ui {
+      border: 2px dashed var(--warn);
+      position: relative;
+    }
+    .fake-ui::before {
+      content: "FAKE SEND UI (SCAM PATTERN — DEMO)";
+      position: absolute;
+      top: -0.7rem;
+      left: 1rem;
+      background: var(--panel);
+      color: var(--warn);
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0 0.4rem;
+    }
+    label { display: block; font-size: 0.85rem; margin: 0.6rem 0 0.25rem; color: var(--text); }
+    input, select, textarea {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0d121a;
+      color: var(--text);
+      font: inherit;
+    }
+    button {
+      margin-top: 0.75rem;
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border: 0;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-demo { background: var(--warn); color: #1a1200; }
+    .btn-safe { background: var(--ok); color: #062416; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-muted { background: #334155; color: #fff; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+    }
+    pre {
+      background: #0d121a;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.75rem;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #cde3ff;
+    }
+    .row { display: grid; gap: 0.5rem; }
+    .ok { color: var(--ok); }
+    .bad { color: var(--danger); }
+    .small { font-size: 0.85rem; }
+    a { color: #7dd3fc; }
+  </style>
+</head>
+<body>
+  <div class="banner">DEMO ONLY — NOT A REAL TRANSFER APP — USE A BURNER WALLET WITH DUST</div>
+  <main>
+    <h1>How QR phishing asks for Unlimited Approve</h1>
+    <p class="small">
+      A QR only opens a URL (often via <code>link.trustwallet.com/open_url</code>).
+      Funds move only if <strong>you</strong> confirm a wallet popup.
+      This page never hardcodes attacker payout addresses as the spender.
+    </p>
+
+    <div class="card">
+      <strong>Safe test order</strong>
+      <ol>
+        <li>Use a new Trust account with only dust (tiny BNB + tiny USDT on BSC).</li>
+        <li>Scan <code>01-trust-deeplink-opens-example.com.png</code> first — Trust should open example.com.</li>
+        <li>Host this folder on HTTPS, regenerate QR with <code>make_qr.py</code>, scan that.</li>
+        <li>Below: connect burner → try <em>message sign</em> first → optional tiny approve to <em>your own</em> spender.</li>
+        <li>Revoke approvals and empty the burner when done.</li>
+      </ol>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button class="btn-safe" id="btnConnect" type="button">1) Connect burner wallet</button>
+        <p class="small" id="connStatus">Not connected</p>
+        <button class="btn-muted" id="btnSwitchBsc" type="button">2) Request switch to BSC (0x38)</button>
+        <button class="btn-demo" id="btnSignMsg" type="button">3) Safe demo: sign a plain message</button>
+      </div>
+    </div>
+
+    <div class="card fake-ui">
+      <label>Recipient (cosmetic only — scam UIs show this)</label>
+      <input id="fakeTo" value="0x decoy address shown in UI only" />
+      <label>Amount (cosmetic only)</label>
+      <input id="fakeAmount" value="1" />
+      <p class="small bad">Scam pages look like “Send 1 USDT” but the signed tx is often Approve(unlimited).</p>
+
+      <label>Real spender address for optional burn-wallet test (YOUR address / YOUR test contract — not a stranger)</label>
+      <input id="spender" placeholder="0x... paste YOUR burner or YOUR test contract" />
+
+      <label>Approve amount</label>
+      <select id="approveMode">
+        <option value="1">Tiny (1 raw unit) — preferred for learning</option>
+        <option value="max">MaxUint256 (Unlimited) — burner dust only</option>
+        <option value="0">0 — revoke / clear allowance</option>
+      </select>
+
+      <label>Token (BSC)</label>
+      <select id="token">
+        <option value="0x55d398326f99059fF775485246999027B3197955">USDT on BSC</option>
+      </select>
+
+      <button class="btn-danger" id="btnPreview" type="button">4) Preview approve calldata (no send)</button>
+      <button class="btn-danger" id="btnApprove" type="button">5) Request Approve popup (burner only)</button>
+      <pre id="preview">Calldata preview will appear here.</pre>
+      <p class="small" id="txStatus"></p>
+    </div>
+
+    <div class="card">
+      <strong>Aftercare</strong>
+      <ul>
+        <li>Trust / BscScan → Token Approvals → revoke anything you granted.</li>
+        <li>Do not scan Telegram “send USDT” QRs.</li>
+        <li>Payout addresses you found earlier are cash-out buckets — never approve them.</li>
+      </ul>
+    </div>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const MAX =
+      "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+    let account = null;
+
+    function requireEth() {
+      if (!window.ethereum) {
+        throw new Error("No wallet injected. Open this page inside Trust / MetaMask.");
+      }
+      return window.ethereum;
+    }
+
+    function pad32(hexNoPrefix) {
+      return hexNoPrefix.toLowerCase().replace(/^0x/, "").padStart(64, "0");
+    }
+
+    function buildApproveData(spender, amountHex) {
+      // approve(address,uint256) selector 0x095ea7b3
+      return "0x095ea7b3" + pad32(spender) + pad32(amountHex);
+    }
+
+    function selectedAmountHex() {
+      const mode = $("approveMode").value;
+      if (mode === "max") return MAX;
+      if (mode === "0") return "0x0";
+      return "0x1";
+    }
+
+    $("btnConnect").onclick = async () => {
+      try {
+        const eth = requireEth();
+        const accs = await eth.request({ method: "eth_requestAccounts" });
+        account = accs[0];
+        $("connStatus").innerHTML = `<span class="ok">Connected:</span> <code>${account}</code>`;
+      } catch (e) {
+        $("connStatus").textContent = e.message || String(e);
+      }
+    };
+
+    $("btnSwitchBsc").onclick = async () => {
+      try {
+        const eth = requireEth();
+        await eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "0x38" }],
+        });
+        $("txStatus").innerHTML = '<span class="ok">Switched / already on BSC.</span>';
+      } catch (e) {
+        $("txStatus").textContent = e.message || String(e);
+      }
+    };
+
+    $("btnSignMsg").onclick = async () => {
+      try {
+        const eth = requireEth();
+        if (!account) throw new Error("Connect first");
+        const msg = "DEMO ONLY — a phishing site would instead ask Approve(unlimited) here";
+        const sig = await eth.request({
+          method: "personal_sign",
+          params: [msg, account],
+        });
+        $("txStatus").innerHTML = `<span class="ok">Message signed (harmless).</span>\n<code>${sig.slice(0, 18)}…</code>`;
+      } catch (e) {
+        $("txStatus").textContent = e.message || String(e);
+      }
+    };
+
+    $("btnPreview").onclick = () => {
+      try {
+        const spender = $("spender").value.trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(spender)) {
+          throw new Error("Enter a valid 0x spender (40 hex chars). Use YOUR address for the test.");
+        }
+        const amount = selectedAmountHex();
+        const token = $("token").value;
+        const data = buildApproveData(spender, amount);
+        $("preview").textContent =
+          `to (token contract): ${token}\n` +
+          `value: 0 (not a transfer)\n` +
+          `method: approve(spender, amount)\n` +
+          `spender: ${spender}\n` +
+          `amount: ${amount === MAX ? "UNLIMITED (MaxUint256)" : amount}\n` +
+          `data:\n${data}\n\n` +
+          `Fake UI recipient/amount are IGNORED by this calldata (same trick as the scam).`;
+      } catch (e) {
+        $("preview").textContent = e.message || String(e);
+      }
+    };
+
+    $("btnApprove").onclick = async () => {
+      try {
+        const eth = requireEth();
+        if (!account) throw new Error("Connect burner first");
+        const spender = $("spender").value.trim();
+        if (!/^0x[a-fA-F0-9]{40}$/.test(spender)) {
+          throw new Error("Valid spender required");
+        }
+        if ($("approveMode").value === "max") {
+          const ok = confirm(
+            "UNLIMITED approve on a burner only.\nCancel if this is not a dust wallet."
+          );
+          if (!ok) return;
+        }
+        const data = buildApproveData(spender, selectedAmountHex());
+        const token = $("token").value;
+        $("preview").textContent = "Requesting wallet popup…\n" + data;
+        const hash = await eth.request({
+          method: "eth_sendTransaction",
+          params: [{ from: account, to: token, data, value: "0x0" }],
+        });
+        $("txStatus").innerHTML = `<span class="ok">Tx submitted:</span> <code>${hash}</code><br/>Revoke when finished.`;
+      } catch (e) {
+        $("txStatus").textContent = e.message || String(e);
+      }
+    };
+  </script>
+</body>
+</html>
