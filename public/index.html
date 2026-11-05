@@ -43,6 +43,7 @@
         <span class="brand-text">G Cards <em>EU</em></span>
       </a>
       <nav class="nav">
+        <a href="#launch">Launch</a>
         <a href="#cards">Cards</a>
         <a href="#register">Account</a>
       </nav>
@@ -164,6 +165,45 @@
         </div>
       </section>
 
+      <section class="launch-reel" id="launch" aria-label="GG Card launching soon">
+        <div class="wrap launch-grid">
+          <div class="launch-copy">
+            <p class="eyebrow">Coming online</p>
+            <h2>GG Card <em>launching soon</em></h2>
+            <p class="section-lede">
+              Merge is nearly complete. File install runs through
+              <strong>Sunday 23:50</strong> Warsaw — then issuing opens on G Cards EU.
+            </p>
+            <ul class="launch-beats">
+              <li><span>Now</span> Merging BINs &amp; legacy files</li>
+              <li><span>Next</span> Install packages · till Sun 23:50</li>
+              <li><span>Then</span> Start issuing &amp; use</li>
+            </ul>
+            <p class="launch-countdown" id="launch-countdown">Counting down to Sunday 23:50…</p>
+          </div>
+          <div class="launch-stage">
+            <div class="launch-frame" aria-hidden="false">
+              <video
+                class="launch-video"
+                autoplay
+                muted
+                loop
+                playsinline
+                poster="logo.svg"
+              >
+                <source src="launch/gg-card-launching-soon.webm" type="video/webm" />
+                <source src="launch/gg-card-launching-soon.mp4" type="video/mp4" />
+              </video>
+              <div class="launch-overlay">
+                <img src="logo.svg" width="48" height="48" alt="" />
+                <p class="launch-tag">GG Card</p>
+                <p class="launch-soon">Launching soon</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="cards-offer" id="cards">
         <div class="wrap">
           <p class="eyebrow">Products</p>
@@ -278,6 +318,7 @@
     </footer>
 
     <div class="drawer" id="drawer" hidden>
+      <a href="#launch">Launch</a>
       <a href="#cards">Cards</a>
       <a href="#register">Account</a>
     </div>
@@ -286,5 +327,6 @@
 
     <script src="issuer.js"></script>
     <script src="client.js"></script>
+    <script src="launch.js"></script>
   </body>
 </html>
