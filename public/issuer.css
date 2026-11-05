@@ -321,23 +321,23 @@ strong { font-weight: 600; color: var(--ink); }
 
 .metal.visa .face.front {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(90, 208, 200, 0.18), transparent 45%),
-    linear-gradient(145deg, rgba(255,255,255,0.28), transparent 38%),
-    linear-gradient(155deg, #9bb0cf 0%, #45648a 30%, #1a3a6e 62%, #0a1628 100%);
+    radial-gradient(120% 80% at 100% 0%, rgba(90, 208, 200, 0.28), transparent 45%),
+    linear-gradient(145deg, rgba(255,255,255,0.4), transparent 38%),
+    linear-gradient(155deg, #b8c8e0 0%, #5a7aa3 28%, #234a82 58%, #122846 100%);
 }
 .metal.visa .face.back { background: linear-gradient(160deg, #2a3d5c, #121c2e); }
 .metal.master .face.front {
   background:
-    radial-gradient(100% 70% at 0% 100%, rgba(196, 164, 106, 0.22), transparent 42%),
-    linear-gradient(145deg, rgba(255,255,255,0.16), transparent 40%),
-    linear-gradient(165deg, #3f3f3f 0%, #1a1a1a 42%, #0a0a0a 100%);
+    radial-gradient(100% 70% at 0% 100%, rgba(196, 164, 106, 0.32), transparent 42%),
+    linear-gradient(145deg, rgba(255,255,255,0.22), transparent 40%),
+    linear-gradient(165deg, #5a5a5a 0%, #2a2a2a 40%, #121212 100%);
 }
 .metal.master .face.back { background: linear-gradient(160deg, #222, #0d0d0d); }
 .metal.amex .face.front {
   background:
-    radial-gradient(90% 70% at 100% 100%, rgba(255,255,255,0.18), transparent 40%),
-    linear-gradient(145deg, rgba(255,255,255,0.34), transparent 34%),
-    linear-gradient(165deg, #e6d4ad 0%, #c4a46a 34%, #7a5f32 66%, #3d2f18 100%);
+    radial-gradient(90% 70% at 100% 100%, rgba(255,255,255,0.28), transparent 40%),
+    linear-gradient(145deg, rgba(255,255,255,0.42), transparent 34%),
+    linear-gradient(165deg, #f0e2c0 0%, #d4b56f 30%, #9a7540 60%, #4a3818 100%);
   color: #1a140a;
 }
 .metal.amex .face.back { background: linear-gradient(160deg, #8a7348, #3d2f18); color: #f4efe6; }
