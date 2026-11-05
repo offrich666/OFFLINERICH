@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Figtree, Syne } from "next/font/google";
+import { MoonPayProviderClient } from "@/components/MoonPayProviderClient";
 import "./globals.css";
 
 const syne = Syne({
@@ -15,8 +16,8 @@ const figtree = Figtree({
 });
 
 export const metadata: Metadata = {
-  title: "OFFLINERICH",
-  description: "OFFLINERICH — pay $5–$9,000. Crypto to your wallet.",
+  title: "GN Labs Crypto",
+  description: "GN Labs Crypto — buy and sell crypto with MoonPay Ramps.",
 };
 
 export default function RootLayout({
@@ -24,9 +25,16 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const apiKey = process.env.NEXT_PUBLIC_MOONPAY_API_KEY || "";
+  const debug = apiKey.includes("_test_");
+
   return (
     <html lang="en" className={`${syne.variable} ${figtree.variable} h-full`}>
-      <body className="min-h-full antialiased">{children}</body>
+      <body className="min-h-full antialiased">
+        <MoonPayProviderClient apiKey={apiKey} debug={debug}>
+          {children}
+        </MoonPayProviderClient>
+      </body>
     </html>
   );
 }

@@ -1,42 +1,30 @@
 {
-  "name": "offlinerich",
+  "name": "gn-labs-crypto",
   "version": "0.1.0",
   "private": true,
-  "engines": {
-    "node": ">=20.9.0"
-  },
   "scripts": {
     "dev": "next dev",
-    "babyphone": "next dev --experimental-https -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "build:webpack": "next build --webpack",
     "start": "next start",
-    "lint": "eslint",
-    "setup:collection": "node scripts/setup-collection.mjs"
+    "lint": "eslint"
   },
   "dependencies": {
-    "@crossmint/client-sdk-react-ui": "^4.12.1",
-    "@stripe/crypto": "^1.1.3",
-    "@stripe/react-stripe-js": "^7.0.1",
-    "@stripe/stripe-js": "^10.2.0",
+    "@moonpay/moonpay-react": "^1.10.6",
     "@tailwindcss/postcss": "^4",
-    "@tailwindcss/turbopack": "^4",
     "next": "16.4.3",
-    "peerjs": "^1.5.5",
     "postcss": "^8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "^0.0.1",
-    "stripe": "^23.0.1",
     "tailwindcss": "^4"
   },
   "devDependencies": {
     "@types/node": "^20",
-    "@types/peerjs": "^0.0.30",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "typescript": "^5"
-  }
+  },
+  "description": "GN Labs Crypto — MoonPay buy/sell ramps"
 }

@@ -1,44 +1,36 @@
-# OFFLINERICH — pay $5–$9,000 → crypto to client wallet
+# GN Labs Crypto
 
-## Status
+Buy and sell crypto with **MoonPay Ramps** — fiat on/off ramp for GN Labs.
 
-**Stripe Crypto Onramp is APPROVED** for G N LABS LLC (`acct_1UCk64QWCzdANStk`).
-
-## Checkout paths (`/checkout`)
-
-### Instant crypto (default) — Onramp (KYC)
-```
-Client: amount + wallet → Stripe Crypto Onramp locked to THEIR wallet
-        │
-        ▼
-USDC/BTC settles on-chain to the client (Stripe handles KYC)
-```
-
-Use this when treasury has **no** crypto inventory — Stripe creates the crypto.
-
-### Easy card — no crypto KYC (needs treasury funding)
-```
-Client: amount + wallet → Stripe Embedded Checkout (card / Apple Pay / Google Pay)
-        │
-        ▼
-USD settles in Stripe (GN Labs) → ops queue paid_pending_treasury
-        │
-        ▼
-Ops must already have (or buy) crypto → send to clientWallet → mark sent
-```
-
-Do not use Easy card as the main path if treasury is empty.
-
-## Env
+## Setup
 
 ```bash
-npm install --legacy-peer-deps
+npm install
 cp .env.example .env.local
-# set NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY + STRIPE_SECRET_KEY (live)
+# paste MoonPay pk_test / sk_test / wk_test from dashboard.moonpay.com
 npm run dev
 ```
 
-- Checkout: `/checkout`
-- Ops: `/ops/transfers?key=$OPS_SECRET`
-- Status: `GET /api/onramp/status`
-- Babyphone (anywhere): `/babyphone` — nursery Camera + parent Remoter; works across networks via the public site URL (not same-Wi‑Fi only). Optional local HTTPS: `npm run babyphone`
+Open [http://localhost:3000](http://localhost:3000) → **Buy** or **Sell**.
+
+## Env
+
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_MOONPAY_API_KEY` | Publishable key (`pk_test_…` / `pk_live_…`) |
+| `MOONPAY_SECRET_KEY` | Secret key for URL signing (`sk_test_…`) |
+| `MOONPAY_WEBHOOK_KEY` | Webhook signing key (`wk_test_…`) |
+
+## Routes
+
+- `/` — landing
+- `/ramp?mode=buy` — MoonPay buy widget
+- `/ramp?mode=sell` — MoonPay sell widget
+- `POST /api/moonpay/sign` — signs widget URLs when a wallet is locked
+- `GET /api/moonpay/quote` — sandbox buy quote check
+- `GET /api/moonpay/status` — key/mode health
+- `POST /api/webhooks/moonpay` — transaction webhooks
+
+## Sandbox
+
+Use MoonPay test cards and test wallets from their docs. Crypto in sandbox is not real mainnet funds.

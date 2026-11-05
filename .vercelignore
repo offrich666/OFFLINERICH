@@ -1,9 +1,0 @@
-.next
-node_modules
-.git
-*.log
-/opt
-.env
-.env.*
-!.env.example
-.projects
