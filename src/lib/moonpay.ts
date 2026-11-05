@@ -30,6 +30,62 @@ export function signMoonPayUrl(url: string): string {
   return createHmac("sha256", secret).update(query).digest("base64");
 }
 
+/** HMAC-SHA256(base64) of customer public IP — MoonPay `allowedIpAddress`. */
+export function hashAllowedIpAddress(ip: string): string {
+  const secret = getMoonPaySecretKey();
+  return createHmac("sha256", secret).update(canonicalizeIp(ip)).digest("base64");
+}
+
+function canonicalizeIp(ip: string): string {
+  let value = ip.trim().toLowerCase();
+  if (value.startsWith("[") && value.includes("]")) {
+    value = value.slice(1, value.indexOf("]"));
+  }
+  if (value.includes("%")) value = value.split("%")[0]!;
+  if (value.startsWith("::ffff:")) value = value.slice(7);
+  return value;
+}
+
+function isPrivateOrLoopbackIp(ip: string): boolean {
+  const value = canonicalizeIp(ip);
+  if (value === "::1" || value === "0:0:0:0:0:0:0:1") return true;
+  if (value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:")) {
+    return true;
+  }
+  const parts = value.split(".").map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return false;
+  const [a, b] = parts;
+  if (a === 10 || a === 127) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true;
+  return false;
+}
+
+export function clientIpFromRequest(request: Request): string | null {
+  const trueClient = request.headers.get("true-client-ip")?.trim();
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const realIp = request.headers.get("x-real-ip")?.trim();
+  const raw = trueClient || forwarded || realIp || "";
+  if (!raw) return null;
+  const ip = canonicalizeIp(raw);
+  if (isPrivateOrLoopbackIp(ip)) return null;
+  return ip;
+}
+
+export async function resolvePublicIpFallback(): Promise<string | null> {
+  try {
+    const res = await fetch("https://api.ipify.org?format=json", {
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { ip?: string };
+    return data.ip ? canonicalizeIp(data.ip) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Verify Moonpay-Signature-V2: t=<ts>,s=<hex hmac of `${ts}.${body}`>. */
 export function verifyMoonPayWebhook(
   rawBody: string,
