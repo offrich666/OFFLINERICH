@@ -5,27 +5,32 @@ export default function Home() {
     <main className="page home-page">
       <div className="atmosphere" aria-hidden />
       <div className="grain" aria-hidden />
+      <div className="grid-glow" aria-hidden />
 
       <header className="topbar">
-        <span className="brand-mark">OFFLINERICH</span>
+        <span className="brand-mark">GN Labs Crypto</span>
         <div className="topbar-actions">
-          <Link href="/babyphone" className="ghost-link">
-            CribLink
+          <Link href="/ramp?mode=sell" className="ghost-link">
+            Sell
           </Link>
-          <Link href="/checkout" className="top-cta">
-            Pay
+          <Link href="/ramp?mode=buy" className="top-cta">
+            Buy crypto
           </Link>
         </div>
       </header>
 
       <section className="hero">
-        <h1 className="brand-hero">OFFLINERICH</h1>
+        <p className="brand-kicker">GN Labs</p>
+        <h1 className="brand-hero">GN Labs Crypto</h1>
         <p className="lede">
-          Pay $5–$9,000. Crypto goes to your wallet after payment.
+          MoonPay ramps — buy crypto with card, or sell to cash out.
         </p>
         <div className="cta-row">
-          <Link href="/checkout" className="primary-cta">
-            Pay
+          <Link href="/ramp?mode=buy" className="primary-cta">
+            Buy
+          </Link>
+          <Link href="/ramp?mode=sell" className="secondary-cta">
+            Sell
           </Link>
         </div>
       </section>
