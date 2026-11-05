@@ -1,23 +1,21 @@
 (() => {
   /**
-   * Merge nearly complete — 98.6%.
-   * Now: merging BINs + old/legacy files
-   * Next: install remaining files through Sunday 08.11.2026 23:50 Warsaw
-   * Some packages already installing
+   * Merge completed successfully.
+   * Now installing files — 12%.
+   * Install window through Sunday 08.11.2026 23:50 Warsaw.
    */
   const TZ = "Europe/Warsaw";
-  const START = new Date("2026-11-02T05:38:00+01:00");
-  const INSTALL_END = new Date("2026-11-08T23:50:00+01:00"); // Sunday 23:50
-  const START_PCT = 98.6;
+  const INSTALL_END = new Date("2026-11-08T23:50:00+01:00");
+  const START_PCT = 12.0;
   const FILE_GB = 50;
   const OPENED_AT = Date.now();
 
   const stages = [
-    ["connect", "Dedicated server linked"],
-    ["merge", "Merging BINs and legacy files"],
-    ["verify", "Verifying merged BIN tables"],
-    ["install", "Installing selected packages now"],
-    ["finish", "Continue file install until Sunday 23:50"],
+    ["merge", "Merge completed successfully"],
+    ["verify", "Post-merge integrity checks passed"],
+    ["install", "Installing Visa / Mastercard / Amex files"],
+    ["map", "Writing packages into issuer tables"],
+    ["finish", "Continue install until Sunday 23:50"],
     ["online", "Issuing online after install window"],
   ];
 
@@ -28,9 +26,9 @@
       className: "visa",
       file: "visa_issuer_execute_001842.bin",
       totalBins: 1_240_000,
-      bias: 1.004,
-      badge: "MERGING BINS",
-      note: "Merging BINs & legacy ranges",
+      bias: 1.08,
+      badge: "INSTALLING",
+      note: "Installing on server after merge",
     },
     {
       key: "mc",
@@ -38,9 +36,9 @@
       className: "mc",
       file: "mastercard_issuer_execute_001766.bin",
       totalBins: 980_000,
-      bias: 0.998,
-      badge: "MERGING · INSTALL",
-      note: "Old files merging · install running",
+      bias: 0.96,
+      badge: "INSTALLING",
+      note: "Installing on server after merge",
     },
     {
       key: "amex",
@@ -48,9 +46,9 @@
       className: "amex",
       file: "amex_issuer_execute_001594.bin",
       totalBins: 420_000,
-      bias: 0.972,
+      bias: 0.88,
       badge: "INSTALLING",
-      note: "File install in progress · till Sun 23:50",
+      note: "Installing on server after merge",
     },
   ];
 
@@ -70,7 +68,6 @@
   const pipeInstall = document.getElementById("pipe-install");
   const pipeOnline = document.getElementById("pipe-online");
   const estEndEl = document.getElementById("est-end");
-  const startedEl = document.getElementById("started-at");
 
   stagesEl.innerHTML = stages.map(([id]) => `<li data-stage="${id}">${id}</li>`).join("");
 
@@ -80,9 +77,9 @@
         <p class="file-net">${n.name}</p>
         <h2>${n.file}</h2>
         <p class="size">${FILE_GB}.00 GB · ${n.note}</p>
-        <div class="meter"><i style="width:98.6%"></i></div>
+        <div class="meter"><i style="width:12%"></i></div>
         <div class="stats">
-          <span>Progress <b class="file-pct">98.6%</b></span>
+          <span>Install <b class="file-pct">12.0%</b></span>
           <span>BINs <b class="bins">0</b></span>
         </div>
         <span class="badge">${n.badge}</span>
@@ -102,31 +99,39 @@
   function progress() {
     const now = Date.now();
     const remainingSec = Math.max(0, (INSTALL_END.getTime() - now) / 1000);
-    // Merge holds near 98.6%; residual creeps as install window progresses
     const windowSec = Math.max(1, (INSTALL_END.getTime() - OPENED_AT) / 1000);
     const done = 1 - remainingSec / windowSec;
-    const pct = START_PCT + (99.4 - START_PCT) * Math.pow(Math.max(0, done), 1.2);
-    return { pct: Math.min(99.4, Math.max(START_PCT, pct)), remainingSec };
+    // Hold near 12%; ease toward 100% by Sunday 23:50
+    const pct = START_PCT + (100 - START_PCT) * Math.pow(Math.max(0, done), 1.15);
+    return { pct: Math.min(99.85, Math.max(START_PCT, pct)), remainingSec };
   }
 
   function stageIndex(pct) {
-    if (pct < 40) return 0;
-    if (pct < 98.75) return 1; // merging BINs
-    if (pct < 98.9) return 2;
-    if (pct < 99.1) return 3;
-    if (pct < 99.35) return 4;
+    if (pct < 8) return 0;
+    if (pct < 12.5) return 2;
+    if (pct < 45) return 2;
+    if (pct < 70) return 3;
+    if (pct < 92) return 4;
     return 5;
   }
 
-  function updatePipes() {
+  function updatePipes(displayPct) {
     document.querySelectorAll(".pipe").forEach((el) => el.classList.remove("on", "done"));
     const connect = document.querySelector('[data-pipe="connect"]');
     const install = document.querySelector('[data-pipe="install"]');
+    const online = document.querySelector('[data-pipe="online"]');
     connect.classList.add("done");
-    install.classList.add("on");
-    pipeConnect.textContent = "Nearly complete · 98.6%";
-    pipeInstall.textContent = "Installing · till Sun 23:50";
-    pipeOnline.textContent = "After Sunday 23:50";
+    pipeConnect.textContent = "Completed successfully";
+    if (displayPct < 99.5) {
+      install.classList.add("on");
+      pipeInstall.textContent = `Installing · ${displayPct.toFixed(1)}%`;
+      pipeOnline.textContent = "After Sunday 23:50";
+    } else {
+      install.classList.add("done");
+      online.classList.add("on");
+      pipeInstall.textContent = "Install complete";
+      pipeOnline.textContent = "Opening for issuing";
+    }
   }
 
   function pushLog(text, net) {
@@ -137,16 +142,15 @@
   }
 
   const logLines = [
-    ["Merge nearly completed successfully on fra1-issuer-01", "merge"],
-    ["Merging Visa BIN ranges and legacy files", "Visa"],
-    ["Merging Mastercard BIN tables from old host", "Mastercard"],
-    ["Installing American Express package on server", "Amex"],
-    ["Verifying merged BIN checksums", "verify"],
-    ["Next: continue file install through Sunday 23:50", "install"],
-    ["Issuing remains closed until install window ends", "online"],
+    ["Merge completed successfully on fra1-issuer-01", "merge"],
+    ["Starting file install phase on dedicated server", "install"],
+    ["Installing Visa execute package (12% phase)", "Visa"],
+    ["Installing Mastercard execute package", "Mastercard"],
+    ["Installing American Express execute package", "Amex"],
+    ["Writing installed packages into issuer storage", "map"],
+    ["Install window open through Sunday 23:50 Warsaw", "online"],
   ];
 
-  if (startedEl) startedEl.textContent = "02.11.2026 05:38 Warsaw";
   if (estEndEl) estEndEl.textContent = "Sunday 08.11.2026 23:50 Warsaw";
 
   let tick = 0;
@@ -161,25 +165,30 @@
     overallBar.style.width = `${displayPct}%`;
     overallEta.textContent = `${remLabel} · till Sun 23:50`;
     goLiveNote.innerHTML =
-      'Merge <strong>nearly completed successfully</strong>. Now merging <strong>BINs &amp; old files</strong>. Next: <strong>install files</strong> through <strong>Sunday 23:50</strong> Warsaw.';
+      'Merge <strong>completed successfully</strong>. Now <strong>installing files</strong> at <strong>' +
+      displayPct.toFixed(1) +
+      '%</strong>. Window open until <strong>Sunday 23:50</strong> Warsaw.';
     stageLabel.textContent = `${sid.toUpperCase()} — ${slabel}`;
-    footNote.textContent = `File install through Sunday 08.11.2026 23:50 Warsaw · ${remLabel} remaining`;
-    updatePipes();
+    footNote.textContent = `File install ${displayPct.toFixed(1)}% · through Sunday 08.11.2026 23:50 · ${remLabel}`;
+    updatePipes(displayPct);
 
     stagesEl.querySelectorAll("li").forEach((li, i) => {
       li.classList.toggle("on", i === si);
       li.classList.toggle("done", i < si);
     });
+    // mark merge + verify done always
+    stagesEl.querySelectorAll("li").forEach((li, i) => {
+      if (i <= 1) li.classList.add("done");
+    });
 
     clockEl.textContent = new Date().toLocaleString("en-GB", { timeZone: TZ, hour12: false });
 
-    const cpu = 52 + 14 * Math.abs(Math.sin(Date.now() / 5000));
-    const disk = 240 + 70 * Math.abs(Math.sin(Date.now() / 6400));
-    loadEl.textContent = `CPU ${cpu.toFixed(1)}% · disk ${disk.toFixed(0)} MB/s · merge + install workers 10`;
+    const cpu = 44 + 18 * Math.abs(Math.sin(Date.now() / 4800));
+    const disk = 190 + 95 * Math.abs(Math.sin(Date.now() / 6100));
+    loadEl.textContent = `CPU ${cpu.toFixed(1)}% · disk ${disk.toFixed(0)} MB/s · install workers 12`;
 
-    networks.forEach((n, idx) => {
-      const lag = idx === 2 ? 0.965 : idx === 1 ? 0.992 : 1;
-      const filePct = Math.min(99.7, Math.max(START_PCT * 0.96, displayPct * n.bias * lag));
+    networks.forEach((n) => {
+      const filePct = Math.min(99.5, Math.max(8, displayPct * n.bias));
       const bins = Math.floor(n.totalBins * (filePct / 100));
       const card = filesEl.querySelector(`[data-net="${n.key}"]`);
       if (!card) return;
@@ -194,7 +203,7 @@
     }
 
     if (banner && !banner.dataset.locked) {
-      banner.innerHTML = `<p><strong>Status:</strong> Merge <strong>${displayPct.toFixed(1)}%</strong> — nearly completed successfully. Currently <strong>merging BINs and old files</strong>. File install is already running and continues until <strong>Sunday 08.11.2026 23:50</strong> Warsaw · remaining <strong>${remLabel}</strong>.</p>`;
+      banner.innerHTML = `<p><strong>Status:</strong> Merge <strong>completed successfully</strong>. File install running at <strong>${displayPct.toFixed(1)}%</strong>. Continues until <strong>Sunday 08.11.2026 23:50</strong> Warsaw · remaining <strong>${remLabel}</strong>.</p>`;
     }
 
     if (remainingSec <= 0) {
