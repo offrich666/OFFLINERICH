@@ -188,7 +188,6 @@ export function ClientPayCheckout() {
                   orderId={crossmintOrder.orderId}
                   clientSecret={crossmintOrder.clientSecret}
                   appearance={checkoutAppearance}
-                  locale="en-US"
                   payment={{
                     receiptEmail: crossmintOrder.email,
                     defaultMethod: "fiat",
