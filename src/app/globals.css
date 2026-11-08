@@ -730,7 +730,9 @@ html.onramp-active .checkout-panel {
 }
 
 html.onramp-active .onramp-mount,
-html.onramp-active .onramp-mount iframe {
+html.onramp-active .onramp-mount iframe,
+html.onramp-active .onramp-embed,
+html.onramp-active .onramp-embed iframe {
   min-height: min(720px, 78vh) !important;
 }
 
