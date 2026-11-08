@@ -221,10 +221,10 @@ export function ClientPayCheckout() {
           <span className="country-lock-note">Approved market</span>
         </div>
 
-        <h2>Pay with card</h2>
+        <h2>Buy crypto</h2>
         <p>
-          Finland only. Enter amount and wallet, then fill your card details on
-          the secure form.
+          Finland only. Pay by card on this page — crypto goes straight to your
+          wallet. No redirect off-site.
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -320,11 +320,12 @@ export function ClientPayCheckout() {
           disabled={loading || !canStart}
         >
           {loading
-            ? "Opening card form…"
-            : `Continue to card ${amountOk ? amountLabel : rangeLabel}`}
+            ? "Opening secure card form…"
+            : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
-          Next step: secure card form for Finnish cards (EUR).
+          Card form opens on this page (EUR · Finland). Crypto is sent to your
+          wallet.
         </p>
       </div>
     </div>

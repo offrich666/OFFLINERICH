@@ -18,10 +18,10 @@ export default function CheckoutPage() {
       <section className="checkout-layout checkout-layout-simple">
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Finland</p>
-          <h1>Card checkout {range}</h1>
+          <h1>Buy crypto {range}</h1>
           <p>
-            Available in Finland. Pay with a Finnish card — crypto is delivered
-            to your wallet.
+            Pay with a Finnish card on this page. Crypto goes directly to your
+            wallet — you never leave the site.
           </p>
         </div>
 
