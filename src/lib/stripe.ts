@@ -112,8 +112,11 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       ? { bitcoin: wallet }
       : { ethereum: wallet };
 
+  // EU merchant (Finland): EUR + standard settlement.
+  // Instant settlement/Instant Pay is what throws "Failed to start payment process"
+  // after Link KYC on this live account (CDN 403 on crypto-js.stripe.com).
   const params: Record<string, unknown> = {
-    source_currency: "usd",
+    source_currency: "eur",
     source_amount: input.sourceAmountUsd,
     destination_currency: destinationCurrency,
     destination_network: destinationNetwork,
@@ -122,6 +125,7 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
     destination_networks: [destinationNetwork],
     lock_wallet_address: true,
     wallet_addresses: wallets,
+    settlement_speed: "standard",
     metadata: {
       project: "offlinerich",
       flow: "onramp_to_client_wallet",
@@ -130,6 +134,8 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       client_asset: input.clientAsset || (destinationCurrency === "btc" ? "BTC" : "USDC"),
       onramp_network: destinationNetwork,
       onramp_currency: destinationCurrency,
+      settlement_speed: "standard",
+      source_currency: "eur",
     },
   };
 
