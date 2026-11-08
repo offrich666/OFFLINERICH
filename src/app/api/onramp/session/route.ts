@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 /**
  * Stripe hosted Instant (crypto.link.com) is disabled.
- * Checkout stays on-site via Crossmint embedded card form (Finland).
+ * Buyers use on-page Stripe Embedded Checkout at /checkout instead.
  */
 export async function POST() {
   return NextResponse.json(

@@ -21,11 +21,11 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Finland card checkout · $5–$9,000. Crypto goes to your wallet.
+          Finland · pay by card on this site · $5–$9,000 to your wallet.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Pay in Finland
+            Buy crypto
           </Link>
         </div>
       </section>
