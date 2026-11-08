@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { loadStripe } from "@stripe/stripe-js";
 import { loadStripeOnramp } from "@stripe/crypto";
+import {
+  EmbeddedCheckout,
+  EmbeddedCheckoutProvider,
+} from "@stripe/react-stripe-js";
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
@@ -18,16 +23,20 @@ import {
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
+const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
-type Mode = "pick" | "onramp";
+type PayPath = "direct" | "card";
+type Mode = "pick" | "onramp" | "card";
 
 /**
- * Stripe Crypto Onramp — embedded on this page (no hosted Link redirect).
- * Buyer copy stays brand-only; crypto settles directly to the client wallet.
+ * Direct = Stripe Crypto Onramp embed (crypto locked to client wallet).
+ * Card = Embedded card checkout when Instant/Link Pay fails — crypto still
+ * delivered to the same wallet after payment clears.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
+  const [path, setPath] = useState<PayPath>("direct");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
   const [network, setNetwork] = useState<OnrampClientNetworkId>("ethereum");
@@ -37,6 +46,7 @@ export function ClientPayCheckout() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const [cardSecret, setCardSecret] = useState<string | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const secretRef = useRef<string | null>(null);
   const mountedOnceRef = useRef(false);
@@ -54,7 +64,7 @@ export function ClientPayCheckout() {
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "onramp",
+      mode === "onramp" || mode === "card",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
@@ -82,7 +92,9 @@ export function ClientPayCheckout() {
           } else if (next === "fulfillment_processing") {
             setStatus("Payment received — delivering crypto…");
           } else if (next === "requires_payment") {
-            setStatus("Enter card details below to finish.");
+            setStatus(
+              "Enter card details to finish. If Instant pay fails, go back and choose Card.",
+            );
           } else if (next) {
             setStatus(`Status: ${next}`);
           }
@@ -90,7 +102,9 @@ export function ClientPayCheckout() {
         if (mountRef.current && !cancelled) {
           session.mount(mountRef.current);
           mountedOnceRef.current = true;
-          setStatus("Complete payment below — you stay on this page.");
+          setStatus(
+            "Complete payment below. Prefer Card in the form if Instant pay errors.",
+          );
         }
       } catch (err) {
         if (!cancelled) {
@@ -140,6 +154,32 @@ export function ClientPayCheckout() {
 
     setLoading(true);
     try {
+      if (path === "card") {
+        const res = await fetch("/api/checkout/session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amountUsd,
+            email: email.trim() || undefined,
+            network,
+            wallet: normalizedWallet,
+          }),
+        });
+        const data = (await res.json()) as {
+          clientSecret?: string;
+          error?: string;
+        };
+        if (!res.ok || !data.clientSecret) {
+          throw new Error(data.error || "Could not start card checkout");
+        }
+        setWallet(normalizedWallet);
+        setPaidAmount(amountUsd);
+        setCardSecret(data.clientSecret);
+        setMode("card");
+        setStatus("Enter card details below — crypto goes to your wallet after pay.");
+        return;
+      }
+
       const res = await fetch("/api/onramp/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -162,7 +202,6 @@ export function ClientPayCheckout() {
           );
         }
         const raw = data.error || "Could not start checkout";
-        // Never surface env / provider internals to buyers.
         if (/STRIPE_|SECRET|API[_ ]?KEY|sk_live|pk_live/i.test(raw)) {
           throw new Error(
             "Checkout is temporarily unavailable. Please try again soon.",
@@ -171,7 +210,6 @@ export function ClientPayCheckout() {
         throw new Error(raw);
       }
 
-      // Never follow redirectUrl / hosted Link — embed only.
       secretRef.current = data.clientSecret;
       mountedOnceRef.current = false;
       setWallet(normalizedWallet);
@@ -188,6 +226,7 @@ export function ClientPayCheckout() {
     secretRef.current = null;
     mountedOnceRef.current = false;
     if (mountRef.current) mountRef.current.innerHTML = "";
+    setCardSecret(null);
     setPaidAmount(null);
     setStatus("");
     setError(null);
@@ -208,7 +247,36 @@ export function ClientPayCheckout() {
         </div>
         {status ? <p className="form-hint">{status}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
+        <p className="form-hint">
+          If you see “Failed to start payment process”, go back and choose{" "}
+          <strong>Card</strong> — same wallet, completable pay.
+        </p>
         <div className="stripe-embed onramp-embed" ref={mountRef} />
+      </div>
+    );
+  }
+
+  if (mode === "card" && paidAmount != null && cardSecret && stripePromise) {
+    return (
+      <div className="payment-stack onramp-focus">
+        <div className="destination-summary">
+          <p>
+            Card pay <strong>{formatUsd(paidAmount)}</strong> → crypto to{" "}
+            <code className="break">{wallet.trim()}</code> on {network}
+          </p>
+          <button type="button" className="ghost-link" onClick={resetToPick}>
+            Change details
+          </button>
+        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        <div className="stripe-embed">
+          <EmbeddedCheckoutProvider
+            stripe={stripePromise}
+            options={{ clientSecret: cardSecret }}
+          >
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
       </div>
     );
   }
@@ -218,8 +286,26 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Pay with card on this page. Crypto goes directly to your wallet.
+          Pay on this page. Crypto goes to your wallet. If Direct Instant pay
+          fails, use Card.
         </p>
+
+        <div className="amount-chips path-chips" role="group" aria-label="Pay method">
+          <button
+            type="button"
+            className={path === "direct" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("direct")}
+          >
+            Direct
+          </button>
+          <button
+            type="button"
+            className={path === "card" ? "amount-chip active" : "amount-chip"}
+            onClick={() => setPath("card")}
+          >
+            Card
+          </button>
+        </div>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
           {QUICK_AMOUNTS.map((n) => {
@@ -311,10 +397,14 @@ export function ClientPayCheckout() {
         >
           {loading
             ? "Opening secure form…"
-            : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
+            : path === "card"
+              ? `Pay with card ${amountOk ? amountLabel : rangeLabel}`
+              : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
-          Card form opens below on this page. Crypto settles to your wallet.
+          {path === "card"
+            ? "Card form stays on this page. After payment clears, crypto is sent to your wallet."
+            : "Direct settles on-chain to your wallet. Use Card if Instant pay fails after login."}
         </p>
       </div>
     </div>
