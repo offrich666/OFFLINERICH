@@ -1,11 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
+import { useEffect, useState } from "react";
 import {
   CrossmintCheckoutProvider,
   CrossmintEmbeddedCheckout,
@@ -15,7 +10,6 @@ import {
 import { createOnrampOrder } from "@/app/actions/createOnrampOrder";
 import { CheckoutErrorBoundary } from "@/components/CheckoutErrorBoundary";
 import {
-  CLIENT_NETWORKS,
   CROSSMINT_CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
@@ -26,7 +20,6 @@ import {
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
-  type ClientNetworkId,
   type CrossmintClientNetworkId,
 } from "@/lib/networks";
 import {
@@ -34,15 +27,11 @@ import {
   getClientApiKey,
   type OnrampChain,
 } from "@/lib/crossmint";
-import { getStripePublishableKey } from "@/lib/stripePublic";
 
-const publishableKey = getStripePublishableKey();
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const crossmintClientKey = getClientApiKey();
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
-type PayPath = "crypto" | "card";
-type Mode = "pick" | "card" | "crossmint" | "redirecting" | "done";
+type Mode = "pick" | "crossmint";
 
 type CrossmintOrder = {
   orderId: string;
@@ -62,7 +51,7 @@ function CrossmintPhaseBanner() {
     } else if (order.phase === "delivery") {
       setNote("Payment received. Delivering crypto…");
     } else if (order.phase === "payment") {
-      setNote("Complete payment with card, Apple Pay, or Google Pay.");
+      setNote("Enter your Finnish card details below to complete payment.");
     }
   }, [order]);
 
@@ -71,15 +60,15 @@ function CrossmintPhaseBanner() {
 }
 
 /**
- * Crypto (default): Crossmint embedded fiat → USDC (card / Apple / Google).
- * Card: Stripe Embedded Checkout (USD) when treasury delivery is needed later.
+ * Finland-only Crossmint checkout.
+ * Country is locked to Finland; buyers fill the card form in the embed.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("crypto");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ClientNetworkId>("polygon");
+  const [network, setNetwork] =
+    useState<CrossmintClientNetworkId>("polygon");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
   const [error, setError] = useState<string | null>(null);
@@ -89,104 +78,23 @@ export function ClientPayCheckout() {
     null,
   );
   const [mountKey, setMountKey] = useState(0);
-  const cardRequestRef = useRef<{
-    amountUsd: number;
-    email?: string;
-    network: string;
-    wallet: string;
-  } | null>(null);
-  const cardSecretPromiseRef = useRef<Promise<string> | null>(null);
-  const [cardReady, setCardReady] = useState(false);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
-  const networks =
-    path === "crypto" ? CROSSMINT_CLIENT_NETWORKS : CLIENT_NETWORKS;
   const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
   const walletDirty = wallet.trim().length > 0;
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const canStart =
-    amountOk &&
-    walletOk &&
-    (path === "card" || emailOk);
-
-  useEffect(() => {
-    if (path === "crypto" && !isCrossmintClientNetwork(network)) {
-      setNetwork("polygon");
-    }
-  }, [path, network]);
+  const canStart = amountOk && walletOk && emailOk && Boolean(crossmintClientKey);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "card" || mode === "crossmint" || mode === "redirecting",
+      mode === "crossmint",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
-
-  async function startStripeInstantFallback(
-    amount: number,
-    net: CrossmintClientNetworkId | "ethereum",
-    walletAddr: string,
-    mail?: string,
-  ) {
-    // Stripe Instant only settles ethereum USDC / bitcoin for this merchant.
-    const stripeNetwork = net === "solana" || net === "base" || net === "polygon"
-      ? "ethereum"
-      : net;
-    const res = await fetch("/api/onramp/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amountUsd: amount,
-        email: mail || undefined,
-        network: stripeNetwork,
-        wallet: walletAddr,
-      }),
-    });
-    const data = (await res.json()) as {
-      redirectUrl?: string | null;
-      error?: string;
-    };
-    if (!res.ok || !data.redirectUrl) {
-      throw new Error(
-        data.error ||
-          "Checkout is not fully enabled yet. Try again later or use Card.",
-      );
-    }
-    setMode("redirecting");
-    window.location.assign(data.redirectUrl);
-  }
-
-  const fetchCardClientSecret = useCallback(async () => {
-    if (!cardSecretPromiseRef.current) {
-      const req = cardRequestRef.current;
-      if (!req) throw new Error("Card checkout not ready");
-      cardSecretPromiseRef.current = (async () => {
-        const res = await fetch("/api/checkout/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req),
-        });
-        const data = (await res.json()) as {
-          clientSecret?: string;
-          error?: string;
-        };
-        if (!res.ok || !data.clientSecret) {
-          throw new Error(data.error || "Could not start card checkout");
-        }
-        return data.clientSecret;
-      })();
-    }
-    return cardSecretPromiseRef.current;
-  }, []);
-
-  const cardOptions = useMemo(
-    () => ({ fetchClientSecret: fetchCardClientSecret }),
-    [fetchCardClientSecret],
-  );
 
   async function startPay() {
     setError(null);
@@ -200,43 +108,25 @@ export function ClientPayCheckout() {
       setError(
         network === "solana"
           ? "Enter a valid Solana wallet address."
-          : network === "bitcoin"
-            ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-            : "Enter a valid wallet address (0x + 40 hex).",
+          : "Enter a valid wallet address (0x + 40 hex).",
       );
+      return;
+    }
+    if (!emailOk) {
+      setError("Enter a valid email.");
+      return;
+    }
+    if (!crossmintClientKey) {
+      setError("Checkout is not configured. Add Crossmint keys and redeploy.");
+      return;
+    }
+    if (!isCrossmintClientNetwork(network)) {
+      setError("Choose Polygon, Base, or Solana.");
       return;
     }
 
     setLoading(true);
     try {
-      if (path === "card") {
-        if (!publishableKey) {
-          throw new Error("Card checkout is not configured.");
-        }
-        cardRequestRef.current = {
-          amountUsd,
-          email: email.trim() || undefined,
-          network,
-          wallet: normalizedWallet,
-        };
-        cardSecretPromiseRef.current = null;
-        setWallet(normalizedWallet);
-        setCardReady(true);
-        setPaidAmount(amountUsd);
-        setMode("card");
-        return;
-      }
-
-      if (!crossmintClientKey) {
-        throw new Error("Checkout is not configured. Try again later.");
-      }
-      if (!emailOk) {
-        throw new Error("Enter a valid email for checkout.");
-      }
-      if (!isCrossmintClientNetwork(network)) {
-        throw new Error("Choose Polygon, Base, or Solana.");
-      }
-
       const result = await createOnrampOrder({
         email: email.trim().toLowerCase(),
         amount: amountUsd.toFixed(2),
@@ -245,27 +135,6 @@ export function ClientPayCheckout() {
       });
 
       if (!result.ok) {
-        const blocked =
-          /not yet enabled for production|staging\.crossmint|contact.*sales/i.test(
-            result.message || "",
-          );
-        if (blocked) {
-          if (network === "solana") {
-            throw new Error(
-              "This payment path is still being enabled. Choose Polygon or Base, or use Card.",
-            );
-          }
-          // Production Crossmint onramp not unlocked yet — fall back to Stripe Instant.
-          setWallet(normalizedWallet);
-          setPaidAmount(amountUsd);
-          await startStripeInstantFallback(
-            amountUsd,
-            network as CrossmintClientNetworkId,
-            normalizedWallet,
-            email.trim().toLowerCase(),
-          );
-          return;
-        }
         throw new Error(result.message || "Could not start checkout");
       }
 
@@ -287,47 +156,20 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
-    cardRequestRef.current = null;
-    cardSecretPromiseRef.current = null;
-    setCardReady(false);
     setPaidAmount(null);
     setCrossmintOrder(null);
     setError(null);
     setMode("pick");
   }
 
-  if (mode === "done") {
-    return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>You’re set</h2>
-          <p>
-            Payment received
-            {paidAmount ? ` (${formatUsd(paidAmount)})` : ""}. Crypto goes to{" "}
-            <code className="break">{wallet.trim()}</code> on {network}.
-          </p>
-          <button type="button" className="ghost-link" onClick={resetToPick}>
-            New payment
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "redirecting") {
-    return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>Opening payment…</h2>
-          <p>Continue on the secure payment page.</p>
-        </div>
-      </div>
-    );
-  }
-
   if (mode === "crossmint" && crossmintOrder && crossmintClientKey) {
     return (
       <div className="payment-stack onramp-focus">
+        <div className="country-lock" aria-label="Billing country">
+          <span className="country-lock-code">FI</span>
+          <span className="country-lock-name">Finland</span>
+          <span className="country-lock-note">Cards only · EUR</span>
+        </div>
         <div className="destination-summary">
           <p>
             Pay {paidAmount ? <strong>{formatUsd(paidAmount)}</strong> : null}{" "}
@@ -346,17 +188,18 @@ export function ClientPayCheckout() {
                   orderId={crossmintOrder.orderId}
                   clientSecret={crossmintOrder.clientSecret}
                   appearance={checkoutAppearance}
+                  locale="en-US"
                   payment={{
                     receiptEmail: crossmintOrder.email,
                     defaultMethod: "fiat",
                     crypto: { enabled: false },
                     fiat: {
                       enabled: true,
-                      defaultCurrency: "usd",
+                      defaultCurrency: "eur",
                       allowedMethods: {
                         card: true,
-                        applePay: true,
-                        googlePay: true,
+                        applePay: false,
+                        googlePay: false,
                       },
                     },
                   }}
@@ -369,61 +212,19 @@ export function ClientPayCheckout() {
     );
   }
 
-  if (mode === "card" && paidAmount != null && cardReady && stripePromise) {
-    return (
-      <div className="payment-stack onramp-focus">
-        <div className="destination-summary">
-          <p>
-            Pay <strong>{formatUsd(paidAmount)}</strong> →{" "}
-            <code className="break">{wallet.trim()}</code>
-          </p>
-          <button type="button" className="ghost-link" onClick={resetToPick}>
-            Change details
-          </button>
-        </div>
-        <p className="form-hint">
-          Pay with card, Apple Pay, or Google Pay. We’ll send crypto to your
-          wallet after payment clears.
-        </p>
-        <div className="stripe-embed">
-          <EmbeddedCheckoutProvider
-            key={`${paidAmount}-${wallet.trim()}`}
-            stripe={stripePromise}
-            options={cardOptions}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
-        <h2>Pay</h2>
-        <p>Enter amount and wallet, then pay. That’s it.</p>
-
-        <div className="amount-chips path-chips" role="group" aria-label="Pay method">
-          <button
-            type="button"
-            className={path === "crypto" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("crypto")}
-          >
-            Crypto
-          </button>
-          <button
-            type="button"
-            className={path === "card" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("card")}
-          >
-            Card
-          </button>
+        <div className="country-lock" aria-label="Billing country">
+          <span className="country-lock-code">FI</span>
+          <span className="country-lock-name">Finland</span>
+          <span className="country-lock-note">Approved market</span>
         </div>
-        <p className="form-hint">
-          {path === "crypto"
-            ? "Card / Apple Pay / Google Pay → USDC to your wallet."
-            : "Card pay now; crypto is sent when ready."}
+
+        <h2>Pay with card</h2>
+        <p>
+          Finland only. Enter amount and wallet, then fill your card details on
+          the secure form.
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -459,9 +260,11 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
+            onChange={(e) =>
+              setNetwork(e.target.value as CrossmintClientNetworkId)
+            }
           >
-            {networks.map((n) => (
+            {CROSSMINT_CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -474,13 +277,7 @@ export function ClientPayCheckout() {
           <input
             value={wallet}
             onChange={(e) => setWallet(e.target.value)}
-            placeholder={
-              network === "solana"
-                ? "Solana address…"
-                : network === "bitcoin"
-                  ? "bc1…"
-                  : "0x…"
-            }
+            placeholder={network === "solana" ? "Solana address…" : "0x…"}
             autoComplete="off"
             spellCheck={false}
           />
@@ -489,31 +286,30 @@ export function ClientPayCheckout() {
           <p className="form-error">
             {network === "solana"
               ? "Enter a valid Solana wallet address."
-              : network === "bitcoin"
-                ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-                : "Enter a valid wallet (0x + 40 hex characters)."}
+              : "Enter a valid wallet (0x + 40 hex characters)."}
           </p>
         ) : null}
 
         <label className="field">
-          {path === "crypto" ? "Email" : "Email (optional)"}
+          Email
           <input
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
-            required={path === "crypto"}
+            required
           />
         </label>
-        {path === "crypto" && email.trim() && !emailOk ? (
+        {email.trim() && !emailOk ? (
           <p className="form-error">Enter a valid email.</p>
         ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
-        {path === "crypto" && !crossmintClientKey ? (
+        {!crossmintClientKey ? (
           <p className="form-error">
-            Checkout keys are missing on this deploy. Add them and redeploy.
+            Checkout keys are missing on this deploy. Add Crossmint keys and
+            redeploy.
           </p>
         ) : null}
 
@@ -523,8 +319,13 @@ export function ClientPayCheckout() {
           onClick={startPay}
           disabled={loading || !canStart}
         >
-          {loading ? "Starting…" : `Pay ${amountOk ? amountLabel : rangeLabel}`}
+          {loading
+            ? "Opening card form…"
+            : `Continue to card ${amountOk ? amountLabel : rangeLabel}`}
         </button>
+        <p className="form-hint">
+          Next step: secure card form for Finnish cards (EUR).
+        </p>
       </div>
     </div>
   );

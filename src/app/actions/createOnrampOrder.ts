@@ -132,6 +132,8 @@ export async function createOnrampOrder(
       ],
       payment: {
         method: "card",
+        // Finland-approved Crossmint checkout — charge in EUR, settle USDC.
+        currency: "eur",
         receiptEmail: email,
       },
       recipient: {
