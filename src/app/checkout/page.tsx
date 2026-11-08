@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Finland</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Pay with card on this page. Payment lands in Stripe, then crypto is
-            sent to your wallet — no new tab or off-site link.
+            Card form on this page. Crypto goes directly to your wallet — no
+            crypto.link.com, no new tab.
           </p>
         </div>
 

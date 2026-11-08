@@ -21,7 +21,7 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Finland · pay by card on this site · $5–$9,000 to your wallet.
+          Finland · card on this page · crypto direct to your wallet.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
