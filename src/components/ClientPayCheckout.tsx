@@ -153,9 +153,22 @@ export function ClientPayCheckout() {
       const data = (await res.json()) as {
         clientSecret?: string;
         error?: string;
+        code?: string;
       };
       if (!res.ok || !data.clientSecret) {
-        throw new Error(data.error || "Could not start checkout");
+        if (data.code === "missing_keys" || data.code === "onramp_not_enabled") {
+          throw new Error(
+            "Checkout is temporarily unavailable. Please try again soon.",
+          );
+        }
+        const raw = data.error || "Could not start checkout";
+        // Never surface env / provider internals to buyers.
+        if (/STRIPE_|SECRET|API[_ ]?KEY|sk_live|pk_live/i.test(raw)) {
+          throw new Error(
+            "Checkout is temporarily unavailable. Please try again soon.",
+          );
+        }
+        throw new Error(raw);
       }
 
       // Never follow redirectUrl / hosted Link — embed only.

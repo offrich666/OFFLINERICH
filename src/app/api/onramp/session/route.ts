@@ -22,9 +22,10 @@ import { upsertAwaitingCryptoOrder } from "@/lib/orders";
 export async function POST(request: Request) {
   try {
     if (!process.env.STRIPE_SECRET_KEY) {
+      console.error("[onramp/session] STRIPE_SECRET_KEY is not set");
       return NextResponse.json(
         {
-          error: "STRIPE_SECRET_KEY missing",
+          error: "Checkout is temporarily unavailable. Please try again soon.",
           code: "missing_keys",
         },
         { status: 503 },
