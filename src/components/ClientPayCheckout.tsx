@@ -1,242 +1,116 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
+import { useEffect, useRef, useState } from "react";
+import { loadStripeOnramp } from "@stripe/crypto";
 import {
-  EmbeddedCheckout,
-  EmbeddedCheckoutProvider,
-} from "@stripe/react-stripe-js";
-import {
-  CLIENT_NETWORKS,
-  ONRAMP_CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
+  ONRAMP_CLIENT_NETWORKS,
   checkoutAmountRangeLabel,
   formatUsd,
+  isOnrampClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
-  type ClientNetworkId,
   type OnrampClientNetworkId,
 } from "@/lib/networks";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
-const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
-const PENDING_KEY = "offlinerich_onramp_pending";
 
-type PayPath = "easy" | "instant";
-type Mode = "pick" | "card" | "redirecting" | "returning" | "done";
-
-type PendingOnramp = {
-  sessionId?: string;
-  wallet?: string;
-  network?: ClientNetworkId;
-  amountUsd?: number;
-  redirectUrl?: string;
-};
+type Mode = "pick" | "onramp";
 
 /**
- * Instant crypto uses Stripe's hosted Link page only (full-page redirect).
- * Embedded iframes remount mid–device-verify and loop forever — never embed Instant.
+ * Stripe Crypto Onramp — embedded on this page (no hosted Link redirect).
+ * Buyer copy stays brand-only; crypto settles directly to the client wallet.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("instant");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
+  const [network, setNetwork] = useState<OnrampClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
-  const [pending, setPending] = useState<PendingOnramp | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const cardRequestRef = useRef<{
-    amountUsd: number;
-    email?: string;
-    network: string;
-    wallet: string;
-  } | null>(null);
-  const cardSecretPromiseRef = useRef<Promise<string> | null>(null);
-  const [cardReady, setCardReady] = useState(false);
-  const statusPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const secretRef = useRef<string | null>(null);
+  const mountedOnceRef = useRef(false);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
-  const networks =
-    path === "instant" ? ONRAMP_CLIENT_NETWORKS : CLIENT_NETWORKS;
   const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
   const walletDirty = wallet.trim().length > 0;
-  const canStart = amountOk && walletOk;
-
-  useEffect(() => {
-    if (path === "instant" && !ONRAMP_CLIENT_NETWORKS.some((n) => n.id === network)) {
-      setNetwork("ethereum");
-    }
-  }, [path, network]);
+  const emailOk =
+    !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const canStart = amountOk && walletOk && emailOk && Boolean(publishableKey);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "card" || mode === "redirecting" || mode === "returning",
+      mode === "onramp",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
-  const resumeFromPending = useCallback(() => {
-    try {
-      const raw = sessionStorage.getItem(PENDING_KEY);
-      if (!raw) return false;
-      const next = JSON.parse(raw) as PendingOnramp;
-      if (!next.sessionId && !next.wallet) return false;
-      setPending(next);
-      if (next.wallet) setWallet(next.wallet);
-      if (next.network) setNetwork(next.network);
-      if (next.amountUsd) setPaidAmount(next.amountUsd);
-      setMode("returning");
-      setStatus("Checking whether your payment finished…");
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  // Resume after hosted Link (buyer comes back to /checkout — no embed remount).
   useEffect(() => {
-    resumeFromPending();
-  }, [resumeFromPending]);
-
-  // Browser Back from crypto.link.com often restores bfcache on "redirecting".
-  // Flip to the resume panel instead of leaving them stuck on "Opening…".
-  useEffect(() => {
-    const onPageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) resumeFromPending();
-    };
-    window.addEventListener("pageshow", onPageShow);
-    return () => window.removeEventListener("pageshow", onPageShow);
-  }, [resumeFromPending]);
-
-  const stopStatusPoll = useCallback(() => {
-    if (statusPollRef.current) {
-      clearInterval(statusPollRef.current);
-      statusPollRef.current = null;
-    }
-  }, []);
-
-  const markDone = useCallback((message?: string) => {
-    stopStatusPoll();
-    try {
-      sessionStorage.removeItem(PENDING_KEY);
-    } catch {
-      /* ignore */
-    }
-    setPending(null);
-    setStatus(
-      message || "Payment complete — crypto is on the way to your wallet.",
-    );
-    setMode("done");
-  }, [stopStatusPoll]);
-
-  const checkPendingStatus = useCallback(
-    async (sessionId: string) => {
-      setCheckingStatus(true);
-      try {
-        const res = await fetch(
-          `/api/onramp/session-status?sessionId=${encodeURIComponent(sessionId)}`,
-        );
-        const data = (await res.json()) as {
-          status?: string;
-          complete?: boolean;
-          error?: string;
-        };
-        if (!res.ok) {
-          setStatus(
-            data.error ||
-              "Could not confirm yet — if you already paid, check your wallet.",
-          );
-          return false;
-        }
-        if (data.complete) {
-          markDone(
-            data.status === "fulfillment_processing"
-              ? "Payment received — crypto delivery finishing…"
-              : "Payment complete — crypto is on the way to your wallet.",
-          );
-          return true;
-        }
-        setStatus(
-          data.status === "requires_payment"
-            ? "Checkout still open — continue payment, then come back here."
-            : data.status === "rejected"
-              ? "This checkout was declined. Start a new payment."
-              : `Status: ${data.status || "pending"}. Finish on the secure page, then refresh here.`,
-        );
-        return false;
-      } catch {
-        setStatus("Could not confirm yet — if you already paid, check your wallet.");
-        return false;
-      } finally {
-        setCheckingStatus(false);
-      }
-    },
-    [markDone],
-  );
-
-  useEffect(() => {
-    if (mode !== "returning" || !pending?.sessionId) return;
+    if (mode !== "onramp" || !secretRef.current || !publishableKey) return;
+    if (mountedOnceRef.current) return;
     let cancelled = false;
+
     (async () => {
-      const done = await checkPendingStatus(pending.sessionId!);
-      if (cancelled || done) return;
-      stopStatusPoll();
-      statusPollRef.current = setInterval(() => {
-        void checkPendingStatus(pending.sessionId!);
-      }, 8000);
+      try {
+        if (mountRef.current) mountRef.current.innerHTML = "";
+        const stripeOnramp = await loadStripeOnramp(publishableKey);
+        if (!stripeOnramp || cancelled) {
+          throw new Error("Could not load payment form");
+        }
+        const session = stripeOnramp.createSession({
+          clientSecret: secretRef.current!,
+          appearance: { theme: "dark" },
+        });
+        session.addEventListener("onramp_session_updated", (e) => {
+          const next = e.payload?.session?.status as string | undefined;
+          if (next === "fulfillment_complete") {
+            setStatus("Paid — crypto is on the way to your wallet.");
+          } else if (next === "fulfillment_processing") {
+            setStatus("Payment received — delivering crypto…");
+          } else if (next === "requires_payment") {
+            setStatus("Enter card details below to finish.");
+          } else if (next) {
+            setStatus(`Status: ${next}`);
+          }
+        });
+        if (mountRef.current && !cancelled) {
+          session.mount(mountRef.current);
+          mountedOnceRef.current = true;
+          setStatus("Complete payment below — you stay on this page.");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Could not open checkout",
+          );
+          secretRef.current = null;
+          mountedOnceRef.current = false;
+          setMode("pick");
+        }
+      }
     })();
+
     return () => {
       cancelled = true;
-      stopStatusPoll();
     };
-  }, [mode, pending?.sessionId, checkPendingStatus, stopStatusPoll]);
-
-  const fetchCardClientSecret = useCallback(async () => {
-    if (!cardSecretPromiseRef.current) {
-      const req = cardRequestRef.current;
-      if (!req) throw new Error("Card checkout not ready");
-      cardSecretPromiseRef.current = (async () => {
-        const res = await fetch("/api/checkout/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(req),
-        });
-        const data = (await res.json()) as {
-          clientSecret?: string;
-          error?: string;
-        };
-        if (!res.ok || !data.clientSecret) {
-          throw new Error(data.error || "Could not start card checkout");
-        }
-        return data.clientSecret;
-      })();
-    }
-    return cardSecretPromiseRef.current;
-  }, []);
-
-  const cardOptions = useMemo(
-    () => ({ fetchClientSecret: fetchCardClientSecret }),
-    [fetchCardClientSecret],
-  );
+  }, [mode]);
 
   async function startPay() {
     setError(null);
-    setStatus("");
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
@@ -251,77 +125,58 @@ export function ClientPayCheckout() {
       );
       return;
     }
+    if (!emailOk) {
+      setError("Enter a valid email.");
+      return;
+    }
     if (!publishableKey) {
-      setError("Checkout is not configured. Try again later.");
+      setError("Checkout is not configured yet.");
+      return;
+    }
+    if (!isOnrampClientNetwork(network)) {
+      setError("Choose Ethereum or Bitcoin.");
       return;
     }
 
     setLoading(true);
     try {
-      if (path === "easy") {
-        cardRequestRef.current = {
-          amountUsd,
-          email: email.trim() || undefined,
-          network,
-          wallet: normalizedWallet,
-        };
-        cardSecretPromiseRef.current = null;
-        setWallet(normalizedWallet);
-        setCardReady(true);
-        setPaidAmount(amountUsd);
-        setMode("card");
-        return;
-      }
-
-      if (!ONRAMP_CLIENT_NETWORKS.some((n) => n.id === network)) {
-        throw new Error("Instant crypto supports Ethereum or Bitcoin only");
-      }
       const res = await fetch("/api/onramp/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amountUsd,
           email: email.trim() || undefined,
-          network: network as OnrampClientNetworkId,
+          network,
           wallet: normalizedWallet,
         }),
       });
       const data = (await res.json()) as {
         clientSecret?: string;
-        sessionId?: string;
-        redirectUrl?: string | null;
         error?: string;
+        code?: string;
       };
-      if (!res.ok) {
-        throw new Error(data.error || "Could not start crypto checkout");
-      }
-      if (!data.redirectUrl) {
-        throw new Error(
-          "Secure checkout URL missing. Refresh and try Instant crypto again.",
-        );
+      if (!res.ok || !data.clientSecret) {
+        if (data.code === "missing_keys" || data.code === "onramp_not_enabled") {
+          throw new Error(
+            "Checkout is temporarily unavailable. Please try again soon.",
+          );
+        }
+        const raw = data.error || "Could not start checkout";
+        // Never surface env / provider internals to buyers.
+        if (/STRIPE_|SECRET|API[_ ]?KEY|sk_live|pk_live/i.test(raw)) {
+          throw new Error(
+            "Checkout is temporarily unavailable. Please try again soon.",
+          );
+        }
+        throw new Error(raw);
       }
 
+      // Never follow redirectUrl / hosted Link — embed only.
+      secretRef.current = data.clientSecret;
+      mountedOnceRef.current = false;
       setWallet(normalizedWallet);
       setPaidAmount(amountUsd);
-
-      const nextPending: PendingOnramp = {
-        sessionId: data.sessionId,
-        wallet: normalizedWallet,
-        network,
-        amountUsd,
-        redirectUrl: data.redirectUrl,
-      };
-      try {
-        sessionStorage.setItem(PENDING_KEY, JSON.stringify(nextPending));
-      } catch {
-        /* ignore */
-      }
-      setPending(nextPending);
-
-      // Full navigation to hosted Link — device verify works there (no iframe remount).
-      setMode("redirecting");
-      setStatus("Opening payment…");
-      window.location.assign(data.redirectUrl);
+      setMode("onramp");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
     } finally {
@@ -330,140 +185,30 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
-    stopStatusPoll();
-    cardRequestRef.current = null;
-    cardSecretPromiseRef.current = null;
-    setCardReady(false);
+    secretRef.current = null;
+    mountedOnceRef.current = false;
+    if (mountRef.current) mountRef.current.innerHTML = "";
     setPaidAmount(null);
-    setPending(null);
     setStatus("");
     setError(null);
     setMode("pick");
-    try {
-      sessionStorage.removeItem(PENDING_KEY);
-    } catch {
-      /* ignore */
-    }
   }
 
-  if (mode === "done") {
-    return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>You’re set</h2>
-          <p>
-            Payment received
-            {paidAmount ? ` (${formatUsd(paidAmount)})` : ""}. Crypto goes to{" "}
-            <code className="break">{wallet.trim()}</code> on {network}.
-          </p>
-          {status ? <p className="form-hint">{status}</p> : null}
-          <button type="button" className="ghost-link" onClick={resetToPick}>
-            New payment
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "redirecting") {
-    return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>Opening payment…</h2>
-          <p>
-            Continue on the secure payment page. When you’re done, return here
-            or reopen Pay.
-          </p>
-          {status ? <p className="form-hint">{status}</p> : null}
-          {pending?.redirectUrl ? (
-            <p className="form-hint">
-              If nothing opens,{" "}
-              <a href={pending.redirectUrl}>continue to pay</a>.
-            </p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "returning") {
-    return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>Welcome back</h2>
-          <p>
-            {paidAmount ? (
-              <>
-                You started <strong>{formatUsd(paidAmount)}</strong> to{" "}
-                <code className="break">{wallet.trim()}</code> on {network}.
-              </>
-            ) : (
-              <>You have a payment in progress.</>
-            )}
-          </p>
-          {status ? <p className="form-hint">{status}</p> : null}
-          <div className="cta-row" style={{ marginTop: "1rem", gap: "0.75rem" }}>
-            {pending?.redirectUrl ? (
-              <a className="primary-cta" href={pending.redirectUrl}>
-                Continue payment
-              </a>
-            ) : null}
-            {pending?.sessionId ? (
-              <button
-                type="button"
-                className="primary-cta"
-                disabled={checkingStatus}
-                onClick={() => void checkPendingStatus(pending.sessionId!)}
-              >
-                {checkingStatus ? "Checking…" : "I finished paying"}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="primary-cta"
-                onClick={() =>
-                  markDone(
-                    "If payment went through, crypto is on the way to your wallet.",
-                  )
-                }
-              >
-                I finished paying
-              </button>
-            )}
-            <button type="button" className="ghost-link" onClick={resetToPick}>
-              Start over
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === "card" && paidAmount != null && cardReady && stripePromise) {
+  if (mode === "onramp" && paidAmount != null) {
     return (
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Pay <strong>{formatUsd(paidAmount)}</strong> →{" "}
-            <code className="break">{wallet.trim()}</code>
+            Pay <strong>{formatUsd(paidAmount)}</strong> → crypto to{" "}
+            <code className="break">{wallet.trim()}</code> on {network}
           </p>
           <button type="button" className="ghost-link" onClick={resetToPick}>
             Change details
           </button>
         </div>
-        <p className="form-hint">
-          Pay with card, Apple Pay, or Google Pay. We’ll send crypto to your
-          wallet after payment clears.
-        </p>
-        <div className="stripe-embed">
-          <EmbeddedCheckoutProvider
-            key={`${paidAmount}-${wallet.trim()}`}
-            stripe={stripePromise}
-            options={cardOptions}
-          >
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <div className="stripe-embed onramp-embed" ref={mountRef} />
       </div>
     );
   }
@@ -471,29 +216,9 @@ export function ClientPayCheckout() {
   return (
     <div className="payment-stack client-pay">
       <div className="setup-panel soft">
-        <h2>Pay</h2>
-        <p>Enter amount and wallet, then pay. That’s it.</p>
-
-        <div className="amount-chips path-chips" role="group" aria-label="Pay method">
-          <button
-            type="button"
-            className={path === "instant" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("instant")}
-          >
-            Crypto
-          </button>
-          <button
-            type="button"
-            className={path === "easy" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("easy")}
-          >
-            Card
-          </button>
-        </div>
-        <p className="form-hint">
-          {path === "instant"
-            ? "Crypto goes to your wallet after you pay."
-            : "Card pay now; crypto is sent when ready."}
+        <h2>Buy crypto</h2>
+        <p>
+          Pay with card on this page. Crypto goes directly to your wallet.
         </p>
 
         <div className="amount-chips" role="group" aria-label="Quick amounts">
@@ -529,9 +254,11 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
+            onChange={(e) =>
+              setNetwork(e.target.value as OnrampClientNetworkId)
+            }
           >
-            {networks.map((n) => (
+            {ONRAMP_CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -567,8 +294,14 @@ export function ClientPayCheckout() {
             placeholder="you@example.com"
           />
         </label>
+        {email.trim() && !emailOk ? (
+          <p className="form-error">Enter a valid email.</p>
+        ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
+        {!publishableKey ? (
+          <p className="form-error">Checkout is not configured yet.</p>
+        ) : null}
 
         <button
           type="button"
@@ -577,9 +310,12 @@ export function ClientPayCheckout() {
           disabled={loading || !canStart}
         >
           {loading
-            ? "Starting…"
-            : `Pay ${amountOk ? amountLabel : rangeLabel}`}
+            ? "Opening secure form…"
+            : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
+        <p className="form-hint">
+          Card form opens below on this page. Crypto settles to your wallet.
+        </p>
       </div>
     </div>
   );

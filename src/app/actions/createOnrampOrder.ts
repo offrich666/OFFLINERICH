@@ -132,6 +132,8 @@ export async function createOnrampOrder(
       ],
       payment: {
         method: "card",
+        // Finland-approved Crossmint checkout — charge in EUR, settle USDC.
+        currency: "eur",
         receiptEmail: email,
       },
       recipient: {
@@ -142,13 +144,21 @@ export async function createOnrampOrder(
 
   const orderId = data.order?.orderId || data.order?.id;
   if (!ok || !orderId || !data.clientSecret) {
+    const message =
+      data.message ||
+      "Failed to create onramp order. Check API key scopes (orders.create) and production access.";
+    const blocked = /not yet enabled for production|staging\.crossmint|contact.*sales/i.test(
+      message,
+    );
     return {
       ok: false,
       status,
-      message:
-        data.message ||
-        "Failed to create onramp order. Check API key scopes (orders.create) and production access.",
-      code: status === 400 ? "ONRAMP_BLOCKED_OR_INVALID" : undefined,
+      message,
+      code: blocked
+        ? "ONRAMP_PRODUCTION_DISABLED"
+        : status === 400
+          ? "ONRAMP_BLOCKED_OR_INVALID"
+          : undefined,
     };
   }
 

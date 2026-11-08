@@ -18,8 +18,10 @@ export default function CheckoutPage() {
       <section className="checkout-layout checkout-layout-simple">
         <div className="checkout-copy checkout-copy-simple">
           <p className="eyebrow">Checkout</p>
-          <h1>Pay {range}</h1>
-          <p>Enter your wallet and amount, then pay. Crypto goes to your wallet.</p>
+          <h1>Buy crypto {range}</h1>
+          <p>
+            Pay with card on this page. Crypto goes directly to your wallet.
+          </p>
         </div>
 
         <div className="checkout-panel">

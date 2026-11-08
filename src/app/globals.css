@@ -472,6 +472,44 @@ code {
   gap: 1rem;
 }
 
+.country-lock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fog) 5%, transparent);
+}
+
+.country-lock-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.1rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, var(--fog) 35%, var(--line));
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--fog);
+}
+
+.country-lock-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fog);
+}
+
+.country-lock-note {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--mist);
+}
+
 .setup-panel.soft {
   background: transparent;
   border: 1px solid var(--line);
@@ -692,7 +730,9 @@ html.onramp-active .checkout-panel {
 }
 
 html.onramp-active .onramp-mount,
-html.onramp-active .onramp-mount iframe {
+html.onramp-active .onramp-mount iframe,
+html.onramp-active .onramp-embed,
+html.onramp-active .onramp-embed iframe {
   min-height: min(720px, 78vh) !important;
 }
 

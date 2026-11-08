@@ -21,11 +21,11 @@ export default function Home() {
       <section className="hero">
         <h1 className="brand-hero">OFFLINERICH</h1>
         <p className="lede">
-          Pay $5–$9,000. Crypto goes to your wallet after payment.
+          Pay $5–$9,000 on this page. Crypto goes to your wallet.
         </p>
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
-            Pay
+            Buy crypto
           </Link>
         </div>
       </section>

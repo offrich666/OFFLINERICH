@@ -4,6 +4,7 @@ export const CLIENT_NETWORKS = [
   { id: "ethereum", label: "Ethereum", kind: "evm", asset: "USDC" },
   { id: "base", label: "Base", kind: "evm", asset: "USDC" },
   { id: "bsc", label: "BNB Smart Chain (BSC)", kind: "evm", asset: "USDC" },
+  { id: "solana", label: "Solana", kind: "solana", asset: "USDC" },
   { id: "bitcoin", label: "Bitcoin", kind: "bitcoin", asset: "BTC" },
 ] as const;
 
@@ -17,8 +18,23 @@ export const ONRAMP_CLIENT_NETWORKS = [
   { id: "bitcoin", label: "Bitcoin", kind: "bitcoin", asset: "BTC" },
 ] as const;
 
+/** Networks used for Crossmint fiat → USDC checkout. */
+export const CROSSMINT_CLIENT_NETWORKS = [
+  { id: "polygon", label: "Polygon", kind: "evm", asset: "USDC" },
+  { id: "base", label: "Base", kind: "evm", asset: "USDC" },
+  { id: "solana", label: "Solana", kind: "solana", asset: "USDC" },
+] as const;
+
 export type ClientNetworkId = (typeof CLIENT_NETWORKS)[number]["id"];
 export type OnrampClientNetworkId = (typeof ONRAMP_CLIENT_NETWORKS)[number]["id"];
+export type CrossmintClientNetworkId =
+  (typeof CROSSMINT_CLIENT_NETWORKS)[number]["id"];
+
+export function isCrossmintClientNetwork(
+  id: string,
+): id is CrossmintClientNetworkId {
+  return CROSSMINT_CLIENT_NETWORKS.some((n) => n.id === id);
+}
 
 export function getNetwork(id: string) {
   return CLIENT_NETWORKS.find((n) => n.id === id) ?? null;
@@ -32,7 +48,7 @@ export function normalizeWalletAddress(networkId: string, address: string): stri
   const trimmed = address.trim();
   const net = getNetwork(networkId);
   if (!net) return trimmed;
-  if (net.kind === "bitcoin") return trimmed;
+  if (net.kind === "bitcoin" || net.kind === "solana") return trimmed;
   // Accept 0X… and normalize to 0x…
   if (/^0x/i.test(trimmed)) return `0x${trimmed.slice(2)}`;
   return trimmed;
@@ -45,6 +61,9 @@ export function isValidWalletAddress(networkId: string, address: string): boolea
   if (!net) return false;
   if (net.kind === "bitcoin") {
     return /^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/i.test(trimmed);
+  }
+  if (net.kind === "solana") {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(trimmed);
   }
   return /^0x[a-fA-F0-9]{40}$/.test(trimmed);
 }

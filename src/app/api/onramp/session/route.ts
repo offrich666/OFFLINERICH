@@ -10,34 +10,23 @@ import {
   isOnrampClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
+  normalizeWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
 import { upsertAwaitingCryptoOrder } from "@/lib/orders";
 
 /**
- * Amount + client's own wallet → Onramp locked to that wallet.
- * Stripe's "Confirm your wallet" shows THEIR address (never treasury).
- * Crypto settles directly to the client via Stripe.
+ * Stripe Crypto Onramp session for ON-PAGE embed only.
+ * Returns clientSecret — never send buyers to crypto.link.com.
  */
 export async function POST(request: Request) {
   try {
-    // Local-only hook for UI tests (never set in production).
-    if (process.env.MOCK_ONRAMP_REDIRECT === "1") {
-      return NextResponse.json({
-        clientSecret: "cos_mock_secret_local_only",
-        sessionId: "cos_mock_session_local_only",
-        status: "initialized",
-        redirectUrl: "https://example.com/mock-hosted-onramp",
-        livemode: false,
-      });
-    }
-
     if (!process.env.STRIPE_SECRET_KEY) {
+      console.error("[onramp/session] STRIPE_SECRET_KEY is not set");
       return NextResponse.json(
         {
-          error: "STRIPE_SECRET_KEY missing",
+          error: "Checkout is temporarily unavailable. Please try again soon.",
           code: "missing_keys",
-          hint: "Onramp is approved — paste pk_live_/sk_live_ into env.",
         },
         { status: 503 },
       );
@@ -65,6 +54,8 @@ export async function POST(request: Request) {
     } catch {
       // empty
     }
+
+    wallet = normalizeWalletAddress(network, wallet);
 
     if (!isValidAmountUsd(amountUsd)) {
       return NextResponse.json(
@@ -130,11 +121,11 @@ export async function POST(request: Request) {
       clientWallet: wallet,
     });
 
+    // Intentionally omit redirectUrl — checkout mounts embed on this site only.
     return NextResponse.json({
       clientSecret: session.client_secret,
       sessionId: session.id,
       status: session.status,
-      redirectUrl: session.redirect_url ?? null,
       livemode: session.livemode ?? isLiveStripeKey(),
     });
   } catch (error) {
