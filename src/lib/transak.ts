@@ -173,18 +173,25 @@ async function createWidgetForEnv(
     headers,
     body: JSON.stringify({ widgetParams }),
   });
-  const data = (await res.json()) as {
+  const rawText = await res.text();
+  let data: {
     data?: { widgetUrl?: string };
-    error?: { message?: string };
+    error?: { message?: string } | string;
     message?: string;
-  };
+  } = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as typeof data) : {};
+  } catch {
+    data = { message: rawText.slice(0, 240) };
+  }
   const widgetUrl = data.data?.widgetUrl;
   if (!res.ok || !widgetUrl) {
-    throw new Error(
-      data.error?.message ||
-        data.message ||
-        `Transak session failed (${res.status})`,
-    );
+    const errMsg =
+      (typeof data.error === "string" ? data.error : data.error?.message) ||
+      data.message ||
+      rawText.slice(0, 240) ||
+      `Transak session failed (${res.status})`;
+    throw new Error(`${errMsg} [${env} ${res.status}]`);
   }
   return widgetUrl;
 }
