@@ -125,6 +125,10 @@ export async function POST(request: Request) {
     const message =
       error instanceof Error ? error.message : "Failed to start instant crypto";
     console.error("[onramp/transak/session]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const hint =
+      /401|access-token|api key|environment|ip|whitelist/i.test(message)
+        ? " Check Transak Dashboard → Staging keys, whitelist www.walletchainsign.com, and partner API IP access."
+        : "";
+    return NextResponse.json({ error: message + hint }, { status: 500 });
   }
 }
