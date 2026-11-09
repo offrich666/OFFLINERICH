@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant pays on this page and sends crypto to your wallet. Card is
-            the backup if Instant is not ready yet.
+            Pay with card on this page — no off-site redirect. Crypto goes to
+            your wallet after payment clears.
           </p>
         </div>
 
