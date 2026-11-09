@@ -230,7 +230,7 @@ export function buildPublicTransakWidgetUrl(
     redirectURL: input.redirectURL,
   });
   if (input.email) params.set("email", input.email);
-  return { widgetUrl: `${base}?${params.toString()}`, environment: env };
+  return { widgetUrl: `${base}/?${params.toString()}`, environment: env };
 }
 
 export async function createTransakWidgetUrl(
