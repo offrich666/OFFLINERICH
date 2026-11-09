@@ -99,9 +99,11 @@ async function getPartnerAccessToken(env: TransakEnv): Promise<string> {
   const token = data.data?.accessToken;
   if (!res.ok || !token) {
     throw new Error(
-      data.error?.message ||
+      `refresh: ${
+        data.error?.message ||
         data.message ||
-        `Transak refresh-token failed (${res.status})`,
+        `Transak refresh-token failed (${res.status})`
+      }`,
     );
   }
   const expiresAtMs = data.data?.expiresAt
@@ -141,8 +143,6 @@ async function createWidgetForEnv(
     referrerDomain: input.referrerDomain
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, ""),
-    // Transak validates this as lowercase ("staging" / "production").
-    environment: env === "STAGING" ? "staging" : "production",
     productsAvailed: "BUY",
     cryptoCurrencyCode: asset.cryptoCurrencyCode,
     network: asset.network,
@@ -192,9 +192,45 @@ async function createWidgetForEnv(
       data.message ||
       rawText.slice(0, 240) ||
       `Transak session failed (${res.status})`;
-    throw new Error(`${errMsg} [${env} ${res.status}]`);
+    throw new Error(`session: ${errMsg} [${env} ${res.status}]`);
   }
   return widgetUrl;
+}
+
+/**
+ * Last-resort public widget URL (no partner session). Staging often still
+ * accepts query params for partners who can't mint a session yet.
+ */
+export function buildPublicTransakWidgetUrl(
+  input: CreateTransakWidgetInput,
+): { widgetUrl: string; environment: TransakEnv } {
+  const env = getTransakEnvironment();
+  const apiKey = getTransakApiKey();
+  const asset = transakAssetFor(input.network);
+  if (!apiKey || !asset) {
+    throw new Error("Transak public widget requires API key + network");
+  }
+  const base =
+    env === "STAGING"
+      ? "https://global-stg.transak.com"
+      : "https://global.transak.com";
+  const params = new URLSearchParams({
+    apiKey,
+    productsAvailed: "BUY",
+    cryptoCurrencyCode: asset.cryptoCurrencyCode,
+    network: asset.network,
+    walletAddress: input.walletAddress,
+    disableWalletAddressForm: "true",
+    fiatCurrency: "USD",
+    fiatAmount: String(input.amountUsd),
+    defaultPaymentMethod: "credit_debit_card",
+    colorMode: "DARK",
+    themeColor: "d2b48c",
+    exchangeScreenTitle: "Buy crypto",
+    redirectURL: input.redirectURL,
+  });
+  if (input.email) params.set("email", input.email);
+  return { widgetUrl: `${base}?${params.toString()}`, environment: env };
 }
 
 export async function createTransakWidgetUrl(
