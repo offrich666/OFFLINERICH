@@ -13,8 +13,8 @@ type Props = {
 };
 
 /**
- * On-page Instant checkout iframe.
- * Buyer stays on walletchainsign.com; provider chrome/branding is disabled.
+ * On-page Instant checkout.
+ * Stays on walletchainsign.com — provider branding disabled in the widget.
  */
 export function ThirdwebInstantEmbed({
   amountUsd,
@@ -43,6 +43,10 @@ export function ThirdwebInstantEmbed({
 
   return (
     <div className="stripe-embed onramp-embed thirdweb-instant-embed">
+      <p className="form-hint" style={{ textAlign: "center", marginBottom: 8 }}>
+        Choose <strong>Buy</strong>, then pay with card — crypto goes to your
+        wallet.
+      </p>
       <iframe
         title="Buy crypto"
         src={src}
