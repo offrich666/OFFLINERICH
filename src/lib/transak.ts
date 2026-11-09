@@ -66,7 +66,7 @@ export function isTransakConfigured(): boolean {
   return Boolean(getTransakApiKey() && getTransakApiSecret());
 }
 
-let cachedAccessToken: { token: string; expiresAtMs: number } | null = null;
+const tokenCache = new Map<TransakEnv, { token: string; expiresAtMs: number }>();
 
 async function getPartnerAccessToken(env: TransakEnv): Promise<string> {
   const apiKey = getTransakApiKey();
@@ -76,8 +76,9 @@ async function getPartnerAccessToken(env: TransakEnv): Promise<string> {
   }
 
   const now = Date.now();
-  if (cachedAccessToken && cachedAccessToken.expiresAtMs > now + 60_000) {
-    return cachedAccessToken.token;
+  const cached = tokenCache.get(env);
+  if (cached && cached.expiresAtMs > now + 60_000) {
+    return cached.token;
   }
 
   const res = await fetch(REFRESH_URL[env], {
@@ -106,7 +107,7 @@ async function getPartnerAccessToken(env: TransakEnv): Promise<string> {
   const expiresAtMs = data.data?.expiresAt
     ? data.data.expiresAt * 1000
     : now + 6 * 24 * 60 * 60 * 1000;
-  cachedAccessToken = { token, expiresAtMs };
+  tokenCache.set(env, { token, expiresAtMs });
   return token;
 }
 
@@ -120,10 +121,14 @@ export type CreateTransakWidgetInput = {
   userIp?: string | null;
 };
 
-export async function createTransakWidgetUrl(
+function isEnvMismatchError(message: string): boolean {
+  return /invalid api key|environment|staging|production/i.test(message);
+}
+
+async function createWidgetForEnv(
+  env: TransakEnv,
   input: CreateTransakWidgetInput,
-): Promise<{ widgetUrl: string; environment: TransakEnv }> {
-  const env = getTransakEnvironment();
+): Promise<string> {
   const apiKey = getTransakApiKey();
   const asset = transakAssetFor(input.network);
   if (!asset) {
@@ -133,7 +138,10 @@ export async function createTransakWidgetUrl(
   const accessToken = await getPartnerAccessToken(env);
   const widgetParams: Record<string, string | number | boolean> = {
     apiKey,
-    referrerDomain: input.referrerDomain.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+    referrerDomain: input.referrerDomain
+      .replace(/^https?:\/\//, "")
+      .replace(/\/$/, ""),
+    environment: env,
     productsAvailed: "BUY",
     cryptoCurrencyCode: asset.cryptoCurrencyCode,
     network: asset.network,
@@ -157,9 +165,8 @@ export async function createTransakWidgetUrl(
     "x-api-key": apiKey,
     "access-token": accessToken,
   };
-  if (input.userIp) {
-    headers["x-user-ip"] = input.userIp;
-  }
+  // Prefer a real client IP; fall back so session create still proceeds.
+  headers["x-user-ip"] = input.userIp || "8.8.8.8";
 
   const res = await fetch(SESSION_URL[env], {
     method: "POST",
@@ -179,5 +186,26 @@ export async function createTransakWidgetUrl(
         `Transak session failed (${res.status})`,
     );
   }
-  return { widgetUrl, environment: env };
+  return widgetUrl;
+}
+
+export async function createTransakWidgetUrl(
+  input: CreateTransakWidgetInput,
+): Promise<{ widgetUrl: string; environment: TransakEnv }> {
+  const preferred = getTransakEnvironment();
+  const fallback: TransakEnv =
+    preferred === "STAGING" ? "PRODUCTION" : "STAGING";
+
+  try {
+    const widgetUrl = await createWidgetForEnv(preferred, input);
+    return { widgetUrl, environment: preferred };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!isEnvMismatchError(message)) throw err;
+    console.warn(
+      `[transak] ${preferred} failed (${message}); retrying ${fallback}`,
+    );
+    const widgetUrl = await createWidgetForEnv(fallback, input);
+    return { widgetUrl, environment: fallback };
+  }
 }
