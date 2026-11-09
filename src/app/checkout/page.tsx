@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant buys crypto straight to your wallet when you pay. Card
-            backup is slower (pay now, crypto later).
+            Instant keeps checkout on this page — pay with card, crypto goes to
+            your wallet. Card backup is the slower path.
           </p>
         </div>
 
