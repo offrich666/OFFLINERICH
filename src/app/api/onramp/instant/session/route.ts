@@ -8,7 +8,10 @@ import {
   normalizeWalletAddress,
   parseAmountUsd,
 } from "@/lib/networks";
-import { buildMoonPayFallbackUrl, buildRampWidgetUrl } from "@/lib/ramp";
+import {
+  buildMoonPayWidgetUrl,
+  buildOnramperWidgetUrl,
+} from "@/lib/instantOnramp";
 
 function getAppOrigin(request: Request): string {
   const origin = request.headers.get("origin");
@@ -25,8 +28,8 @@ function getAppOrigin(request: Request): string {
 }
 
 /**
- * Instant crypto that completes: Ramp Network (locked wallet) → MoonPay fallback.
- * Replaces broken Transak/Stripe Instant Pay paths.
+ * Instant crypto that completes without Transak/Ramp partner keys:
+ * MoonPay (primary) → Onramper (fallback).
  */
 export async function POST(request: Request) {
   try {
@@ -77,37 +80,32 @@ export async function POST(request: Request) {
     }
 
     const origin = getAppOrigin(request);
-    const finalUrl = `${origin}/checkout/return`;
-    const logoUrl = `${origin}/favicon.ico`;
+    const redirectURL = `${origin}/checkout/return`;
+    const input = {
+      amountUsd,
+      network,
+      walletAddress: wallet,
+      email: email || undefined,
+      redirectURL,
+    };
 
     try {
-      const url = buildRampWidgetUrl({
-        amountUsd,
-        network,
-        walletAddress: wallet,
-        email: email || undefined,
-        finalUrl,
-        logoUrl,
-      });
-      return NextResponse.json({
-        url,
-        provider: "ramp",
-        mode: "hosted",
-      });
-    } catch (rampErr) {
-      console.warn(
-        "[onramp/instant] Ramp URL failed; MoonPay fallback",
-        rampErr instanceof Error ? rampErr.message : rampErr,
-      );
-      const url = buildMoonPayFallbackUrl({
-        amountUsd,
-        redirectURL: finalUrl,
-      });
+      const url = buildMoonPayWidgetUrl(input);
       return NextResponse.json({
         url,
         provider: "moonpay",
         mode: "hosted",
-        note: "Paste your wallet in the buy form if asked.",
+      });
+    } catch (moonErr) {
+      console.warn(
+        "[onramp/instant] MoonPay URL failed; Onramper fallback",
+        moonErr instanceof Error ? moonErr.message : moonErr,
+      );
+      const url = buildOnramperWidgetUrl(input);
+      return NextResponse.json({
+        url,
+        provider: "onramper",
+        mode: "hosted",
       });
     }
   } catch (error) {
@@ -121,8 +119,8 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({
     ready: true,
-    providers: ["ramp", "moonpay"],
-    defaultProvider: "ramp",
-    note: "Instant opens Ramp Network (crypto to your wallet). Optional RAMP_HOST_API_KEY on Vercel for partner tracking.",
+    providers: ["moonpay", "onramper"],
+    defaultProvider: "moonpay",
+    note: "Instant opens MoonPay buy (card → crypto to your wallet). No Transak keys required.",
   });
 }
