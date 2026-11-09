@@ -9,6 +9,7 @@ import {
   parseAmountUsd,
 } from "@/lib/networks";
 import {
+  buildPublicTransakWidgetUrl,
   createTransakWidgetUrl,
   isTransakConfigured,
 } from "@/lib/transak";
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
       request.headers.get("x-real-ip") ||
       null;
 
-    const { widgetUrl, environment } = await createTransakWidgetUrl({
+    const sessionInput = {
       amountUsd,
       network,
       walletAddress: wallet,
@@ -114,13 +115,33 @@ export async function POST(request: Request) {
       referrerDomain,
       redirectURL: `${origin}/checkout/return`,
       userIp,
-    });
+    };
 
-    return NextResponse.json({
-      url: widgetUrl,
-      environment,
-      provider: "transak",
-    });
+    try {
+      const { widgetUrl, environment } =
+        await createTransakWidgetUrl(sessionInput);
+      return NextResponse.json({
+        url: widgetUrl,
+        environment,
+        provider: "transak",
+        mode: "session",
+      });
+    } catch (sessionErr) {
+      // Partner session APIs often 401 until IP whitelist / KYB — fall back to
+      // the public staging widget so Instant can still complete for buyers.
+      console.warn(
+        "[onramp/transak/session] partner session failed; using public widget",
+        sessionErr instanceof Error ? sessionErr.message : sessionErr,
+      );
+      const { widgetUrl, environment } =
+        buildPublicTransakWidgetUrl(sessionInput);
+      return NextResponse.json({
+        url: widgetUrl,
+        environment,
+        provider: "transak",
+        mode: "public",
+      });
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to start instant crypto";

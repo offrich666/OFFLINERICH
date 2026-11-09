@@ -99,9 +99,11 @@ async function getPartnerAccessToken(env: TransakEnv): Promise<string> {
   const token = data.data?.accessToken;
   if (!res.ok || !token) {
     throw new Error(
-      data.error?.message ||
+      `refresh: ${
+        data.error?.message ||
         data.message ||
-        `Transak refresh-token failed (${res.status})`,
+        `Transak refresh-token failed (${res.status})`
+      }`,
     );
   }
   const expiresAtMs = data.data?.expiresAt
@@ -141,7 +143,6 @@ async function createWidgetForEnv(
     referrerDomain: input.referrerDomain
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, ""),
-    environment: env,
     productsAvailed: "BUY",
     cryptoCurrencyCode: asset.cryptoCurrencyCode,
     network: asset.network,
@@ -173,20 +174,63 @@ async function createWidgetForEnv(
     headers,
     body: JSON.stringify({ widgetParams }),
   });
-  const data = (await res.json()) as {
+  const rawText = await res.text();
+  let data: {
     data?: { widgetUrl?: string };
-    error?: { message?: string };
+    error?: { message?: string } | string;
     message?: string;
-  };
+  } = {};
+  try {
+    data = rawText ? (JSON.parse(rawText) as typeof data) : {};
+  } catch {
+    data = { message: rawText.slice(0, 240) };
+  }
   const widgetUrl = data.data?.widgetUrl;
   if (!res.ok || !widgetUrl) {
-    throw new Error(
-      data.error?.message ||
-        data.message ||
-        `Transak session failed (${res.status})`,
-    );
+    const errMsg =
+      (typeof data.error === "string" ? data.error : data.error?.message) ||
+      data.message ||
+      rawText.slice(0, 240) ||
+      `Transak session failed (${res.status})`;
+    throw new Error(`session: ${errMsg} [${env} ${res.status}]`);
   }
   return widgetUrl;
+}
+
+/**
+ * Last-resort public widget URL (no partner session). Staging often still
+ * accepts query params for partners who can't mint a session yet.
+ */
+export function buildPublicTransakWidgetUrl(
+  input: CreateTransakWidgetInput,
+): { widgetUrl: string; environment: TransakEnv } {
+  const env = getTransakEnvironment();
+  const apiKey = getTransakApiKey();
+  const asset = transakAssetFor(input.network);
+  if (!apiKey || !asset) {
+    throw new Error("Transak public widget requires API key + network");
+  }
+  const base =
+    env === "STAGING"
+      ? "https://global-stg.transak.com"
+      : "https://global.transak.com";
+  const params = new URLSearchParams({
+    apiKey,
+    productsAvailed: "BUY",
+    cryptoCurrencyCode: asset.cryptoCurrencyCode,
+    network: asset.network,
+    walletAddress: input.walletAddress,
+    disableWalletAddressForm: "true",
+    fiatCurrency: "USD",
+    fiatAmount: String(input.amountUsd),
+    defaultPaymentMethod: "credit_debit_card",
+    colorMode: "DARK",
+    themeColor: "d2b48c",
+    exchangeScreenTitle: "Buy crypto",
+    redirectURL: input.redirectURL,
+  });
+  if (input.email) params.set("email", input.email);
+  return { widgetUrl: `${base}?${params.toString()}`, environment: env };
 }
 
 export async function createTransakWidgetUrl(
@@ -196,16 +240,25 @@ export async function createTransakWidgetUrl(
   const fallback: TransakEnv =
     preferred === "STAGING" ? "PRODUCTION" : "STAGING";
 
+  let preferredError = "";
   try {
     const widgetUrl = await createWidgetForEnv(preferred, input);
     return { widgetUrl, environment: preferred };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (!isEnvMismatchError(message)) throw err;
+    preferredError = err instanceof Error ? err.message : String(err);
+    if (!isEnvMismatchError(preferredError)) throw err;
     console.warn(
-      `[transak] ${preferred} failed (${message}); retrying ${fallback}`,
+      `[transak] ${preferred} failed (${preferredError}); retrying ${fallback}`,
     );
+  }
+
+  try {
     const widgetUrl = await createWidgetForEnv(fallback, input);
     return { widgetUrl, environment: fallback };
+  } catch (err) {
+    const fallbackError = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `${preferred}: ${preferredError} | ${fallback}: ${fallbackError}`,
+    );
   }
 }
