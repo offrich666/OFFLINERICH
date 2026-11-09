@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   EmbeddedCheckout,
@@ -92,7 +92,6 @@ export function ClientPayCheckout() {
   const [crossmintOrder, setCrossmintOrder] = useState<CrossmintOrder | null>(
     null,
   );
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -183,11 +182,14 @@ export function ClientPayCheckout() {
         signupUrl?: string;
       };
       if (res.ok && data.url) {
-        setTransakUrl(data.url);
-        setPaidAmount(amountUsd!);
+        // Transak staging often refuses iframe embedding ("refused to connect").
+        // Full-page open completes Instant: card → crypto to the locked wallet.
         setWallet(normalizedWallet);
+        setPaidAmount(amountUsd!);
         setMode("transak");
-        setStatus("Complete payment below — crypto goes to your wallet.");
+        setStatus("Opening secure Instant checkout…");
+        setTransakUrl(data.url);
+        window.location.assign(data.url);
         return;
       }
       if (data.code === "transak_not_configured") {
@@ -316,29 +318,27 @@ export function ClientPayCheckout() {
     setMode("pick");
   }
 
-  if (mode === "transak" && paidAmount != null && transakUrl) {
+  if (mode === "transak" && paidAmount != null) {
     return (
-      <div className="payment-stack onramp-focus">
-        <div className="destination-summary">
+      <div className="payment-stack client-pay">
+        <div className="setup-panel soft">
+          <h2>Opening Instant checkout…</h2>
           <p>
-            Instant pay <strong>{formatUsd(paidAmount)}</strong> → crypto to{" "}
-            <code className="break">{wallet.trim()}</code> on {network}
+            Pay with card. Crypto goes to{" "}
+            <code className="break">{wallet.trim()}</code> on {network}.
           </p>
+          {transakUrl ? (
+            <p className="form-hint">
+              If nothing opens,{" "}
+              <a href={transakUrl} rel="noreferrer">
+                continue Instant pay
+              </a>
+              .
+            </p>
+          ) : null}
           <button type="button" className="ghost-link" onClick={resetToPick}>
-            Change details
+            Back
           </button>
-        </div>
-        {status ? <p className="form-hint">{status}</p> : null}
-        {error ? <p className="form-error">{error}</p> : null}
-        <div className="stripe-embed onramp-embed">
-          <iframe
-            ref={iframeRef}
-            title="Instant crypto checkout"
-            src={transakUrl}
-            className="transak-iframe"
-            allow="camera; microphone; payment; clipboard-write"
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
         </div>
       </div>
     );
