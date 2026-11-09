@@ -7,71 +7,29 @@ import {
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 import {
-  CrossmintCheckoutProvider,
-  CrossmintEmbeddedCheckout,
-  CrossmintProvider,
-  useCrossmintCheckout,
-} from "@crossmint/client-sdk-react-ui";
-import { createOnrampOrder } from "@/app/actions/createOnrampOrder";
-import { CheckoutErrorBoundary } from "@/components/CheckoutErrorBoundary";
-import {
   CLIENT_NETWORKS,
-  CROSSMINT_CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
   formatUsd,
-  isCrossmintClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
   type ClientNetworkId,
 } from "@/lib/networks";
-import {
-  checkoutAppearance,
-  getClientApiKey,
-  type OnrampChain,
-} from "@/lib/crossmint";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
-const crossmintClientKey = getClientApiKey();
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 type PayPath = "instant" | "card";
-type Mode = "pick" | "transak" | "crossmint" | "card";
-
-type CrossmintOrder = {
-  orderId: string;
-  clientSecret: string;
-  email: string;
-  walletAddress: string;
-};
-
-function CrossmintPhaseBanner() {
-  const { order } = useCrossmintCheckout();
-  const [note, setNote] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!order) return;
-    if (order.phase === "completed") {
-      setNote("Done. Crypto is on the way to your wallet.");
-    } else if (order.phase === "delivery") {
-      setNote("Payment received. Delivering crypto to your wallet…");
-    } else if (order.phase === "payment") {
-      setNote("Enter card details below. Crypto goes straight to your wallet.");
-    }
-  }, [order]);
-
-  if (!note) return null;
-  return <p className="form-hint">{note}</p>;
-}
+type Mode = "pick" | "instant" | "card";
 
 /**
- * Instant = Transak (preferred) or Crossmint when keys exist → crypto to wallet.
- * Card = Stripe Checkout fallback (ops send) when Instant providers aren't ready.
+ * Instant = Ramp Network (crypto to your wallet after card pay).
+ * Card = Stripe Checkout backup (ops send after paid).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
@@ -86,20 +44,11 @@ export function ClientPayCheckout() {
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
-  const [transakUrl, setTransakUrl] = useState<string | null>(null);
-  const [transakReady, setTransakReady] = useState<boolean | null>(null);
-  const [signupUrl, setSignupUrl] = useState<string | null>(null);
-  const [crossmintOrder, setCrossmintOrder] = useState<CrossmintOrder | null>(
-    null,
-  );
+  const [instantUrl, setInstantUrl] = useState<string | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
-  const networks =
-    path === "instant" && crossmintClientKey && !transakReady
-      ? CROSSMINT_CLIENT_NETWORKS
-      : CLIENT_NETWORKS;
   const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
   const walletDirty = wallet.trim().length > 0;
@@ -108,138 +57,41 @@ export function ClientPayCheckout() {
   const canStart = amountOk && walletOk && emailOk;
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/onramp/transak/status");
-        const data = (await res.json()) as {
-          configured?: boolean;
-          signupUrl?: string;
-        };
-        if (!cancelled) {
-          setTransakReady(Boolean(data.configured));
-          if (data.signupUrl) setSignupUrl(data.signupUrl);
-        }
-      } catch {
-        if (!cancelled) setTransakReady(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (
-      path === "instant" &&
-      crossmintClientKey &&
-      !transakReady &&
-      !CROSSMINT_CLIENT_NETWORKS.some((n) => n.id === network)
-    ) {
-      setNetwork("polygon");
-    }
-  }, [path, network, transakReady]);
-
-  useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "transak" || mode === "crossmint" || mode === "card",
+      mode === "instant" || mode === "card",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
-  useEffect(() => {
-    if (mode !== "transak" || !transakUrl) return;
-    const onMessage = (event: MessageEvent) => {
-      const id = (event.data as { event_id?: string })?.event_id;
-      if (id === "TRANSAK_ORDER_SUCCESSFUL") {
-        setStatus("Paid — crypto is on the way to your wallet.");
-      } else if (id === "TRANSAK_ORDER_FAILED") {
-        setError("Payment failed. Try again or use Card.");
-      }
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [mode, transakUrl]);
-
   async function startInstant() {
-    // Prefer Transak (completes to wallet). Else Crossmint if client key present.
-    if (transakReady !== false) {
-      const res = await fetch("/api/onramp/transak/session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amountUsd,
-          email: email.trim() || undefined,
-          network,
-          wallet: normalizedWallet,
-        }),
-      });
-      const data = (await res.json()) as {
-        url?: string;
-        error?: string;
-        code?: string;
-        signupUrl?: string;
-      };
-      if (res.ok && data.url) {
-        // Transak staging often refuses iframe embedding ("refused to connect").
-        // Full-page open completes Instant: card → crypto to the locked wallet.
-        setWallet(normalizedWallet);
-        setPaidAmount(amountUsd!);
-        setMode("transak");
-        setStatus("Opening secure Instant checkout…");
-        setTransakUrl(data.url);
-        window.location.assign(data.url);
-        return;
-      }
-      if (data.code === "transak_not_configured") {
-        setTransakReady(false);
-        if (data.signupUrl) setSignupUrl(data.signupUrl);
-        // fall through to Crossmint
-      } else {
-        throw new Error(data.error || "Could not start instant crypto");
-      }
-    }
-
-    if (!crossmintClientKey) {
-      throw new Error(
-        "Instant crypto needs Transak keys (dashboard.transak.com — staging works now) or Crossmint production access.",
-      );
-    }
-    if (!email.trim()) {
-      throw new Error("Email is required for this checkout.");
-    }
-    if (!isCrossmintClientNetwork(network)) {
-      throw new Error("Choose Polygon, Base, or Solana for this checkout.");
-    }
-
-    const result = await createOnrampOrder({
-      email: email.trim().toLowerCase(),
-      amount: String(amountUsd),
-      chain: network as OnrampChain,
-      walletAddress: normalizedWallet,
+    const res = await fetch("/api/onramp/instant/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountUsd,
+        email: email.trim() || undefined,
+        network,
+        wallet: normalizedWallet,
+      }),
     });
-    if (!result.ok) {
-      throw new Error(
-        result.message ||
-          "Instant provider not ready yet. Use Card, or add Transak staging keys.",
-      );
+    const data = (await res.json()) as {
+      url?: string;
+      error?: string;
+      note?: string;
+    };
+    if (!res.ok || !data.url) {
+      throw new Error(data.error || "Could not start Instant crypto");
     }
-    if (!result.orderId || !result.clientSecret) {
-      throw new Error(
-        "Instant provider not ready yet. Use Card, or add Transak staging keys.",
-      );
-    }
-    setCrossmintOrder({
-      orderId: result.orderId,
-      clientSecret: result.clientSecret,
-      email: email.trim().toLowerCase(),
-      walletAddress: result.walletAddress || normalizedWallet,
-    });
+    setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
-    setWallet(result.walletAddress || normalizedWallet);
-    setMode("crossmint");
-    setStatus("Enter card details below. Crypto goes straight to your wallet.");
+    setInstantUrl(data.url);
+    setMode("instant");
+    setStatus(
+      data.note ||
+        "Opening secure Instant checkout — crypto goes to your wallet.",
+    );
+    window.location.assign(data.url);
   }
 
   async function startCard() {
@@ -274,7 +126,6 @@ export function ClientPayCheckout() {
 
   async function startPay() {
     setError(null);
-    setSignupUrl(null);
     if (!amountOk || amountUsd == null) {
       setError(
         `Enter an amount from ${formatUsd(MIN_AMOUNT_USD)} to ${formatUsd(MAX_AMOUNT_USD)}.`,
@@ -309,8 +160,7 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
-    setTransakUrl(null);
-    setCrossmintOrder(null);
+    setInstantUrl(null);
     setCardSecret(null);
     setPaidAmount(null);
     setStatus("");
@@ -318,7 +168,7 @@ export function ClientPayCheckout() {
     setMode("pick");
   }
 
-  if (mode === "transak" && paidAmount != null) {
+  if (mode === "instant" && paidAmount != null) {
     return (
       <div className="payment-stack client-pay">
         <div className="setup-panel soft">
@@ -327,10 +177,10 @@ export function ClientPayCheckout() {
             Pay with card. Crypto goes to{" "}
             <code className="break">{wallet.trim()}</code> on {network}.
           </p>
-          {transakUrl ? (
+          {instantUrl ? (
             <p className="form-hint">
               If nothing opens,{" "}
-              <a href={transakUrl} rel="noreferrer">
+              <a href={instantUrl} rel="noreferrer">
                 continue Instant pay
               </a>
               .
@@ -340,49 +190,6 @@ export function ClientPayCheckout() {
             Back
           </button>
         </div>
-      </div>
-    );
-  }
-
-  if (mode === "crossmint" && paidAmount != null && crossmintOrder) {
-    return (
-      <div className="payment-stack onramp-focus">
-        <div className="destination-summary">
-          <p>
-            Instant pay <strong>{formatUsd(paidAmount)}</strong> → crypto to{" "}
-            <code className="break">{wallet.trim()}</code> on {network}
-          </p>
-          <button type="button" className="ghost-link" onClick={resetToPick}>
-            Change details
-          </button>
-        </div>
-        <CheckoutErrorBoundary>
-          <CrossmintProvider apiKey={crossmintClientKey}>
-            <CrossmintCheckoutProvider>
-              <CrossmintPhaseBanner />
-              <div className="stripe-embed onramp-embed">
-                <CrossmintEmbeddedCheckout
-                  orderId={crossmintOrder.orderId}
-                  clientSecret={crossmintOrder.clientSecret}
-                  payment={{
-                    receiptEmail: crossmintOrder.email,
-                    crypto: { enabled: false },
-                    fiat: {
-                      enabled: true,
-                      allowedMethods: {
-                        card: true,
-                        applePay: true,
-                        googlePay: true,
-                      },
-                    },
-                    defaultMethod: "fiat",
-                  }}
-                  appearance={checkoutAppearance}
-                />
-              </div>
-            </CrossmintCheckoutProvider>
-          </CrossmintProvider>
-        </CheckoutErrorBoundary>
       </div>
     );
   }
@@ -417,8 +224,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant sends crypto to your wallet after you pay. Card is a backup if
-          Instant is not set up yet.
+          Instant pays with card and sends crypto straight to your wallet. Card
+          is a backup if you need it.
         </p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
@@ -473,7 +280,7 @@ export function ClientPayCheckout() {
             value={network}
             onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
           >
-            {networks.map((n) => (
+            {CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -502,7 +309,7 @@ export function ClientPayCheckout() {
         ) : null}
 
         <label className="field">
-          Email {path === "instant" && !transakReady ? "(required)" : "(optional)"}
+          Email (optional)
           <input
             type="email"
             autoComplete="email"
@@ -516,19 +323,6 @@ export function ClientPayCheckout() {
         ) : null}
 
         {error ? <p className="form-error">{error}</p> : null}
-        {path === "instant" && transakReady === false && !crossmintClientKey ? (
-          <p className="form-hint">
-            Instant needs Transak staging keys from{" "}
-            {signupUrl ? (
-              <a href={signupUrl} target="_blank" rel="noreferrer">
-                dashboard.transak.com
-              </a>
-            ) : (
-              "dashboard.transak.com"
-            )}
-            . Until then, use Card.
-          </p>
-        ) : null}
 
         <button
           type="button"
