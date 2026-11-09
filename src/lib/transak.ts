@@ -141,7 +141,8 @@ async function createWidgetForEnv(
     referrerDomain: input.referrerDomain
       .replace(/^https?:\/\//, "")
       .replace(/\/$/, ""),
-    environment: env,
+    // Transak validates this as lowercase ("staging" / "production").
+    environment: env === "STAGING" ? "staging" : "production",
     productsAvailed: "BUY",
     cryptoCurrencyCode: asset.cryptoCurrencyCode,
     network: asset.network,
