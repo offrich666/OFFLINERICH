@@ -34,8 +34,8 @@ type PayPath = "instant" | "card";
 type Mode = "pick" | "instant" | "card";
 
 /**
- * Instant = on-page thirdweb BuyWidget (card → USDC to wallet). Stays on site.
- * Card = Stripe embed backup only.
+ * Instant = on-page thirdweb buy-widget (card only → USDC to wallet). Stays on site.
+ * Card = Stripe embed backup only (slower ops delivery).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
@@ -86,7 +86,7 @@ export function ClientPayCheckout() {
     setPaidAmount(amountUsd!);
     setMode("instant");
     setStatus(
-      "Pay with card below — crypto goes straight to your wallet on this page.",
+      "Card checkout stays on this page — USDC goes straight to your wallet.",
     );
   }
 
@@ -175,6 +175,12 @@ export function ClientPayCheckout() {
           amountUsd={paidAmount}
           network={network}
           walletAddress={normalizedWallet || wallet.trim()}
+          onPaid={() =>
+            setStatus(
+              "Paid — USDC is settling to your wallet. Keep this page open a moment.",
+            )
+          }
+          onFailed={(message) => setError(message)}
         />
       </div>
     );
@@ -210,8 +216,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant keeps you on this page — pay with card, crypto goes to your
-          wallet. Card backup is slower.
+          Instant: pay with card on this page — USDC lands in your wallet. No
+          MoonPay hop. Card backup is slower.
         </p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">

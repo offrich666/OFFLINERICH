@@ -455,18 +455,47 @@ code {
 
 .thirdweb-instant-embed {
   display: flex;
-  justify-content: center;
-  padding: 0.5rem 0 1.25rem;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0.35rem 0 1rem;
+  gap: 0.55rem;
+}
+
+.instant-buy-hint,
+.instant-paid-note {
+  text-align: center;
+  margin: 0;
+  padding: 0 0.35rem;
 }
 
 .thirdweb-instant-frame {
+  display: block;
   width: 100%;
-  max-width: 480px;
-  min-height: 720px;
-  height: min(80vh, 820px);
+  min-height: min(680px, 85dvh);
+  height: min(780px, 88dvh);
   border: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   background: #12100e;
+}
+
+@media (max-width: 640px) {
+  .thirdweb-instant-embed {
+    max-width: none;
+    padding: 0 0 0.75rem;
+  }
+
+  .thirdweb-instant-frame {
+    min-height: min(720px, 90dvh);
+    height: min(860px, 92dvh);
+    border-radius: 10px;
+  }
+
+  .onramp-focus .destination-summary {
+    font-size: 0.92rem;
+  }
 }
 
 .onramp-embed {

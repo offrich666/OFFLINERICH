@@ -46,7 +46,10 @@ export function isThirdwebInstantNetwork(
   return THIRDWEB_INSTANT_NETWORKS.some((n) => n.id === id);
 }
 
-/** On-page Instant widget URL — branding off, fiat buy to USDC. */
+/**
+ * On-page Instant buy URL — card only, locked USDC amount → client wallet.
+ * Uses bridge/buy-widget (not the Swap bridge/widget that forces provider hops).
+ */
 export function buildThirdwebInstantEmbedUrl(input: {
   amountUsd: number;
   network: ThirdwebInstantNetworkId;
@@ -58,19 +61,23 @@ export function buildThirdwebInstantEmbedUrl(input: {
     throw new Error("Instant is not configured");
   }
 
+  const amount = String(input.amountUsd);
   const params = new URLSearchParams({
     clientId,
     theme: "dark",
     currency: "USD",
-    buyWithFiat: "true",
+    // Card only — no crypto swap / provider picker
+    paymentMethods: "card",
     showThirdwebBranding: "false",
-    persistTokenSelections: "false",
-    outputChain: String(asset.chainId),
-    outputCurrency: asset.tokenAddress,
-    outputCurrencyAmount: String(input.amountUsd),
-    // Prefill destination when the widget supports it
+    chain: String(asset.chainId),
+    tokenAddress: asset.tokenAddress,
+    amount,
+    amountEditable: "false",
+    tokenEditable: "false",
     receiverAddress: input.walletAddress,
+    title: "Buy USDC",
+    description: `${amount} USDC to your wallet`,
   });
 
-  return `https://thirdweb.com/bridge/widget?${params.toString()}`;
+  return `https://thirdweb.com/bridge/buy-widget?${params.toString()}`;
 }

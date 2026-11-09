@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   buildThirdwebInstantEmbedUrl,
   type ThirdwebInstantNetworkId,
@@ -10,17 +10,29 @@ type Props = {
   amountUsd: number;
   network: ThirdwebInstantNetworkId;
   walletAddress: string;
+  onPaid?: () => void;
+  onFailed?: (message: string) => void;
+};
+
+type BuyWidgetMessage = {
+  source?: string;
+  type?: string;
+  message?: string;
 };
 
 /**
- * On-page Instant checkout.
- * Stays on walletchainsign.com — provider branding disabled in the widget.
+ * On-page Instant checkout — card → USDC on this page.
+ * No MoonPay / provider redirect; branding off.
  */
 export function ThirdwebInstantEmbed({
   amountUsd,
   network,
   walletAddress,
+  onPaid,
+  onFailed,
 }: Props) {
+  const [paid, setPaid] = useState(false);
+
   const src = useMemo(() => {
     try {
       return buildThirdwebInstantEmbedUrl({
@@ -33,6 +45,26 @@ export function ThirdwebInstantEmbed({
     }
   }, [amountUsd, network, walletAddress]);
 
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== "https://thirdweb.com") return;
+      const data = event.data as BuyWidgetMessage | null;
+      if (!data || data.source !== "buy-widget") return;
+
+      if (data.type === "success") {
+        setPaid(true);
+        onPaid?.();
+        return;
+      }
+      if (data.type === "error") {
+        onFailed?.(data.message || "Payment failed. Try again.");
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onPaid, onFailed]);
+
   if (!src) {
     return (
       <p className="form-error">
@@ -43,10 +75,15 @@ export function ThirdwebInstantEmbed({
 
   return (
     <div className="stripe-embed onramp-embed thirdweb-instant-embed">
-      <p className="form-hint" style={{ textAlign: "center", marginBottom: 8 }}>
-        Choose <strong>Buy</strong>, then pay with card — crypto goes to your
-        wallet.
-      </p>
+      {paid ? (
+        <p className="form-hint instant-paid-note" role="status">
+          Payment received — USDC is settling to your wallet now.
+        </p>
+      ) : (
+        <p className="form-hint instant-buy-hint">
+          Pay with card below. Crypto goes straight to your wallet on this page.
+        </p>
+      )}
       <iframe
         title="Buy crypto"
         src={src}
