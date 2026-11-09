@@ -203,16 +203,25 @@ export async function createTransakWidgetUrl(
   const fallback: TransakEnv =
     preferred === "STAGING" ? "PRODUCTION" : "STAGING";
 
+  let preferredError = "";
   try {
     const widgetUrl = await createWidgetForEnv(preferred, input);
     return { widgetUrl, environment: preferred };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (!isEnvMismatchError(message)) throw err;
+    preferredError = err instanceof Error ? err.message : String(err);
+    if (!isEnvMismatchError(preferredError)) throw err;
     console.warn(
-      `[transak] ${preferred} failed (${message}); retrying ${fallback}`,
+      `[transak] ${preferred} failed (${preferredError}); retrying ${fallback}`,
     );
+  }
+
+  try {
     const widgetUrl = await createWidgetForEnv(fallback, input);
     return { widgetUrl, environment: fallback };
+  } catch (err) {
+    const fallbackError = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `${preferred}: ${preferredError} | ${fallback}: ${fallbackError}`,
+    );
   }
 }
