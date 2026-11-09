@@ -1,22 +1,24 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { loadStripeOnramp } from "@stripe/crypto";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 import {
-  CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
+  ONRAMP_CLIENT_NETWORKS,
   checkoutAmountRangeLabel,
   formatUsd,
+  isOnrampClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
-  type ClientNetworkId,
+  type OnrampClientNetworkId,
 } from "@/lib/networks";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
@@ -25,18 +27,18 @@ const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 type PayPath = "instant" | "card";
-type Mode = "pick" | "instant" | "card";
+type Mode = "pick" | "onramp" | "card";
 
 /**
- * Instant = Ramp Network (crypto to your wallet after card pay).
- * Card = Stripe Checkout backup (ops send after paid).
+ * Instant = Stripe Crypto Onramp embedded on this page (no off-site redirect).
+ * Card = Stripe Checkout embed backup.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
   const [path, setPath] = useState<PayPath>("instant");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
+  const [network, setNetwork] = useState<OnrampClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
   const [status, setStatus] = useState("");
@@ -44,7 +46,9 @@ export function ClientPayCheckout() {
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
-  const [instantUrl, setInstantUrl] = useState<string | null>(null);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const secretRef = useRef<string | null>(null);
+  const mountedOnceRef = useRef(false);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -54,18 +58,75 @@ export function ClientPayCheckout() {
   const walletDirty = wallet.trim().length > 0;
   const emailOk =
     !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  const canStart = amountOk && walletOk && emailOk;
+  const canStart = amountOk && walletOk && emailOk && Boolean(publishableKey);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "instant" || mode === "card",
+      mode === "onramp" || mode === "card",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
+  useEffect(() => {
+    if (mode !== "onramp" || !secretRef.current || !publishableKey) return;
+    if (mountedOnceRef.current) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        if (mountRef.current) mountRef.current.innerHTML = "";
+        const stripeOnramp = await loadStripeOnramp(publishableKey);
+        if (!stripeOnramp || cancelled) {
+          throw new Error("Could not load payment form");
+        }
+        const session = stripeOnramp.createSession({
+          clientSecret: secretRef.current!,
+          appearance: { theme: "dark" },
+        });
+        session.addEventListener("onramp_session_updated", (e) => {
+          const next = e.payload?.session?.status as string | undefined;
+          if (next === "fulfillment_complete") {
+            setStatus("Paid — crypto is on the way to your wallet.");
+          } else if (next === "fulfillment_processing") {
+            setStatus("Payment received — delivering crypto…");
+          } else if (next === "requires_payment") {
+            setStatus("Enter card details below to finish.");
+          } else if (next) {
+            setStatus(`Status: ${next}`);
+          }
+        });
+        if (mountRef.current && !cancelled) {
+          session.mount(mountRef.current);
+          mountedOnceRef.current = true;
+          setStatus("Complete payment below — you stay on this page.");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Could not open checkout",
+          );
+          secretRef.current = null;
+          mountedOnceRef.current = false;
+          setMode("pick");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
   async function startInstant() {
-    const res = await fetch("/api/onramp/instant/session", {
+    if (!publishableKey) {
+      throw new Error("Checkout is not configured yet.");
+    }
+    if (!isOnrampClientNetwork(network)) {
+      throw new Error("Choose Ethereum or Bitcoin for Instant.");
+    }
+
+    const res = await fetch("/api/onramp/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -76,22 +137,20 @@ export function ClientPayCheckout() {
       }),
     });
     const data = (await res.json()) as {
-      url?: string;
+      clientSecret?: string;
       error?: string;
-      note?: string;
     };
-    if (!res.ok || !data.url) {
-      throw new Error(data.error || "Could not start Instant crypto");
+    if (!res.ok || !data.clientSecret) {
+      throw new Error(data.error || "Could not start Instant checkout");
     }
+
+    // Never redirect off-site — embed Stripe Onramp on this page only.
+    secretRef.current = data.clientSecret;
+    mountedOnceRef.current = false;
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
-    setInstantUrl(data.url);
-    setMode("instant");
-    setStatus(
-      data.note ||
-        "Opening secure Instant checkout — crypto goes to your wallet.",
-    );
-    window.location.assign(data.url);
+    setMode("onramp");
+    setStatus("Loading secure form on this page…");
   }
 
   async function startCard() {
@@ -136,9 +195,7 @@ export function ClientPayCheckout() {
       setError(
         network === "bitcoin"
           ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
-          : network === "solana"
-            ? "Enter a valid Solana wallet."
-            : "Enter a valid wallet address (0x + 40 hex).",
+          : "Enter a valid wallet address (0x + 40 hex).",
       );
       return;
     }
@@ -160,7 +217,9 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
-    setInstantUrl(null);
+    secretRef.current = null;
+    mountedOnceRef.current = false;
+    if (mountRef.current) mountRef.current.innerHTML = "";
     setCardSecret(null);
     setPaidAmount(null);
     setStatus("");
@@ -168,28 +227,21 @@ export function ClientPayCheckout() {
     setMode("pick");
   }
 
-  if (mode === "instant" && paidAmount != null) {
+  if (mode === "onramp" && paidAmount != null) {
     return (
-      <div className="payment-stack client-pay">
-        <div className="setup-panel soft">
-          <h2>Opening Instant checkout…</h2>
+      <div className="payment-stack onramp-focus">
+        <div className="destination-summary">
           <p>
-            Pay with card. Crypto goes to{" "}
-            <code className="break">{wallet.trim()}</code> on {network}.
+            Instant pay <strong>{formatUsd(paidAmount)}</strong> → crypto to{" "}
+            <code className="break">{wallet.trim()}</code> on {network}
           </p>
-          {instantUrl ? (
-            <p className="form-hint">
-              If nothing opens,{" "}
-              <a href={instantUrl} rel="noreferrer">
-                continue Instant pay
-              </a>
-              .
-            </p>
-          ) : null}
           <button type="button" className="ghost-link" onClick={resetToPick}>
-            Back
+            Change details
           </button>
         </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <div className="stripe-embed onramp-embed" ref={mountRef} />
       </div>
     );
   }
@@ -224,8 +276,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant pays with card and sends crypto straight to your wallet. Card
-          is a backup if you need it.
+          Instant keeps you on this page — pay with card, crypto goes to your
+          wallet. Card is a backup if you need it.
         </p>
 
         <div className="amount-chips path-chips" role="group" aria-label="Pay method">
@@ -278,9 +330,11 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
+            onChange={(e) =>
+              setNetwork(e.target.value as OnrampClientNetworkId)
+            }
           >
-            {CLIENT_NETWORKS.map((n) => (
+            {ONRAMP_CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -293,19 +347,17 @@ export function ClientPayCheckout() {
           <input
             value={wallet}
             onChange={(e) => setWallet(e.target.value)}
-            placeholder={
-              network === "bitcoin"
-                ? "bc1…"
-                : network === "solana"
-                  ? "Solana address"
-                  : "0x…"
-            }
+            placeholder={network === "bitcoin" ? "bc1…" : "0x…"}
             autoComplete="off"
             spellCheck={false}
           />
         </label>
         {walletDirty && !walletOk ? (
-          <p className="form-error">Enter a valid wallet for this network.</p>
+          <p className="form-error">
+            {network === "bitcoin"
+              ? "Enter a valid Bitcoin address (bc1… / 1… / 3…)."
+              : "Enter a valid wallet (0x + 40 hex characters)."}
+          </p>
         ) : null}
 
         <label className="field">
@@ -339,7 +391,7 @@ export function ClientPayCheckout() {
         <p className="form-hint">
           {path === "card"
             ? "Card clears on this page; crypto is sent to your wallet after payment."
-            : "Instant delivers crypto to your wallet when payment completes."}
+            : "You stay on this page. Instant delivers crypto when payment completes."}
         </p>
       </div>
     </div>
