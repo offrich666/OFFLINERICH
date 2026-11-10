@@ -6,6 +6,7 @@ import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
+import { PaybisInstantEmbed } from "@/components/PaybisInstantEmbed";
 import { ThirdwebInstantEmbed } from "@/components/ThirdwebInstantEmbed";
 import {
   MAX_AMOUNT_USD,
@@ -32,13 +33,17 @@ const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 type PayPath = "instant" | "card";
 type Mode = "pick" | "instant" | "card";
+type InstantProvider = "paybis" | "thirdweb";
 
 /**
- * Instant = on-page thirdweb buy-widget (card → USDC). Stays on this site.
+ * Instant = on-page Paybis embed (preferred) or thirdweb buy-widget.
  * Card = Stripe Embedded Checkout backup.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
+  const [paybisReady, setPaybisReady] = useState(false);
+  const [instantProvider, setInstantProvider] =
+    useState<InstantProvider>("thirdweb");
   const [path, setPath] = useState<PayPath>(
     thirdwebReady ? "instant" : "card",
   );
@@ -61,11 +66,45 @@ export function ClientPayCheckout() {
   const walletDirty = wallet.trim().length > 0;
   const emailOk =
     !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const instantReady = paybisReady || thirdwebReady;
   const canStart =
     amountOk &&
     walletOk &&
     emailOk &&
-    (path === "instant" ? thirdwebReady : Boolean(publishableKey));
+    (path === "instant" ? instantReady : Boolean(publishableKey));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onramp/paybis/session")
+      .then((r) => r.json())
+      .then((data: { ready?: boolean }) => {
+        if (cancelled) return;
+        const ready = Boolean(data.ready);
+        setPaybisReady(ready);
+        if (ready) {
+          setInstantProvider("paybis");
+          setPath("instant");
+        } else if (thirdwebReady) {
+          setInstantProvider("thirdweb");
+          setPath("instant");
+        } else {
+          setPath("card");
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPaybisReady(false);
+        if (thirdwebReady) {
+          setInstantProvider("thirdweb");
+          setPath("instant");
+        } else {
+          setPath("card");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
@@ -76,14 +115,14 @@ export function ClientPayCheckout() {
   }, [mode]);
 
   function startInstant() {
-    if (!thirdwebReady) throw new Error("Instant is not configured yet.");
+    if (!instantReady) throw new Error("Instant is not configured yet.");
     if (!isThirdwebInstantNetwork(network)) {
       throw new Error("Choose Ethereum, Polygon, Base, or BNB Chain.");
     }
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
     setMode("instant");
-    setStatus("Pay with card below — crypto goes to your wallet on this page.");
+    setStatus("");
   }
 
   async function startCard() {
@@ -167,15 +206,28 @@ export function ClientPayCheckout() {
         </div>
         {status ? <p className="form-hint">{status}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        <ThirdwebInstantEmbed
-          amountUsd={paidAmount}
-          network={network}
-          walletAddress={normalizedWallet || wallet.trim()}
-          onPaid={() =>
-            setStatus("Paid — crypto is settling to your wallet.")
-          }
-          onFailed={(message) => setError(message)}
-        />
+        {instantProvider === "paybis" ? (
+          <PaybisInstantEmbed
+            amountUsd={paidAmount}
+            network={network}
+            walletAddress={normalizedWallet || wallet.trim()}
+            email={email.trim() || undefined}
+            onPaid={() =>
+              setStatus("Paid — crypto is settling to your wallet.")
+            }
+            onFailed={(message) => setError(message)}
+          />
+        ) : (
+          <ThirdwebInstantEmbed
+            amountUsd={paidAmount}
+            network={network}
+            walletAddress={normalizedWallet || wallet.trim()}
+            onPaid={() =>
+              setStatus("Paid — crypto is settling to your wallet.")
+            }
+            onFailed={(message) => setError(message)}
+          />
+        )}
       </div>
     );
   }
@@ -223,7 +275,7 @@ export function ClientPayCheckout() {
             type="button"
             className={path === "instant" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("instant")}
-            disabled={!thirdwebReady}
+            disabled={!instantReady}
           >
             Instant
           </button>
@@ -236,7 +288,7 @@ export function ClientPayCheckout() {
           </button>
         </div>
 
-        {!thirdwebReady ? (
+        {!instantReady ? (
           <p className="form-hint">
             Instant is finishing setup — use Card backup for now.
           </p>

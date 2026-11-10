@@ -484,6 +484,10 @@ code {
   background: #12100e;
 }
 
+.paybis-instant-frame {
+  background: #0b0f14;
+}
+
 @media (max-width: 640px) {
   .thirdweb-instant-embed {
     max-width: none;
