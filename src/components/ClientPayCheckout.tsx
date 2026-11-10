@@ -7,12 +7,14 @@ import {
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
 import { CrossmintB2CEmbed } from "@/components/CrossmintB2CEmbed";
+import { StripeInstantEmbed } from "@/components/StripeInstantEmbed";
 import { ThirdwebInstantEmbed } from "@/components/ThirdwebInstantEmbed";
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
   formatUsd,
+  isOnrampClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
@@ -29,16 +31,18 @@ import { getClientApiKey } from "@/lib/crossmint";
 
 const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
+const stripeOnrampReady = Boolean(publishableKey);
 const thirdwebReady = Boolean(getThirdwebClientId());
 const crossmintReady = Boolean(getClientApiKey());
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
-type PayPath = "instant" | "crossmint" | "card";
-type Mode = "pick" | "instant" | "crossmint" | "card";
+type PayPath = "instant" | "crossmint" | "crossmintOnramp" | "card";
+type Mode = "pick" | "instant" | "crossmint" | "crossmintOnramp" | "card";
 
 /**
  * Instant = thirdweb buy-widget on-page.
- * Buy with Crossmint Business B2C = Crossmint embedded onramp on-page.
+ * Buy with Crossmint Business B2C = Crossmint embedded checkout.
+ * Crossmint Onramp = Stripe Crypto Onramp on-page (card → crypto to wallet).
  * Card = Stripe Embedded Checkout backup.
  */
 export function ClientPayCheckout() {
@@ -56,16 +60,20 @@ export function ClientPayCheckout() {
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
+  const [onrampSecret, setOnrampSecret] = useState<string | null>(null);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
   const amountLabel = amountOk ? formatUsd(amountUsd!) : rangeLabel;
-  const normalizedWallet = normalizeWalletAddress(network, wallet);
-  const walletOk = isValidWalletAddress(network, wallet);
+  const onrampNetwork = isOnrampClientNetwork(network) ? network : "ethereum";
+  const walletNetwork = path === "crossmintOnramp" ? onrampNetwork : network;
+  const normalizedWallet = normalizeWalletAddress(walletNetwork, wallet);
+  const walletOk = isValidWalletAddress(walletNetwork, wallet);
   const walletDirty = wallet.trim().length > 0;
   const emailTrimmed = email.trim();
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed);
-  const emailRequiredOk = path === "crossmint" ? emailOk : !emailTrimmed || emailOk;
+  const emailRequiredOk =
+    path === "crossmint" ? emailOk : !emailTrimmed || emailOk;
 
   const canStart =
     amountOk &&
@@ -75,12 +83,23 @@ export function ClientPayCheckout() {
       ? thirdwebReady
       : path === "crossmint"
         ? crossmintReady && emailOk
-        : Boolean(publishableKey));
+        : path === "crossmintOnramp"
+          ? stripeOnrampReady
+          : Boolean(publishableKey));
+
+  useEffect(() => {
+    if (path === "crossmintOnramp" && network !== "ethereum") {
+      setNetwork("ethereum");
+    }
+  }, [path, network]);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "instant" || mode === "crossmint" || mode === "card",
+      mode === "instant" ||
+        mode === "crossmint" ||
+        mode === "crossmintOnramp" ||
+        mode === "card",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
@@ -109,6 +128,35 @@ export function ClientPayCheckout() {
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
     setMode("crossmint");
+    setStatus("");
+  }
+
+  async function startCrossmintOnramp() {
+    if (!stripeOnrampReady) {
+      throw new Error("Crossmint Onramp is not configured yet.");
+    }
+    const res = await fetch("/api/onramp/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountUsd,
+        email: emailTrimmed || undefined,
+        network: "ethereum",
+        wallet: normalizedWallet,
+      }),
+    });
+    const data = (await res.json()) as {
+      clientSecret?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.clientSecret) {
+      throw new Error(data.error || "Could not start Crossmint Onramp");
+    }
+    setOnrampSecret(data.clientSecret);
+    setPaidAmount(amountUsd!);
+    setWallet(normalizedWallet);
+    setNetwork("ethereum");
+    setMode("crossmintOnramp");
     setStatus("");
   }
 
@@ -167,6 +215,7 @@ export function ClientPayCheckout() {
     try {
       if (path === "card") await startCard();
       else if (path === "crossmint") startCrossmint();
+      else if (path === "crossmintOnramp") await startCrossmintOnramp();
       else startInstant();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
@@ -178,6 +227,7 @@ export function ClientPayCheckout() {
 
   function resetToPick() {
     setCardSecret(null);
+    setOnrampSecret(null);
     setPaidAmount(null);
     setStatus("");
     setError(null);
@@ -235,6 +285,29 @@ export function ClientPayCheckout() {
     );
   }
 
+  if (mode === "crossmintOnramp" && paidAmount != null && onrampSecret) {
+    return (
+      <div className="payment-stack onramp-focus">
+        <div className="destination-summary">
+          <p>
+            Crossmint Onramp <strong>{formatUsd(paidAmount)}</strong> → crypto
+            to <code className="break">{wallet.trim()}</code> on ethereum
+          </p>
+          <button type="button" className="ghost-link" onClick={resetToPick}>
+            Change details
+          </button>
+        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <StripeInstantEmbed
+          clientSecret={onrampSecret}
+          onPaid={() => setStatus("Paid — crypto is settling to your wallet.")}
+          onFailed={(message) => setError(message)}
+        />
+      </div>
+    );
+  }
+
   if (mode === "card" && paidAmount != null && cardSecret && stripePromise) {
     return (
       <div className="payment-stack onramp-focus">
@@ -265,8 +338,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant or Crossmint Business B2C stay on this page. Card backup is
-          also available.
+          Instant, Crossmint Business B2C, and Crossmint Onramp stay on this
+          page.
         </p>
 
         <div
@@ -295,6 +368,18 @@ export function ClientPayCheckout() {
           </button>
           <button
             type="button"
+            className={
+              path === "crossmintOnramp"
+                ? "amount-chip active"
+                : "amount-chip"
+            }
+            onClick={() => setPath("crossmintOnramp")}
+            disabled={!stripeOnrampReady}
+          >
+            Crossmint Onramp
+          </button>
+          <button
+            type="button"
             className={path === "card" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("card")}
           >
@@ -305,7 +390,14 @@ export function ClientPayCheckout() {
         {path === "crossmint" && !crossmintReady ? (
           <p className="form-hint">
             Crossmint Business B2C needs the Crossmint client key configured.
-            Use Instant or Card backup for now.
+            Use Instant, Crossmint Onramp, or Card backup for now.
+          </p>
+        ) : null}
+
+        {path === "crossmintOnramp" ? (
+          <p className="form-hint">
+            Crossmint Onramp uses Stripe Crypto Onramp on this page (Ethereum
+            USDC to your wallet).
           </p>
         ) : null}
 
@@ -348,16 +440,21 @@ export function ClientPayCheckout() {
         <label className="field">
           Network
           <select
-            value={network}
+            value={path === "crossmintOnramp" ? "ethereum" : network}
             onChange={(e) =>
               setNetwork(e.target.value as ThirdwebInstantNetworkId)
             }
+            disabled={path === "crossmintOnramp"}
           >
-            {THIRDWEB_INSTANT_NETWORKS.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label} ({n.asset})
-              </option>
-            ))}
+            {path === "crossmintOnramp" ? (
+              <option value="ethereum">Ethereum (USDC)</option>
+            ) : (
+              THIRDWEB_INSTANT_NETWORKS.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.label} ({n.asset})
+                </option>
+              ))
+            )}
           </select>
         </label>
 
@@ -389,7 +486,9 @@ export function ClientPayCheckout() {
           />
         </label>
         {path === "crossmint" && !emailOk ? (
-          <p className="form-error">Email is required for Crossmint Business B2C.</p>
+          <p className="form-error">
+            Email is required for Crossmint Business B2C.
+          </p>
         ) : null}
         {path !== "crossmint" && emailTrimmed && !emailOk ? (
           <p className="form-error">Enter a valid email.</p>
@@ -409,14 +508,18 @@ export function ClientPayCheckout() {
               ? `Card backup ${amountOk ? amountLabel : rangeLabel}`
               : path === "crossmint"
                 ? `Buy with Crossmint Business B2C ${amountOk ? amountLabel : rangeLabel}`
-                : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
+                : path === "crossmintOnramp"
+                  ? `Crossmint Onramp ${amountOk ? amountLabel : rangeLabel}`
+                  : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
           {path === "card"
             ? "Card backup pays on this page; crypto is sent later."
             : path === "crossmint"
               ? "Crossmint Business B2C stays on this page — card / Apple Pay / Google Pay."
-              : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
+              : path === "crossmintOnramp"
+                ? "Crossmint Onramp stays on this page — Stripe card → crypto to your wallet."
+                : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
         </p>
       </div>
     </div>

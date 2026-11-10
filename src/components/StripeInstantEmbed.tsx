@@ -30,7 +30,8 @@ export function StripeInstantEmbed({ clientSecret, onPaid, onFailed }: Props) {
   return (
     <div className="stripe-embed onramp-embed thirdweb-instant-embed">
       <p className="form-hint instant-buy-hint">
-        Pay with card below. Crypto goes to your wallet on this page.
+        Crossmint Onramp — pay with card below. Crypto goes to your wallet on
+        this page.
       </p>
       <CryptoElements stripeOnramp={stripeOnrampPromise}>
         <OnrampElement

@@ -20,7 +20,7 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant or Buy with Crossmint Business B2C on this page.
+            Instant, Crossmint Business B2C, or Crossmint Onramp on this page.
           </p>
         </div>
 
