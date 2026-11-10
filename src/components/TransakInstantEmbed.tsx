@@ -88,14 +88,10 @@ export function TransakInstantEmbed({
       const data = event.data as TransakMessage | null;
       if (!data?.event_id) return;
 
-      if (
-        data.event_id === "TRANSAK_ORDER_SUCCESSFUL" ||
-        data.event_id === "TRANSAK_WIDGET_CLOSE_REQUEST"
-      ) {
-        if (data.event_id === "TRANSAK_ORDER_SUCCESSFUL") {
-          setPaid(true);
-          onPaid?.();
-        }
+      if (data.event_id === "TRANSAK_ORDER_SUCCESSFUL") {
+        setPaid(true);
+        onPaid?.();
+        return;
       }
       if (data.event_id === "TRANSAK_ORDER_FAILED") {
         onFailed?.("Payment failed. Try again with another card.");
