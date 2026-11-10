@@ -518,6 +518,24 @@ code {
   background: #0f1116;
 }
 
+.instant-complete-panel {
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.instant-complete-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.instant-complete-actions .primary-cta {
+  width: min(100%, 320px);
+}
+
 @media (max-width: 640px) {
   .stripe-onramp-frame {
     min-height: min(720px, 90dvh);
