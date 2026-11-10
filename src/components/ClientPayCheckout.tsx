@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
+import { PaybisInstantEmbed } from "@/components/PaybisInstantEmbed";
 import { ThirdwebInstantEmbed } from "@/components/ThirdwebInstantEmbed";
 import {
   MAX_AMOUNT_USD,
@@ -30,16 +31,18 @@ const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const thirdwebReady = Boolean(getThirdwebClientId());
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
-type PayPath = "instant" | "paybis" | "card";
-type Mode = "pick" | "instant" | "card";
+type PayPath = "instant" | "buyInstant" | "paybis" | "card";
+type Mode = "pick" | "instant" | "buyInstant" | "card";
 
 /**
- * Instant = current live thirdweb buy-widget (unchanged).
- * Paybis = redirect to paybis.com / signed Paybis widget to pay there.
+ * Instant = thirdweb buy-widget on-page.
+ * Buy Instant = Paybis widget embedded on-page (no redirect).
+ * Paybis = redirect to paybis.com.
  * Card = Stripe Embedded Checkout backup.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
+  const [embedReady, setEmbedReady] = useState(false);
   const [path, setPath] = useState<PayPath>(
     thirdwebReady ? "instant" : "card",
   );
@@ -69,9 +72,36 @@ export function ClientPayCheckout() {
     emailOk &&
     (path === "instant"
       ? thirdwebReady
-      : path === "paybis"
+      : path === "buyInstant"
         ? true
-        : Boolean(publishableKey));
+        : path === "paybis"
+          ? true
+          : Boolean(publishableKey));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onramp/paybis/session")
+      .then((r) => r.json())
+      .then((data: { embedReady?: boolean; partnerConfigured?: boolean }) => {
+        if (!cancelled) {
+          setEmbedReady(Boolean(data.embedReady ?? data.partnerConfigured));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEmbedReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle(
+      "onramp-active",
+      mode === "instant" || mode === "buyInstant" || mode === "card",
+    );
+    return () => document.documentElement.classList.remove("onramp-active");
+  }, [mode]);
 
   function startInstant() {
     if (!thirdwebReady) throw new Error("Instant is not configured yet.");
@@ -81,6 +111,16 @@ export function ClientPayCheckout() {
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
     setMode("instant");
+    setStatus("");
+  }
+
+  function startBuyInstant() {
+    if (!isThirdwebInstantNetwork(network)) {
+      throw new Error("Choose Ethereum, Polygon, Base, or BNB Chain.");
+    }
+    setWallet(normalizedWallet);
+    setPaidAmount(amountUsd!);
+    setMode("buyInstant");
     setStatus("");
   }
 
@@ -96,13 +136,13 @@ export function ClientPayCheckout() {
         network,
         wallet: normalizedWallet,
         email: email.trim() || undefined,
+        mode: "redirect",
       }),
     });
     const data = (await res.json()) as { url?: string; error?: string };
     if (!res.ok || !data.url) {
       throw new Error(data.error || "Could not open Paybis");
     }
-    // Full redirect to Paybis so the buyer pays on their site.
     window.location.assign(data.url);
   }
 
@@ -157,6 +197,7 @@ export function ClientPayCheckout() {
     try {
       if (path === "card") await startCard();
       else if (path === "paybis") await startPaybisRedirect();
+      else if (path === "buyInstant") startBuyInstant();
       else startInstant();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
@@ -199,6 +240,32 @@ export function ClientPayCheckout() {
     );
   }
 
+  if (mode === "buyInstant" && paidAmount != null) {
+    return (
+      <div className="payment-stack onramp-focus">
+        <div className="destination-summary">
+          <p>
+            Buy Instant <strong>{formatUsd(paidAmount)}</strong> via Paybis →{" "}
+            <code className="break">{wallet.trim()}</code> on {network}
+          </p>
+          <button type="button" className="ghost-link" onClick={resetToPick}>
+            Change details
+          </button>
+        </div>
+        {status ? <p className="form-hint">{status}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <PaybisInstantEmbed
+          amountUsd={paidAmount}
+          network={network}
+          walletAddress={normalizedWallet || wallet.trim()}
+          email={email.trim() || undefined}
+          onPaid={() => setStatus("Paid — crypto is settling to your wallet.")}
+          onFailed={(message) => setError(message)}
+        />
+      </div>
+    );
+  }
+
   if (mode === "card" && paidAmount != null && cardSecret && stripePromise) {
     return (
       <div className="payment-stack onramp-focus">
@@ -229,7 +296,7 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant stays on this page. Paybis opens paybis.com so you pay there.
+          Instant or Buy Instant stay on this page. Paybis opens paybis.com.
         </p>
 
         <div
@@ -247,6 +314,15 @@ export function ClientPayCheckout() {
           </button>
           <button
             type="button"
+            className={
+              path === "buyInstant" ? "amount-chip active" : "amount-chip"
+            }
+            onClick={() => setPath("buyInstant")}
+          >
+            Buy Instant
+          </button>
+          <button
+            type="button"
             className={path === "paybis" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("paybis")}
           >
@@ -260,6 +336,14 @@ export function ClientPayCheckout() {
             Card backup
           </button>
         </div>
+
+        {path === "buyInstant" && !embedReady ? (
+          <p className="form-hint">
+            Buy Instant embeds Paybis on this page once Partner ID + HMAC are
+            set (richoffline666@gmail.com). Until then use Paybis redirect or
+            Instant.
+          </p>
+        ) : null}
 
         {!thirdwebReady ? (
           <p className="form-hint">
@@ -349,7 +433,7 @@ export function ClientPayCheckout() {
           type="button"
           className="primary-cta"
           onClick={startPay}
-          disabled={loading || !canStart}
+          disabled={loading || !canStart || (path === "buyInstant" && !embedReady)}
         >
           {loading
             ? "Opening…"
@@ -357,14 +441,18 @@ export function ClientPayCheckout() {
               ? `Card backup ${amountOk ? amountLabel : rangeLabel}`
               : path === "paybis"
                 ? `Open Paybis ${amountOk ? amountLabel : rangeLabel}`
-                : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
+                : path === "buyInstant"
+                  ? `Buy Instant ${amountOk ? amountLabel : rangeLabel}`
+                  : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
           {path === "card"
             ? "Card backup pays on this page; crypto is sent later."
             : path === "paybis"
               ? "Opens paybis.com — pay with card there; crypto goes to your wallet."
-              : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
+              : path === "buyInstant"
+                ? "Paybis checkout stays on this page — no redirect."
+                : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
         </p>
       </div>
     </div>

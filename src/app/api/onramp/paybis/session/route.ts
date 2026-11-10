@@ -10,6 +10,7 @@ import {
 import {
   PAYBIS_CRYPTO_BY_NETWORK,
   PAYBIS_MERCHANT_EMAIL,
+  buildPaybisEmbedUrl,
   buildPaybisRedirectUrl,
   isPaybisConfigured,
 } from "@/lib/paybis";
@@ -29,8 +30,9 @@ function getAppOrigin(request: Request): string {
 }
 
 /**
- * Paybis redirect — opens Paybis so the buyer pays there (card → crypto).
- * Uses signed partner widget when keys exist; otherwise paybis.com.
+ * Paybis session:
+ * - mode=embed → on-page Buy Instant iframe (signed widget, partner keys required)
+ * - mode=redirect (default) → open paybis.com / signed widget in full page
  */
 export async function POST(request: Request) {
   try {
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
     let network = "ethereum";
     let wallet = "";
     let email = "";
+    let mode: "embed" | "redirect" = "redirect";
 
     try {
       const body = (await request.json()) as {
@@ -45,6 +48,7 @@ export async function POST(request: Request) {
         network?: string;
         wallet?: string;
         email?: string;
+        mode?: string;
       };
       if (body?.amountUsd != null) {
         const parsed = parseAmountUsd(body.amountUsd);
@@ -53,6 +57,7 @@ export async function POST(request: Request) {
       if (body?.network) network = String(body.network).trim().toLowerCase();
       if (body?.wallet) wallet = String(body.wallet).trim();
       if (body?.email) email = String(body.email).trim().toLowerCase();
+      if (String(body?.mode || "").toLowerCase() === "embed") mode = "embed";
     } catch {
       /* empty */
     }
@@ -81,15 +86,38 @@ export async function POST(request: Request) {
     }
 
     const origin = getAppOrigin(request);
-    const built = buildPaybisRedirectUrl({
+    const input = {
       amountUsd,
       network,
       walletAddress: wallet,
       partnerUserId: email || wallet.toLowerCase(),
       successReturnURL: `${origin}/checkout?paid=1`,
       failureReturnURL: `${origin}/checkout?paid=0`,
-    });
+    };
 
+    if (mode === "embed") {
+      if (!isPaybisConfigured()) {
+        return NextResponse.json(
+          {
+            error:
+              "Buy Instant needs Paybis Partner ID + HMAC (dashboard: richoffline666@gmail.com) and whitelist www.walletchainsign.com. Use Paybis redirect until then.",
+            code: "paybis_embed_not_configured",
+            merchantEmail: PAYBIS_MERCHANT_EMAIL,
+          },
+          { status: 503 },
+        );
+      }
+      const built = buildPaybisEmbedUrl(input);
+      return NextResponse.json({
+        url: built.url,
+        environment: built.environment,
+        provider: "paybis",
+        mode: built.mode,
+        merchantEmail: PAYBIS_MERCHANT_EMAIL,
+      });
+    }
+
+    const built = buildPaybisRedirectUrl(input);
     return NextResponse.json({
       url: built.url,
       environment: built.environment,
@@ -106,11 +134,15 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
+  const partnerConfigured = isPaybisConfigured();
   return NextResponse.json({
     ready: true,
-    partnerConfigured: isPaybisConfigured(),
+    partnerConfigured,
+    embedReady: partnerConfigured,
     provider: "paybis",
     merchantEmail: PAYBIS_MERCHANT_EMAIL,
-    note: "Paybis opens paybis.com (or signed partner widget) in a redirect so buyers pay there.",
+    note: partnerConfigured
+      ? "Buy Instant embeds Paybis on-page; Paybis chip redirects to paybis.com / signed widget."
+      : "Paybis redirect works now. Buy Instant (on-page) unlocks after Partner ID + HMAC are added.",
   });
 }
