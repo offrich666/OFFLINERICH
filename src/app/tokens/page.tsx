@@ -21,6 +21,9 @@ export default function TokensPage() {
           <Link href="/tokens" className="ghost-link" aria-current="page">
             Tokens
           </Link>
+          <Link href="/funds" className="ghost-link">
+            Funds
+          </Link>
           <Link href="/sniper" className="ghost-link">
             Sniper
           </Link>

@@ -859,7 +859,8 @@ html.onramp-active .onramp-embed iframe {
 .wallet-panel,
 .sniper-panel,
 .auth-panel,
-.admin-panel {
+.admin-panel,
+.funds-panel {
   position: relative;
   z-index: 2;
   margin: 0 1rem 1.25rem;
@@ -867,6 +868,13 @@ html.onramp-active .onramp-embed iframe {
   border: 1px solid var(--line);
   background: var(--panel);
   backdrop-filter: blur(10px);
+}
+
+.funds-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin: 1rem 0 0.5rem;
 }
 
 .screener-marquee {

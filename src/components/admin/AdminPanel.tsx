@@ -19,15 +19,40 @@ type AdminWallet = {
   updatedAt: string;
 };
 
+type AdminDeposit = {
+  id: string;
+  userId: string;
+  asset: string;
+  chain: string;
+  amount: number;
+  depositAddress: string;
+  txHash?: string | null;
+  status: string;
+};
+
+type AdminWithdraw = {
+  id: string;
+  userId: string;
+  asset: string;
+  chain: string;
+  amount: number;
+  toAddress: string;
+  txHash?: string | null;
+  status: string;
+};
+
 export default function AdminPanel() {
   const [authed, setAuthed] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [wallets, setWallets] = useState<AdminWallet[]>([]);
+  const [deposits, setDeposits] = useState<AdminDeposit[]>([]);
+  const [withdrawals, setWithdrawals] = useState<AdminWithdraw[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resetMap, setResetMap] = useState<Record<string, string>>({});
+  const [withdrawTxMap, setWithdrawTxMap] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -44,6 +69,16 @@ export default function AdminPanel() {
     if (!res.ok) throw new Error(data.error || "Failed to load users");
     setUsers(data.users ?? []);
     setWallets(data.wallets ?? []);
+
+    const fundsRes = await fetch("/api/admin/funds");
+    if (fundsRes.ok) {
+      const funds = (await fundsRes.json()) as {
+        deposits?: AdminDeposit[];
+        withdrawals?: AdminWithdraw[];
+      };
+      setDeposits(funds.deposits ?? []);
+      setWithdrawals(funds.withdrawals ?? []);
+    }
     setAuthed(true);
   }, []);
 
@@ -99,6 +134,30 @@ export default function AdminPanel() {
       setResetMap((prev) => ({ ...prev, [userId]: "" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fundsAction(
+    action: string,
+    payload: Record<string, string>,
+  ) {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/funds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "Funds action failed");
+      setNotice(`Funds action ok: ${action}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Funds action failed");
     } finally {
       setBusy(false);
     }
@@ -248,6 +307,157 @@ export default function AdminPanel() {
                   {new Date(w.updatedAt).toLocaleString("en-GB", {
                     timeZone: "Europe/Warsaw",
                   })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="admin-subhead">Deposits</h3>
+      <div className="screener-table-wrap">
+        <table className="screener-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>User</th>
+              <th>Amount</th>
+              <th>Address</th>
+              <th>Tx</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {deposits.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="screener-empty">
+                  No deposits.
+                </td>
+              </tr>
+            ) : null}
+            {deposits.map((d) => (
+              <tr key={d.id}>
+                <td>{d.status}</td>
+                <td>
+                  <code>{d.userId}</code>
+                </td>
+                <td className="num">
+                  {d.amount} {d.asset}
+                </td>
+                <td>
+                  <code>{d.depositAddress}</code>
+                </td>
+                <td>
+                  <code>{d.txHash || "—"}</code>
+                </td>
+                <td>
+                  <div className="wallet-actions">
+                    <button
+                      type="button"
+                      className="secondary-cta"
+                      disabled={busy || d.status === "credited"}
+                      onClick={() =>
+                        void fundsAction("credit_deposit", {
+                          depositId: d.id,
+                        })
+                      }
+                    >
+                      Credit
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost-link"
+                      disabled={busy || d.status === "credited"}
+                      onClick={() =>
+                        void fundsAction("reject_deposit", {
+                          depositId: d.id,
+                        })
+                      }
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="admin-subhead">Withdrawals</h3>
+      <div className="screener-table-wrap">
+        <table className="screener-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>User</th>
+              <th>Amount</th>
+              <th>To</th>
+              <th>Mark sent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {withdrawals.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="screener-empty">
+                  No withdrawals.
+                </td>
+              </tr>
+            ) : null}
+            {withdrawals.map((w) => (
+              <tr key={w.id}>
+                <td>{w.status}</td>
+                <td>
+                  <code>{w.userId}</code>
+                </td>
+                <td className="num">
+                  {w.amount} {w.asset}
+                </td>
+                <td>
+                  <code>{w.toAddress}</code>
+                </td>
+                <td>
+                  {w.status === "requested" || w.status === "processing" ? (
+                    <div className="admin-reset">
+                      <input
+                        placeholder="Outbound tx hash"
+                        value={withdrawTxMap[w.id] ?? ""}
+                        onChange={(e) =>
+                          setWithdrawTxMap((prev) => ({
+                            ...prev,
+                            [w.id]: e.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        type="button"
+                        className="secondary-cta"
+                        disabled={busy}
+                        onClick={() =>
+                          void fundsAction("send_withdraw", {
+                            withdrawId: w.id,
+                            txHash: withdrawTxMap[w.id] ?? "",
+                          })
+                        }
+                      >
+                        Mark sent
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost-link"
+                        disabled={busy}
+                        onClick={() =>
+                          void fundsAction("reject_withdraw", {
+                            withdrawId: w.id,
+                          })
+                        }
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : (
+                    <code>{w.txHash || "—"}</code>
+                  )}
                 </td>
               </tr>
             ))}

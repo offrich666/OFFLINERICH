@@ -139,6 +139,9 @@ export default function WalletConnectPanel() {
               >
                 Connect Solana
               </button>
+              <Link href="/funds" className="ghost-link">
+                Deposit / withdraw
+              </Link>
               <Link href="/sniper" className="ghost-link">
                 Open sniper
               </Link>

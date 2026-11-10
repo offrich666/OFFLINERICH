@@ -12,6 +12,9 @@ export default function Home() {
           <Link href="/tokens" className="ghost-link">
             Tokens
           </Link>
+          <Link href="/funds" className="ghost-link">
+            Funds
+          </Link>
           <Link href="/sniper" className="ghost-link">
             Sniper
           </Link>
