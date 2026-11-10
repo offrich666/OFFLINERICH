@@ -6,18 +6,19 @@ import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
-import { TransakInstantEmbed } from "@/components/TransakInstantEmbed";
+import { StripeInstantEmbed } from "@/components/StripeInstantEmbed";
 import {
-  CLIENT_NETWORKS,
+  ONRAMP_CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
   formatUsd,
+  isOnrampClientNetwork,
   isValidAmountUsd,
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
-  type ClientNetworkId,
+  type OnrampClientNetworkId,
 } from "@/lib/networks";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
@@ -29,23 +30,26 @@ type PayPath = "instant" | "card";
 type Mode = "pick" | "instant" | "card";
 
 /**
- * Instant = on-page card → crypto to wallet (locked Transak session iframe).
- * Card = Stripe embed backup only (slower ops delivery).
+ * Instant = live Stripe Crypto Onramp embed (card → crypto to wallet on-page).
+ * Card = Stripe Embedded Checkout backup (crypto sent after payment).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>("instant");
+  const [path, setPath] = useState<PayPath>(
+    publishableKey ? "instant" : "card",
+  );
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
+  const [network, setNetwork] = useState<OnrampClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
   const [status, setStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
+  const [instantSecret, setInstantSecret] = useState<string | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
-  const [instantReady, setInstantReady] = useState(true);
+  const [instantReady, setInstantReady] = useState(Boolean(publishableKey));
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -63,18 +67,17 @@ export function ClientPayCheckout() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/onramp/transak/status")
+    fetch("/api/onramp/status")
       .then((r) => r.json())
-      .then((data: { readyForInstantCrypto?: boolean }) => {
-        if (!cancelled) {
-          setInstantReady(Boolean(data.readyForInstantCrypto));
-          if (!data.readyForInstantCrypto) setPath("card");
-        }
+      .then((data: { readyForOnrampUi?: boolean }) => {
+        if (cancelled) return;
+        const ready = Boolean(data.readyForOnrampUi && publishableKey);
+        setInstantReady(ready);
+        if (!ready) setPath("card");
       })
       .catch(() => {
         if (!cancelled) {
-          setInstantReady(false);
-          setPath("card");
+          setInstantReady(Boolean(publishableKey));
         }
       });
     return () => {
@@ -90,15 +93,36 @@ export function ClientPayCheckout() {
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
 
-  function startInstant() {
+  async function startInstant() {
     if (!instantReady) {
       throw new Error("Instant is not configured yet.");
     }
+    if (!isOnrampClientNetwork(network)) {
+      throw new Error("Choose Ethereum or Bitcoin for Instant.");
+    }
+    const res = await fetch("/api/onramp/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amountUsd,
+        email: email.trim() || undefined,
+        network,
+        wallet: normalizedWallet,
+      }),
+    });
+    const data = (await res.json()) as {
+      clientSecret?: string;
+      error?: string;
+    };
+    if (!res.ok || !data.clientSecret) {
+      throw new Error(data.error || "Could not start Instant checkout");
+    }
+    setInstantSecret(data.clientSecret);
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
     setMode("instant");
     setStatus(
-      "Card checkout stays on this page — crypto goes straight to your wallet.",
+      "Card checkout stays on this page — crypto goes to your wallet.",
     );
   }
 
@@ -141,7 +165,11 @@ export function ClientPayCheckout() {
       return;
     }
     if (!walletOk) {
-      setError("Enter a valid wallet address for this network.");
+      setError(
+        network === "bitcoin"
+          ? "Enter a valid Bitcoin address."
+          : "Enter a valid wallet address (0x + 40 hex).",
+      );
       return;
     }
     if (!emailOk) {
@@ -152,7 +180,7 @@ export function ClientPayCheckout() {
     setLoading(true);
     try {
       if (path === "card") await startCard();
-      else startInstant();
+      else await startInstant();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
       setMode("pick");
@@ -162,6 +190,7 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
+    setInstantSecret(null);
     setCardSecret(null);
     setPaidAmount(null);
     setStatus("");
@@ -169,7 +198,7 @@ export function ClientPayCheckout() {
     setMode("pick");
   }
 
-  if (mode === "instant" && paidAmount != null) {
+  if (mode === "instant" && paidAmount != null && instantSecret) {
     return (
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
@@ -183,11 +212,8 @@ export function ClientPayCheckout() {
         </div>
         {status ? <p className="form-hint">{status}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        <TransakInstantEmbed
-          amountUsd={paidAmount}
-          network={network}
-          walletAddress={normalizedWallet || wallet.trim()}
-          email={email.trim() || undefined}
+        <StripeInstantEmbed
+          clientSecret={instantSecret}
           onPaid={() =>
             setStatus(
               "Paid — crypto is settling to your wallet. Keep this page open a moment.",
@@ -229,8 +255,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant: pay with card on this page — crypto lands in your wallet. No
-          provider hop. Card backup is slower.
+          Instant: pay with card on this page — crypto goes to your wallet. No
+          off-site hop. Card backup is slower.
         </p>
 
         <div
@@ -294,9 +320,11 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
+            onChange={(e) =>
+              setNetwork(e.target.value as OnrampClientNetworkId)
+            }
           >
-            {CLIENT_NETWORKS.map((n) => (
+            {ONRAMP_CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -309,14 +337,16 @@ export function ClientPayCheckout() {
           <input
             value={wallet}
             onChange={(e) => setWallet(e.target.value)}
-            placeholder="0x…"
+            placeholder={network === "bitcoin" ? "bc1…" : "0x…"}
             autoComplete="off"
             spellCheck={false}
           />
         </label>
         {walletDirty && !walletOk ? (
           <p className="form-error">
-            Enter a valid wallet address for this network.
+            {network === "bitcoin"
+              ? "Enter a valid Bitcoin address."
+              : "Enter a valid wallet (0x + 40 hex)."}
           </p>
         ) : null}
 

@@ -510,6 +510,21 @@ code {
   background: #0f1116;
 }
 
+.stripe-onramp-frame {
+  width: 100%;
+  min-height: min(680px, 85dvh);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0f1116;
+}
+
+@media (max-width: 640px) {
+  .stripe-onramp-frame {
+    min-height: min(720px, 90dvh);
+    border-radius: 10px;
+  }
+}
+
 .stripe-embed {
   min-height: 480px;
   width: 100%;
