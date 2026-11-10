@@ -88,8 +88,9 @@ export function ThirdwebInstantEmbed({
         title="Buy crypto"
         src={src}
         className="thirdweb-instant-frame"
-        allow="payment *; clipboard-write; accelerometer; gyroscope"
+        allow="payment *; camera; microphone; clipboard-write; accelerometer; gyroscope"
         referrerPolicy="strict-origin-when-cross-origin"
+        loading="eager"
       />
     </div>
   );

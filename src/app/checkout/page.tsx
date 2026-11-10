@@ -20,8 +20,7 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Pay with card. Crypto settles to your wallet. Works on phone and
-            desktop.
+            Pay with card on this page. Crypto goes to your wallet.
           </p>
         </div>
 
