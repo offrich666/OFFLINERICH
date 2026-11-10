@@ -100,10 +100,10 @@ function linksHtml() {
 }
 
 const HOST_CHECK_STEPS = [
-  'Loading',
-  'Contacting version kernel',
-  'Trying to mount platform 31.2.7',
-  'Requesting desk session from host',
+  'Loading desk session',
+  'Contacting Frankfurt issuer host',
+  'Opening launch console for write files',
+  'Preparing card issue path',
 ];
 
 function wait(ms) {
@@ -146,7 +146,7 @@ function hostTryingHtml() {
       <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-      <p class="muted host-note">Contacting version kernel for platform <strong>31.2.7</strong>. Please wait.</p>
+      <p class="muted host-note">Connecting to <strong>fra1-issuer-01</strong> to launch write files for card issuing.</p>
     </div>`,
     { shimmer: true },
   );
@@ -164,59 +164,84 @@ function architectureSrc() {
   return 'gcards-frankfurt-architecture.png';
 }
 
-/** Post-login admin desk when platform 31.2.7 cannot mount on this host. */
+/** Post-login admin desk — launch issuer files to write & issue cards. */
 function capacityDeskHtml() {
-  const payHref = activationHref();
   const mapSrc = architectureSrc();
-  return `<div class="capacity-desk">
+  const files = [
+    { net: 'Visa', file: 'visa_issuer_write_001842.bin', status: 'Launching · write', pct: 34 },
+    { net: 'Mastercard', file: 'mastercard_issuer_write_001766.bin', status: 'Launching · write', pct: 28 },
+    { net: 'American Express', file: 'amex_issuer_write_001594.bin', status: 'Queued · write', pct: 18 },
+  ];
+  const fileCards = files
+    .map(
+      (f) => `<article class="launch-file">
+        <div class="launch-file-top">
+          <p class="launch-file-net">${esc(f.net)}</p>
+          <span class="pill launch-pill">${esc(f.status)}</span>
+        </div>
+        <h3>${esc(f.file)}</h3>
+        <div class="launch-meter" aria-hidden="true"><i style="width:${f.pct}%"></i></div>
+        <p class="muted">${f.pct}% written to issuer tables · preparing card issue</p>
+      </article>`,
+    )
+    .join('');
+
+  return `<div class="capacity-desk launch-desk">
       <header class="bar capacity-bar">
         <div class="wrap bar-in">
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
-            <span class="pill fault-pill">Issuing offline</span>
+            <span class="pill launch-live-pill">Launching files</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
       </header>
-      <main class="wrap capacity-main" role="alert">
+      <main class="wrap capacity-main">
         <section class="capacity-banner">
           <div class="capacity-banner-copy">
-            <p class="kicker fault">Admin desk · Platform 31.2.7 · host fault</p>
-            <h1>Issuing locked — dedicated Frankfurt server required</h1>
+            <p class="kicker launch-kicker">Admin desk · Frankfurt · issuer launch</p>
+            <h1>Launching files to write &amp; issue cards</h1>
             <p class="lede">
-              Client accounts stay online. Card <strong>issuing</strong> is blocked on this host after the
-              <strong>31.2.7</strong> cut-over failed. Activate a
-              <strong>dedicated Frankfurt server</strong> to resume Visa / Mastercard issuance.
+              Merge completed successfully. The desk is now <strong>launching issuer files</strong>
+              onto <strong>fra1-issuer-01</strong> so programmes can <strong>write cards</strong> and
+              <strong>start issuing</strong> from this panel.
             </p>
+            <ul class="launch-flow">
+              <li class="done"><span>01</span><strong>Merge</strong><em>Completed</em></li>
+              <li class="done"><span>02</span><strong>Install packages</strong><em>Completed</em></li>
+              <li class="on"><span>03</span><strong>Launch files</strong><em>Writing · active</em></li>
+              <li><span>04</span><strong>Issue cards</strong><em>Unlocks after launch</em></li>
+            </ul>
           </div>
-          <aside class="capacity-meter" aria-label="Issuing status">
-            <p class="capacity-meter-label">Card issuing</p>
-            <p class="capacity-meter-value">Unavailable</p>
-            <p class="capacity-meter-note">Clients can register · issuing offline</p>
+          <aside class="capacity-meter launch-meter-panel" aria-label="Launch status">
+            <p class="capacity-meter-label">Issuer file launch</p>
+            <p class="capacity-meter-value launch-ok">Active</p>
+            <p class="capacity-meter-note">Writing BIN / programme files for card issue</p>
+            <div class="launch-overall">
+              <div class="launch-meter"><i style="width:27%"></i></div>
+              <p>Overall write <strong>27%</strong></p>
+            </div>
           </aside>
         </section>
 
-        <section class="capacity-grid">
+        <section class="capacity-grid launch-grid-ops">
           <article class="capacity-panel">
-            <p class="eyebrow">Required to activate issuing</p>
-            <h2>Dedicated server · Frankfurt</h2>
+            <p class="eyebrow">Now on the desk</p>
+            <h2>Write &amp; issue path</h2>
             <p class="lede">
-              Buy the dedicated FRA host, map the cut-over below, then issuing unlocks on the desk.
-              Activation is paid in <strong>USDC</strong> — not desk spend tokens.
+              Files are launching into issuer storage. When this finishes, the desk can
+              <strong>write card records</strong> and <strong>issue</strong> Visa / Mastercard / Amex
+              to client accounts.
             </p>
             <ul class="capacity-checklist">
-              <li><span>Status</span><strong>Server down for 31.2.7</strong></li>
-              <li><span>Action</span><strong>Change to dedicated FRA server</strong></li>
-              <li><span>Activation</span><strong>$1,300 USDC</strong></li>
-              <li><span>Result</span><strong>Issuing cards unlocked</strong></li>
+              <li><span>Merge</span><strong>Completed successfully</strong></li>
+              <li><span>Server</span><strong>fra1-issuer-01.g-cards.eu</strong></li>
+              <li><span>Phase</span><strong>Launching files · write</strong></li>
+              <li><span>Next</span><strong>Issue cards from desk</strong></li>
             </ul>
-            <div class="capacity-actions">
-              <a class="primary capacity-cta" href="${payHref}">Pay $1,300 USDC · activate dedicated server</a>
-              <a class="ghost capacity-secondary" href="${payHref.replace('#activation', '#architecture')}">Company cut-over map</a>
-            </div>
             <p class="muted capacity-footnote">
-              After payment: merge legacy hosts → FRA → integrate Visa / Mastercard issuer code → desk issuing resumes.
+              Do not interrupt the launch. Issuing unlocks automatically once write completes on the dedicated Frankfurt host.
             </p>
           </article>
 
@@ -225,19 +250,30 @@ function capacityDeskHtml() {
               src="${esc(mapSrc)}"
               width="1280"
               height="720"
-              alt="Cut-over map: admin desk to overloaded host, dedicated Frankfurt server, then merge and Visa Mastercard issuing"
+              alt="Frankfurt dedicated server path for launching issuer files and card issuing"
             />
             <figcaption>
-              App / admin desk → overloaded host (down) → <strong>dedicated Frankfurt server</strong> → merge &amp; activate issuing · <strong>$1,300 USDC</strong>
+              Desk → <strong>fra1-issuer-01</strong> → launch write files → <strong>issue cards</strong>
             </figcaption>
           </figure>
         </section>
 
+        <section class="launch-files" aria-label="Launching issuer files">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Live launch</p>
+              <h2>Files writing for card issue</h2>
+            </div>
+            <span class="pill launch-live-pill">In progress</span>
+          </div>
+          <div class="launch-file-grid">${fileCards}</div>
+        </section>
+
         <section class="capacity-stats" aria-label="Desk snapshot">
           <article class="stat"><small>Admin</small><strong>offlinerich</strong></article>
-          <article class="stat"><small>Platform</small><strong>31.2.7</strong></article>
-          <article class="stat"><small>Cards issued</small><strong>0</strong></article>
-          <article class="stat"><small>Issuing</small><strong class="bad-text">Offline</strong></article>
+          <article class="stat"><small>Merge</small><strong class="good-text">Done</strong></article>
+          <article class="stat"><small>File launch</small><strong>27%</strong></article>
+          <article class="stat"><small>Issuing</small><strong>After launch</strong></article>
         </section>
       </main>
     </div>`;
@@ -967,19 +1003,19 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — loading / version kernel / try — then cards cannot be issued.
+      // offlinerich accepted — host check, then launch-files desk (write & issue path).
       state.hostGate = { phase: 'trying', step: 0 };
       state.admin = null;
       render();
 
-      const dwell = [1200, 1400, 1300, 1100];
+      const dwell = [900, 1000, 950, 850];
       for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
         state.hostGate = { phase: 'trying', step };
         render();
-        await wait(dwell[step] ?? 1100);
+        await wait(dwell[step] ?? 900);
       }
 
-      await wait(450);
+      await wait(350);
       state.hostGate = { phase: 'blocked' };
       state.flash = null;
       render();
