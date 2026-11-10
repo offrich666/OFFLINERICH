@@ -519,10 +519,16 @@ code {
 
 .stripe-onramp-frame {
   width: 100%;
-  min-height: min(680px, 85dvh);
+  min-height: min(920px, 92dvh);
+  height: auto;
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
   background: #0f1116;
+}
+
+.stripe-onramp-frame iframe {
+  min-height: min(920px, 92dvh) !important;
+  height: min(980px, 95dvh) !important;
 }
 
 .instant-complete-panel {
@@ -545,8 +551,13 @@ code {
 
 @media (max-width: 640px) {
   .stripe-onramp-frame {
-    min-height: min(720px, 90dvh);
+    min-height: min(980px, 95dvh);
     border-radius: 10px;
+  }
+
+  .stripe-onramp-frame iframe {
+    min-height: min(980px, 95dvh) !important;
+    height: min(1040px, 98dvh) !important;
   }
 }
 
@@ -557,6 +568,21 @@ code {
 
 .stripe-embed iframe {
   width: 100%;
+}
+
+.stripe-onramp-shell {
+  max-width: 560px;
+  width: 100%;
+  overflow: visible;
+}
+
+.stripe-onramp-shell .stripe-onramp-frame {
+  /* Stripe mounts a nested widget — keep room for Continue */
+  padding-bottom: 1.25rem;
+}
+
+html.onramp-active .destination-summary {
+  margin-bottom: 0.35rem;
 }
 
 .stripe-onramp,
@@ -921,7 +947,14 @@ html.onramp-active .onramp-mount,
 html.onramp-active .onramp-mount iframe,
 html.onramp-active .onramp-embed,
 html.onramp-active .onramp-embed iframe {
-  min-height: min(720px, 78vh) !important;
+  min-height: min(920px, 92dvh) !important;
+}
+
+html.onramp-active .stripe-onramp-frame,
+html.onramp-active .stripe-onramp-frame iframe {
+  min-height: min(980px, 95dvh) !important;
+  height: min(1040px, 98dvh) !important;
+  overflow: visible !important;
 }
 
 @media (max-width: 720px) {

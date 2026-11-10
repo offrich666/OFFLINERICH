@@ -20,7 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant, Crossmint Business B2C, or Crossmint Onramp on this page.
+            Instant and Crossmint Onramp on this page — or open Paybis via
+            Crossmint Business B2C.
           </p>
         </div>
 

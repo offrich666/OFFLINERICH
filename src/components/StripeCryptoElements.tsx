@@ -72,12 +72,14 @@ export function OnrampElement({
 }: OnrampElementProps) {
   const stripeOnramp = useStripeOnramp();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el || !clientSecret || !stripeOnramp) return;
 
     el.innerHTML = "";
+    setMounted(false);
     let cancelled = false;
 
     try {
@@ -112,7 +114,10 @@ export function OnrampElement({
       maybeSession.addEventListener?.("onramp_session_updated", onChange);
       maybeSession.on?.("change", onChange);
 
-      if (!cancelled) onReady?.();
+      if (!cancelled) {
+        setMounted(true);
+        onReady?.();
+      }
 
       return () => {
         cancelled = true;
@@ -121,10 +126,17 @@ export function OnrampElement({
       };
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Failed to open Instant checkout";
+        err instanceof Error ? err.message : "Failed to open Stripe Onramp";
       onError?.(message);
     }
   }, [clientSecret, stripeOnramp, appearance, onReady, onError, onComplete]);
 
-  return <div ref={containerRef} className={className} style={style} />;
+  return (
+    <div className="stripe-onramp-mount-wrap">
+      {!stripeOnramp || !mounted ? (
+        <p className="form-hint instant-buy-hint">Loading Stripe Onramp…</p>
+      ) : null}
+      <div ref={containerRef} className={className} style={style} />
+    </div>
+  );
 }

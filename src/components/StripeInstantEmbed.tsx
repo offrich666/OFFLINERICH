@@ -28,16 +28,18 @@ export function StripeInstantEmbed({ clientSecret, onPaid, onFailed }: Props) {
   }
 
   return (
-    <div className="stripe-embed onramp-embed thirdweb-instant-embed">
+    <div className="stripe-embed onramp-embed thirdweb-instant-embed stripe-onramp-shell">
       <p className="form-hint instant-buy-hint">
-        Crossmint Onramp — pay with card below. Crypto goes to your wallet on
-        this page.
+        Crossmint Onramp — pay with card below. Scroll to use Continue.
+      </p>
+      <p className="form-hint onramp-scroll-hint">
+        If Continue is hidden, scroll down inside the payment panel.
       </p>
       <CryptoElements stripeOnramp={stripeOnrampPromise}>
         <OnrampElement
           clientSecret={clientSecret}
           appearance={{ theme: "dark" }}
-          className="thirdweb-instant-frame stripe-onramp-frame"
+          className="stripe-onramp-frame"
           onComplete={onPaid}
           onError={onFailed}
         />
