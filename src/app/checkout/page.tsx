@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant: card checkout stays on this page — USDC goes to your
-            wallet. No provider redirect. Card backup is slower.
+            Instant: card checkout stays on this page — crypto goes to your
+            wallet. No provider hop. Card backup is slower.
           </p>
         </div>
 

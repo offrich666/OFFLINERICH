@@ -6,8 +6,9 @@ import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
-import { ThirdwebInstantEmbed } from "@/components/ThirdwebInstantEmbed";
+import { TransakInstantEmbed } from "@/components/TransakInstantEmbed";
 import {
+  CLIENT_NETWORKS,
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
   checkoutAmountRangeLabel,
@@ -16,35 +17,27 @@ import {
   isValidWalletAddress,
   normalizeWalletAddress,
   parseAmountUsd,
+  type ClientNetworkId,
 } from "@/lib/networks";
-import {
-  THIRDWEB_INSTANT_NETWORKS,
-  getThirdwebClientId,
-  isThirdwebInstantNetwork,
-  type ThirdwebInstantNetworkId,
-} from "@/lib/thirdwebPublic";
 import { getStripePublishableKey } from "@/lib/stripePublic";
 
 const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
-const thirdwebReady = Boolean(getThirdwebClientId());
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
 type PayPath = "instant" | "card";
 type Mode = "pick" | "instant" | "card";
 
 /**
- * Instant = on-page thirdweb buy-widget (card only → USDC to wallet). Stays on site.
+ * Instant = on-page card → crypto to wallet (locked Transak session iframe).
  * Card = Stripe embed backup only (slower ops delivery).
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [path, setPath] = useState<PayPath>(
-    thirdwebReady ? "instant" : "card",
-  );
+  const [path, setPath] = useState<PayPath>("instant");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
-  const [network, setNetwork] = useState<ThirdwebInstantNetworkId>("ethereum");
+  const [network, setNetwork] = useState<ClientNetworkId>("ethereum");
   const [wallet, setWallet] = useState("");
   const [mode, setMode] = useState<Mode>("pick");
   const [status, setStatus] = useState("");
@@ -52,6 +45,7 @@ export function ClientPayCheckout() {
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
+  const [instantReady, setInstantReady] = useState(true);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -65,7 +59,28 @@ export function ClientPayCheckout() {
     amountOk &&
     walletOk &&
     emailOk &&
-    (path === "instant" ? thirdwebReady : Boolean(publishableKey));
+    (path === "instant" ? instantReady : Boolean(publishableKey));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/onramp/transak/status")
+      .then((r) => r.json())
+      .then((data: { readyForInstantCrypto?: boolean }) => {
+        if (!cancelled) {
+          setInstantReady(Boolean(data.readyForInstantCrypto));
+          if (!data.readyForInstantCrypto) setPath("card");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInstantReady(false);
+          setPath("card");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle(
@@ -76,17 +91,14 @@ export function ClientPayCheckout() {
   }, [mode]);
 
   function startInstant() {
-    if (!thirdwebReady) {
+    if (!instantReady) {
       throw new Error("Instant is not configured yet.");
-    }
-    if (!isThirdwebInstantNetwork(network)) {
-      throw new Error("Choose Ethereum, Polygon, Base, or BNB Chain.");
     }
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
     setMode("instant");
     setStatus(
-      "Card checkout stays on this page — USDC goes straight to your wallet.",
+      "Card checkout stays on this page — crypto goes straight to your wallet.",
     );
   }
 
@@ -129,7 +141,7 @@ export function ClientPayCheckout() {
       return;
     }
     if (!walletOk) {
-      setError("Enter a valid wallet address (0x + 40 hex).");
+      setError("Enter a valid wallet address for this network.");
       return;
     }
     if (!emailOk) {
@@ -171,13 +183,14 @@ export function ClientPayCheckout() {
         </div>
         {status ? <p className="form-hint">{status}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        <ThirdwebInstantEmbed
+        <TransakInstantEmbed
           amountUsd={paidAmount}
           network={network}
           walletAddress={normalizedWallet || wallet.trim()}
+          email={email.trim() || undefined}
           onPaid={() =>
             setStatus(
-              "Paid — USDC is settling to your wallet. Keep this page open a moment.",
+              "Paid — crypto is settling to your wallet. Keep this page open a moment.",
             )
           }
           onFailed={(message) => setError(message)}
@@ -216,16 +229,20 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant: pay with card on this page — USDC lands in your wallet. No
-          MoonPay hop. Card backup is slower.
+          Instant: pay with card on this page — crypto lands in your wallet. No
+          provider hop. Card backup is slower.
         </p>
 
-        <div className="amount-chips path-chips" role="group" aria-label="Pay method">
+        <div
+          className="amount-chips path-chips"
+          role="group"
+          aria-label="Pay method"
+        >
           <button
             type="button"
             className={path === "instant" ? "amount-chip active" : "amount-chip"}
             onClick={() => setPath("instant")}
-            disabled={!thirdwebReady}
+            disabled={!instantReady}
           >
             Instant
           </button>
@@ -238,7 +255,7 @@ export function ClientPayCheckout() {
           </button>
         </div>
 
-        {!thirdwebReady ? (
+        {!instantReady ? (
           <p className="form-hint">
             Instant is finishing setup — use Card backup for now.
           </p>
@@ -277,11 +294,9 @@ export function ClientPayCheckout() {
           Network
           <select
             value={network}
-            onChange={(e) =>
-              setNetwork(e.target.value as ThirdwebInstantNetworkId)
-            }
+            onChange={(e) => setNetwork(e.target.value as ClientNetworkId)}
           >
-            {THIRDWEB_INSTANT_NETWORKS.map((n) => (
+            {CLIENT_NETWORKS.map((n) => (
               <option key={n.id} value={n.id}>
                 {n.label} ({n.asset})
               </option>
@@ -300,7 +315,9 @@ export function ClientPayCheckout() {
           />
         </label>
         {walletDirty && !walletOk ? (
-          <p className="form-error">Enter a valid wallet (0x + 40 hex).</p>
+          <p className="form-error">
+            Enter a valid wallet address for this network.
+          </p>
         ) : null}
 
         <label className="field">

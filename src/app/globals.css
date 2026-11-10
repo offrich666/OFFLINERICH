@@ -506,7 +506,6 @@ code {
 .transak-iframe {
   display: block;
   width: 100%;
-  min-height: min(720px, 78vh);
   border: 0;
   background: #0f1116;
 }
