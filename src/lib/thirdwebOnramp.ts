@@ -4,8 +4,12 @@ import { USDC_BY_NETWORK, type ThirdwebInstantNetworkId } from "@/lib/thirdwebPu
 const PREPARE_URL = "https://bridge.thirdweb.com/v1/onramp/prepare";
 const STATUS_URL = "https://bridge.thirdweb.com/v1/onramp/status";
 
-/** Providers that actually complete card → wallet via thirdweb. Skip Stripe Onramp. */
-const PROVIDERS = ["transak", "coinbase"] as const;
+/**
+ * Providers that complete card → wallet via thirdweb.
+ * Coinbase first: Transak often returns T-INF-110 when opened from our domain
+ * (session is minted under thirdweb’s allowlist). Skip Stripe Onramp.
+ */
+const PROVIDERS = ["coinbase", "transak"] as const;
 type Provider = (typeof PROVIDERS)[number];
 
 function getSecret(): string {
@@ -104,7 +108,11 @@ async function prepareOne(
   };
 }
 
-/** Attach return URL so mobile buyers land back on checkout after pay. */
+/**
+ * Attach return URL only when safe.
+ * Never mutate Transak sessionId URLs — extra query params can break the
+ * signed session and surface T-INF-110 Access Denied.
+ */
 export function withCheckoutReturnUrl(
   link: string,
   returnUrl: string,
@@ -112,14 +120,14 @@ export function withCheckoutReturnUrl(
 ): string {
   try {
     const url = new URL(link);
+    const host = url.hostname.toLowerCase();
+    if (host.includes("transak.com")) {
+      return link;
+    }
     const ret = new URL(returnUrl);
     ret.searchParams.set("paid", "1");
     ret.searchParams.set("sid", sessionId);
-    url.searchParams.set("redirectURL", ret.toString());
-    // Coinbase / others sometimes read these aliases
-    if (!url.searchParams.has("redirectUrl")) {
-      url.searchParams.set("redirectUrl", ret.toString());
-    }
+    url.searchParams.set("redirectUrl", ret.toString());
     return url.toString();
   } catch {
     return link;

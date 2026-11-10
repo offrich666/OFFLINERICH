@@ -129,7 +129,7 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({
     ready: isThirdwebOnrampConfigured(),
-    providers: ["transak", "coinbase"],
+    providers: ["coinbase", "transak"],
     note: "Instant prepares a live card session that settles crypto to the buyer wallet.",
   });
 }

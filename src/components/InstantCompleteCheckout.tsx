@@ -63,17 +63,27 @@ export function clearInstantSession() {
   }
 }
 
-function preferSameTab(): boolean {
-  if (typeof window === "undefined") return true;
+function isMobileClient(): boolean {
+  if (typeof window === "undefined") return false;
   const narrow = window.matchMedia("(max-width: 720px)").matches;
-  const coarse = window.matchMedia("(pointer: coarse)").matches;
   const ua = navigator.userAgent || "";
   const ios = /iPhone|iPad|iPod/i.test(ua);
-  return narrow || coarse || ios;
+  const android = /Android/i.test(ua);
+  return narrow || ios || android;
+}
+
+function openPayWindow(payUrl: string): Window | null {
+  return window.open(
+    payUrl,
+    "offlinerich_instant_pay",
+    "popup=yes,width=480,height=780,noopener=no",
+  );
 }
 
 /**
- * Live card → crypto. Desktop: payment window. Phone: same-tab then return.
+ * Live card → crypto.
+ * Desktop: keep checkout open; payment in a window.
+ * Phone: user taps Pay (same-tab) so the gesture isn’t blocked.
  */
 export function InstantCompleteCheckout({
   amountUsd,
@@ -87,16 +97,19 @@ export function InstantCompleteCheckout({
   onCancel,
   resumePaid = false,
 }: Props) {
-  const [phase, setPhase] = useState<"open" | "waiting" | "done">(
-    resumePaid ? "done" : "open",
+  const mobile = isMobileClient();
+  const [phase, setPhase] = useState<"ready" | "waiting" | "done">(
+    resumePaid ? "done" : "ready",
   );
   const [hint, setHint] = useState(
     resumePaid
       ? "Payment received — crypto is settling to your wallet."
-      : "Opening secure card payment…",
+      : mobile
+        ? "Tap Pay with card. You’ll return here after payment — crypto goes to your wallet."
+        : "Pay with card in the secure window. This page stays open — crypto goes to your wallet.",
   );
+  const [popupBlocked, setPopupBlocked] = useState(false);
   const popupRef = useRef<Window | null>(null);
-  const openedRef = useRef(false);
   const paidRef = useRef(false);
 
   useEffect(() => {
@@ -110,30 +123,15 @@ export function InstantCompleteCheckout({
     });
   }, [sessionId, payUrl, amountUsd, amountLabel, network, walletAddress]);
 
+  // Desktop only: try payment window once (never navigate this tab away).
   useEffect(() => {
-    if (resumePaid || openedRef.current) return;
-    openedRef.current = true;
-
-    if (preferSameTab()) {
-      setPhase("waiting");
-      setHint("Continue to card payment — you’ll return here after paying.");
-      window.setTimeout(() => {
-        window.location.assign(payUrl);
-      }, 350);
-      return;
-    }
-
-    const popup = window.open(
-      payUrl,
-      "offlinerich_instant_pay",
-      "popup=yes,width=480,height=780,noopener=no",
-    );
-
+    if (resumePaid || mobile) return;
+    const popup = openPayWindow(payUrl);
     if (popup) {
       popupRef.current = popup;
       setPhase("waiting");
       setHint(
-        "Finish card payment in the secure window. Crypto goes to your wallet.",
+        "Finish card payment in the secure window. This checkout page stays open.",
       );
       try {
         popup.focus();
@@ -141,10 +139,12 @@ export function InstantCompleteCheckout({
         /* ignore */
       }
     } else {
-      setHint("Continuing to secure card payment…");
-      window.location.assign(payUrl);
+      setPopupBlocked(true);
+      setHint(
+        "Popup blocked. Tap Pay with card to open the secure window (this page stays here).",
+      );
     }
-  }, [payUrl, resumePaid]);
+  }, [payUrl, resumePaid, mobile]);
 
   useEffect(() => {
     let stopped = false;
@@ -217,6 +217,34 @@ export function InstantCompleteCheckout({
     };
   }, [sessionId, onPaid, phase, resumePaid]);
 
+  function startPay() {
+    if (mobile) {
+      // Same-tab only on explicit tap — required on iOS; return via browser back / sid resume.
+      setPhase("waiting");
+      window.location.assign(payUrl);
+      return;
+    }
+    const w = openPayWindow(payUrl);
+    if (w) {
+      popupRef.current = w;
+      setPopupBlocked(false);
+      setPhase("waiting");
+      setHint(
+        "Finish card payment in the secure window. This checkout page stays open.",
+      );
+      try {
+        w.focus();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    setPopupBlocked(true);
+    setHint(
+      "Popup blocked. Allow popups for this site, then tap Pay with card again.",
+    );
+  }
+
   return (
     <div className="payment-stack onramp-focus instant-complete">
       <div className="destination-summary">
@@ -232,40 +260,23 @@ export function InstantCompleteCheckout({
       <div className="setup-panel soft instant-complete-panel">
         <h2>{phase === "done" ? "Crypto on the way" : "Complete payment"}</h2>
         <ol className="instant-steps">
-          <li className={phase !== "open" ? "done" : ""}>Details locked</li>
+          <li className="done">Details locked</li>
           <li className={phase === "waiting" || phase === "done" ? "done" : ""}>
             Pay with card
           </li>
           <li className={phase === "done" ? "done" : ""}>Crypto to wallet</li>
         </ol>
         <p className="form-hint">{hint}</p>
+        {popupBlocked ? (
+          <p className="form-error">
+            Allow popups for walletchainsign.com so payment can open beside this
+            page.
+          </p>
+        ) : null}
 
         {phase !== "done" ? (
           <div className="instant-complete-actions">
-            <button
-              type="button"
-              className="primary-cta"
-              onClick={() => {
-                if (preferSameTab()) {
-                  window.location.assign(payUrl);
-                  return;
-                }
-                const w = window.open(
-                  payUrl,
-                  "offlinerich_instant_pay",
-                  "popup=yes,width=480,height=780",
-                );
-                if (w) {
-                  popupRef.current = w;
-                  setPhase("waiting");
-                  setHint(
-                    "Finish card payment in the secure window. Crypto goes to your wallet.",
-                  );
-                } else {
-                  window.location.assign(payUrl);
-                }
-              }}
-            >
+            <button type="button" className="primary-cta" onClick={startPay}>
               Pay with card
             </button>
             <button
