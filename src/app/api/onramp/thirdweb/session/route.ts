@@ -14,7 +14,22 @@ import {
 import {
   isThirdwebOnrampConfigured,
   prepareInstantOnramp,
+  withCheckoutReturnUrl,
 } from "@/lib/thirdwebOnramp";
+
+function getAppOrigin(request: Request): string {
+  const origin = request.headers.get("origin");
+  if (origin) return origin;
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    /* fall through */
+  }
+  return (
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    "https://www.walletchainsign.com"
+  );
+}
 
 /**
  * Instant that completes: thirdweb prepares a live Transak/Coinbase session
@@ -88,9 +103,16 @@ export async function POST(request: Request) {
       country: country || undefined,
     });
 
+    const origin = getAppOrigin(request);
+    const payUrl = withCheckoutReturnUrl(
+      prepared.link,
+      `${origin}/checkout`,
+      prepared.id,
+    );
+
     return NextResponse.json({
       id: prepared.id,
-      url: prepared.link,
+      url: payUrl,
       provider: prepared.provider,
       currencyAmount: prepared.currencyAmount,
       currency: prepared.currency,

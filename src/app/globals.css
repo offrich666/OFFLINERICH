@@ -202,6 +202,9 @@ code {
 .checkout-layout-simple {
   max-width: 560px;
   gap: 1.25rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
 }
 
 .checkout-copy-simple h1 {
@@ -646,8 +649,97 @@ code {
   border: 1px solid var(--line);
   color: var(--fog);
   border-radius: 8px;
-  padding: 0.65rem 0.75rem;
+  padding: 0.75rem 0.85rem;
   font: inherit;
+  font-size: 16px; /* avoid iOS zoom on focus */
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+}
+
+.amount-chip {
+  min-height: 44px;
+}
+
+.path-chips .amount-chip {
+  flex: 1 1 calc(50% - 0.5rem);
+  text-align: center;
+}
+
+.primary-cta {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1.05rem;
+}
+
+.instant-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instant-steps li {
+  margin: 0;
+  padding: 0.55rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: var(--mist);
+  line-height: 1.25;
+}
+
+.instant-steps li.done {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--line));
+  color: var(--fog);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+
+.instant-complete-panel h2 {
+  font-size: clamp(1.35rem, 4vw, 1.7rem);
+}
+
+@media (max-width: 640px) {
+  .checkout-page .topbar {
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+  }
+
+  .checkout-panel {
+    padding: 0.75rem;
+  }
+
+  .setup-panel {
+    padding: 1rem 0.75rem;
+  }
+
+  .amount-chips {
+    gap: 0.45rem;
+  }
+
+  .amount-chip {
+    flex: 1 1 calc(33.33% - 0.45rem);
+    padding: 0.6rem 0.4rem;
+    font-size: 0.85rem;
+  }
+
+  .destination-summary {
+    font-size: 0.95rem;
+  }
+
+  .instant-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .instant-steps li {
+    font-size: 0.85rem;
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+  }
 }
 
 .form-hint {

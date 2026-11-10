@@ -20,8 +20,8 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant: card payment that settles crypto to your wallet. Card
-            backup is slower.
+            Pay with card. Crypto settles to your wallet. Works on phone and
+            desktop.
           </p>
         </div>
 

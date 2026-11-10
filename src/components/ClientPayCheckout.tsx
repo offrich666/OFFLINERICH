@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
-import { InstantCompleteCheckout } from "@/components/InstantCompleteCheckout";
+import {
+  InstantCompleteCheckout,
+  clearInstantSession,
+  loadInstantSession,
+} from "@/components/InstantCompleteCheckout";
 import {
   MAX_AMOUNT_USD,
   MIN_AMOUNT_USD,
@@ -37,10 +42,12 @@ type InstantSession = {
 };
 
 /**
- * Instant = live thirdweb→Transak/Coinbase session that settles crypto to wallet.
+ * Instant = live card → crypto to wallet (thirdweb Transak/Coinbase).
  * Card = Stripe Embedded Checkout backup (slower delivery).
  */
 export function ClientPayCheckout() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const rangeLabel = checkoutAmountRangeLabel();
   const [path, setPath] = useState<PayPath>("instant");
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
@@ -53,6 +60,7 @@ export function ClientPayCheckout() {
   const [loading, setLoading] = useState(false);
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [instant, setInstant] = useState<InstantSession | null>(null);
+  const [resumePaid, setResumePaid] = useState(false);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
   const [instantReady, setInstantReady] = useState(true);
 
@@ -91,6 +99,40 @@ export function ClientPayCheckout() {
     };
   }, []);
 
+  // Resume Instant after mobile return (?paid=1&sid=…)
+  useEffect(() => {
+    const paid = searchParams.get("paid") === "1";
+    const sid = searchParams.get("sid")?.trim() || "";
+    const saved = loadInstantSession();
+    if (!paid && !saved) return;
+
+    const id = sid || saved?.id;
+    const url = saved?.url;
+    if (!id || !url) return;
+
+    setInstant({ id, url });
+    setPaidAmount(
+      typeof saved?.amountUsd === "number" && saved.amountUsd > 0
+        ? saved.amountUsd
+        : MIN_AMOUNT_USD,
+    );
+    if (saved?.walletAddress) setWallet(saved.walletAddress);
+    if (saved?.network && isThirdwebInstantNetwork(saved.network)) {
+      setNetwork(saved.network);
+    }
+    setResumePaid(paid);
+    setMode("instant");
+    setStatus(
+      paid
+        ? "Payment received — crypto is settling to your wallet."
+        : "Continue payment to receive crypto in your wallet.",
+    );
+
+    if (paid) {
+      router.replace("/checkout", { scroll: false });
+    }
+  }, [searchParams, router]);
+
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
@@ -124,6 +166,7 @@ export function ClientPayCheckout() {
     setInstant({ id: data.id, url: data.url });
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
+    setResumePaid(false);
     setMode("instant");
     setStatus("");
   }
@@ -188,9 +231,11 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
+    clearInstantSession();
     setInstant(null);
     setCardSecret(null);
     setPaidAmount(null);
+    setResumePaid(false);
     setStatus("");
     setError(null);
     setMode("pick");
@@ -198,20 +243,24 @@ export function ClientPayCheckout() {
 
   if (mode === "instant" && paidAmount != null && instant) {
     return (
-      <InstantCompleteCheckout
-        amountLabel={formatUsd(paidAmount)}
-        network={network}
-        walletAddress={normalizedWallet || wallet.trim()}
-        sessionId={instant.id}
-        payUrl={instant.url}
-        onPaid={() =>
-          setStatus(
-            "Paid — crypto is settling to your wallet.",
-          )
-        }
-        onFailed={(message) => setError(message)}
-        onCancel={resetToPick}
-      />
+      <>
+        {status ? <p className="form-hint">{status}</p> : null}
+        {error ? <p className="form-error">{error}</p> : null}
+        <InstantCompleteCheckout
+          amountUsd={paidAmount}
+          amountLabel={formatUsd(paidAmount)}
+          network={network}
+          walletAddress={normalizedWallet || wallet.trim()}
+          sessionId={instant.id}
+          payUrl={instant.url}
+          resumePaid={resumePaid}
+          onPaid={() =>
+            setStatus("Paid — crypto is settling to your wallet.")
+          }
+          onFailed={(message) => setError(message)}
+          onCancel={resetToPick}
+        />
+      </>
     );
   }
 
@@ -245,7 +294,7 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant sends crypto to your wallet after card payment. Card backup is
+          Instant: pay with card, crypto goes to your wallet. Card backup is
           slower.
         </p>
 
@@ -297,6 +346,7 @@ export function ClientPayCheckout() {
           Or enter amount (USD)
           <input
             type="number"
+            inputMode="decimal"
             min={MIN_AMOUNT_USD}
             max={MAX_AMOUNT_USD}
             step="1"
@@ -330,6 +380,8 @@ export function ClientPayCheckout() {
             placeholder="0x…"
             autoComplete="off"
             spellCheck={false}
+            autoCapitalize="off"
+            autoCorrect="off"
           />
         </label>
         {walletDirty && !walletOk ? (
@@ -367,7 +419,7 @@ export function ClientPayCheckout() {
         <p className="form-hint">
           {path === "card"
             ? "Card backup pays on this page; crypto is sent later."
-            : "Instant: pay with card — crypto settles to your wallet."}
+            : "After you pay, crypto settles to your wallet."}
         </p>
       </div>
     </div>

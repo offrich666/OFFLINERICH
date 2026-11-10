@@ -104,6 +104,28 @@ async function prepareOne(
   };
 }
 
+/** Attach return URL so mobile buyers land back on checkout after pay. */
+export function withCheckoutReturnUrl(
+  link: string,
+  returnUrl: string,
+  sessionId: string,
+): string {
+  try {
+    const url = new URL(link);
+    const ret = new URL(returnUrl);
+    ret.searchParams.set("paid", "1");
+    ret.searchParams.set("sid", sessionId);
+    url.searchParams.set("redirectURL", ret.toString());
+    // Coinbase / others sometimes read these aliases
+    if (!url.searchParams.has("redirectUrl")) {
+      url.searchParams.set("redirectUrl", ret.toString());
+    }
+    return url.toString();
+  } catch {
+    return link;
+  }
+}
+
 /** Prefer Transak (card → USDC). Fall back to Coinbase. Never Stripe Onramp. */
 export async function prepareInstantOnramp(
   input: PrepareInstantInput,
