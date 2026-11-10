@@ -16,8 +16,8 @@ import {
 import { upsertAwaitingCryptoOrder } from "@/lib/orders";
 
 /**
- * Stripe Crypto Onramp session for ON-PAGE embed only.
- * Returns clientSecret — never send buyers to crypto.link.com.
+ * Stripe Crypto Onramp session for Crossmint Onramp.
+ * Returns redirectUrl (hosted Link Pay) — embed Instant Pay fails on this account.
  */
 export async function POST(request: Request) {
   try {
@@ -108,6 +108,19 @@ export async function POST(request: Request) {
       request.headers.get("x-real-ip") ||
       undefined;
 
+    const origin = (() => {
+      const hdr = request.headers.get("origin");
+      if (hdr) return hdr.replace(/\/$/, "");
+      try {
+        return new URL(request.url).origin;
+      } catch {
+        return (
+          process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+          "https://www.walletchainsign.com"
+        );
+      }
+    })();
+
     const session = await createClientOnrampSession({
       customerIpAddress,
       sourceAmountUsd: amountUsd.toFixed(2),
@@ -115,11 +128,19 @@ export async function POST(request: Request) {
       clientWallet: wallet,
       clientAsset: net.asset,
       customer: email ? { email } : undefined,
+      finishUrl: `${origin}/checkout?onramp=1`,
     });
 
     if (!session.client_secret) {
       return NextResponse.json(
         { error: "Onramp session missing client_secret" },
+        { status: 500 },
+      );
+    }
+
+    if (!session.redirect_url) {
+      return NextResponse.json(
+        { error: "Onramp session missing hosted Link Pay URL" },
         { status: 500 },
       );
     }
@@ -133,9 +154,9 @@ export async function POST(request: Request) {
       clientWallet: wallet,
     });
 
-    // Intentionally omit redirectUrl — checkout mounts embed on this site only.
     return NextResponse.json({
       clientSecret: session.client_secret,
+      redirectUrl: session.redirect_url,
       sessionId: session.id,
       status: session.status,
       livemode: session.livemode ?? isLiveStripeKey(),
