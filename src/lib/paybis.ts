@@ -57,7 +57,7 @@ export function paybisWidgetOrigin(env: PaybisEnv = getPaybisEnvironment()): str
     : "https://widget.sandbox.paybis.com";
 }
 
-export type BuildPaybisEmbedInput = {
+export type BuildPaybisRedirectInput = {
   amountUsd: number;
   network: string;
   walletAddress: string;
@@ -79,45 +79,72 @@ export function signPaybisQuery(queryWithoutSignature: string, hmacKey: string):
   return createHmac("sha256", key).update(message, "utf8").digest("base64");
 }
 
-/** Build on-page embed URL: card buy → USDC to buyer wallet. */
-export function buildPaybisEmbedUrl(input: BuildPaybisEmbedInput): {
-  widgetUrl: string;
-  environment: PaybisEnv;
+/**
+ * Full-page redirect to Paybis.
+ * - Partner keys set → signed widget.paybis.com buy URL
+ * - Otherwise → paybis.com so the buyer can pay there directly
+ */
+export function buildPaybisRedirectUrl(input: BuildPaybisRedirectInput): {
+  url: string;
+  environment: PaybisEnv | "public";
+  mode: "partner_redirect" | "public_redirect";
 } {
-  const partnerId = getPaybisPartnerId();
-  const hmacKey = getPaybisHmacKey();
-  const env = getPaybisEnvironment();
   const asset = PAYBIS_CRYPTO_BY_NETWORK[input.network];
-  if (!partnerId || !hmacKey) {
-    throw new Error("Paybis is not configured");
-  }
   if (!asset) {
-    throw new Error("Unsupported network for Paybis Instant");
+    throw new Error("Unsupported network for Paybis");
   }
 
-  const params: Record<string, string> = {
+  if (isPaybisConfigured()) {
+    const partnerId = getPaybisPartnerId();
+    const hmacKey = getPaybisHmacKey();
+    const env = getPaybisEnvironment();
+    const params: Record<string, string> = {
+      amountFrom: String(input.amountUsd),
+      cryptoAddress: input.walletAddress,
+      currencyCodeFrom: "USD",
+      currencyCodeTo: asset.code,
+      failureReturnURL: input.failureReturnURL,
+      locale: "en",
+      partnerId,
+      successReturnURL: input.successReturnURL,
+      transactionFlow: "buyCrypto",
+    };
+    if (input.partnerUserId) {
+      params.partnerUserId = input.partnerUserId;
+    }
+
+    const sortedKeys = Object.keys(params).sort((a, b) => a.localeCompare(b));
+    const query = sortedKeys
+      .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k]!)}`)
+      .join("&");
+    const signature = signPaybisQuery(`?${query}`, hmacKey);
+    return {
+      url: `${paybisWidgetOrigin(env)}/?${query}&signature=${encodeURIComponent(signature)}`,
+      environment: env,
+      mode: "partner_redirect",
+    };
+  }
+
+  // Public Paybis site — buyer completes card→crypto on paybis.com
+  const publicParams = new URLSearchParams({
     amountFrom: String(input.amountUsd),
-    canClose: "false",
     cryptoAddress: input.walletAddress,
     currencyCodeFrom: "USD",
     currencyCodeTo: asset.code,
-    failureReturnURL: input.failureReturnURL,
-    layout: "embed",
-    locale: "en",
-    partnerId,
-    successReturnURL: input.successReturnURL,
     transactionFlow: "buyCrypto",
+  });
+  return {
+    url: `https://paybis.com/?${publicParams.toString()}`,
+    environment: "public",
+    mode: "public_redirect",
   };
-  if (input.partnerUserId) {
-    params.partnerUserId = input.partnerUserId;
-  }
+}
 
-  // Alphabetical order A→Z required before signing
-  const sortedKeys = Object.keys(params).sort((a, b) => a.localeCompare(b));
-  const query = sortedKeys
-    .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(params[k]!)}`)
-    .join("&");
-  const signature = signPaybisQuery(`?${query}`, hmacKey);
-  const widgetUrl = `${paybisWidgetOrigin(env)}/?${query}&signature=${encodeURIComponent(signature)}`;
-  return { widgetUrl, environment: env };
+/** @deprecated Use buildPaybisRedirectUrl — kept for older callers. */
+export function buildPaybisEmbedUrl(input: BuildPaybisRedirectInput): {
+  widgetUrl: string;
+  environment: PaybisEnv | "public";
+} {
+  const built = buildPaybisRedirectUrl(input);
+  return { widgetUrl: built.url, environment: built.environment };
 }

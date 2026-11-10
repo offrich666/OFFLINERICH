@@ -20,7 +20,7 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant, Paybis, or Card backup — crypto to your wallet.
+            Instant on this page, or open Paybis to pay there.
           </p>
         </div>
 

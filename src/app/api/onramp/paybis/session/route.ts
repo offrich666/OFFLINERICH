@@ -10,7 +10,7 @@ import {
 import {
   PAYBIS_CRYPTO_BY_NETWORK,
   PAYBIS_MERCHANT_EMAIL,
-  buildPaybisEmbedUrl,
+  buildPaybisRedirectUrl,
   isPaybisConfigured,
 } from "@/lib/paybis";
 
@@ -29,23 +29,11 @@ function getAppOrigin(request: Request): string {
 }
 
 /**
- * Instant via Paybis embed — card → USDC to buyer wallet, stays on checkout.
- * Merchant product: PAYBIS_PARTNER_ID (dashboard: richoffline666@gmail.com).
+ * Paybis redirect — opens Paybis so the buyer pays there (card → crypto).
+ * Uses signed partner widget when keys exist; otherwise paybis.com.
  */
 export async function POST(request: Request) {
   try {
-    if (!isPaybisConfigured()) {
-      return NextResponse.json(
-        {
-          error:
-            "Paybis Instant is not configured yet. Add PAYBIS_PARTNER_ID + PAYBIS_HMAC_KEY (from Paybis dashboard) and whitelist www.walletchainsign.com.",
-          code: "paybis_not_configured",
-          merchantEmail: PAYBIS_MERCHANT_EMAIL,
-        },
-        { status: 503 },
-      );
-    }
-
     let amountUsd = MIN_AMOUNT_USD;
     let network = "ethereum";
     let wallet = "";
@@ -93,7 +81,7 @@ export async function POST(request: Request) {
     }
 
     const origin = getAppOrigin(request);
-    const { widgetUrl, environment } = buildPaybisEmbedUrl({
+    const built = buildPaybisRedirectUrl({
       amountUsd,
       network,
       walletAddress: wallet,
@@ -103,15 +91,15 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      url: widgetUrl,
-      environment,
+      url: built.url,
+      environment: built.environment,
       provider: "paybis",
-      mode: "embed",
+      mode: built.mode,
       merchantEmail: PAYBIS_MERCHANT_EMAIL,
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to start Paybis Instant";
+      error instanceof Error ? error.message : "Failed to start Paybis";
     console.error("[onramp/paybis/session]", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -119,9 +107,10 @@ export async function POST(request: Request) {
 
 export async function GET() {
   return NextResponse.json({
-    ready: isPaybisConfigured(),
+    ready: true,
+    partnerConfigured: isPaybisConfigured(),
     provider: "paybis",
     merchantEmail: PAYBIS_MERCHANT_EMAIL,
-    note: "On-page Paybis embed — card → crypto to buyer wallet. Whitelist www.walletchainsign.com in Paybis.",
+    note: "Paybis opens paybis.com (or signed partner widget) in a redirect so buyers pay there.",
   });
 }
