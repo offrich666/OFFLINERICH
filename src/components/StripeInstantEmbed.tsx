@@ -9,6 +9,8 @@ const stripeOnrampPromise = publishableKey
   ? loadStripeOnramp(publishableKey)
   : Promise.resolve(null);
 
+const ONRAMP_APPEARANCE = { theme: "dark" as const };
+
 type Props = {
   clientSecret: string;
   onPaid?: () => void;
@@ -17,6 +19,7 @@ type Props = {
 
 /**
  * Live Stripe Crypto Onramp — card → crypto to the buyer wallet, on this page.
+ * Mount is stable across Link/email steps (no remount back to Continue).
  */
 export function StripeInstantEmbed({ clientSecret, onPaid, onFailed }: Props) {
   if (!publishableKey || !stripeOnrampPromise) {
@@ -30,15 +33,13 @@ export function StripeInstantEmbed({ clientSecret, onPaid, onFailed }: Props) {
   return (
     <div className="stripe-embed onramp-embed thirdweb-instant-embed stripe-onramp-shell">
       <p className="form-hint instant-buy-hint">
-        Crossmint Onramp — pay with card below. Scroll to use Continue.
-      </p>
-      <p className="form-hint onramp-scroll-hint">
-        If Continue is hidden, scroll down inside the payment panel.
+        Crossmint Onramp — complete Link / email, then Continue to pay. Stays on
+        this page.
       </p>
       <CryptoElements stripeOnramp={stripeOnrampPromise}>
         <OnrampElement
           clientSecret={clientSecret}
-          appearance={{ theme: "dark" }}
+          appearance={ONRAMP_APPEARANCE}
           className="stripe-onramp-frame"
           onComplete={onPaid}
           onError={onFailed}

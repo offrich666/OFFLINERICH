@@ -32,6 +32,13 @@ const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const stripeOnrampReady = Boolean(publishableKey);
 const thirdwebReady = Boolean(getThirdwebClientId());
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000, 5000, 10000] as const;
+const ONRAMP_SESSION_KEY = "offlinerich.crossmint_onramp.v1";
+
+type SavedOnrampSession = {
+  clientSecret: string;
+  amountUsd: number;
+  wallet: string;
+};
 
 type PayPath = "instant" | "crossmint" | "crossmintOnramp" | "card";
 type Mode = "pick" | "instant" | "crossmintOnramp" | "card";
@@ -58,6 +65,24 @@ export function ClientPayCheckout() {
   const [paidAmount, setPaidAmount] = useState<number | null>(null);
   const [cardSecret, setCardSecret] = useState<string | null>(null);
   const [onrampSecret, setOnrampSecret] = useState<string | null>(null);
+
+  // Restore Stripe Onramp after Link/email returns (avoids dumping back to Continue).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(ONRAMP_SESSION_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as SavedOnrampSession;
+      if (!saved?.clientSecret || !saved.amountUsd || !saved.wallet) return;
+      setOnrampSecret(saved.clientSecret);
+      setPaidAmount(saved.amountUsd);
+      setWallet(saved.wallet);
+      setNetwork("ethereum");
+      setPath("crossmintOnramp");
+      setMode("crossmintOnramp");
+    } catch {
+      sessionStorage.removeItem(ONRAMP_SESSION_KEY);
+    }
+  }, []);
 
   const amountUsd = parseAmountUsd(amountInput);
   const amountOk = amountUsd != null && isValidAmountUsd(amountUsd);
@@ -152,6 +177,16 @@ export function ClientPayCheckout() {
     if (!res.ok || !data.clientSecret) {
       throw new Error(data.error || "Could not start Crossmint Onramp");
     }
+    const saved: SavedOnrampSession = {
+      clientSecret: data.clientSecret,
+      amountUsd: amountUsd!,
+      wallet: normalizedWallet,
+    };
+    try {
+      sessionStorage.setItem(ONRAMP_SESSION_KEY, JSON.stringify(saved));
+    } catch {
+      /* ignore quota */
+    }
     setOnrampSecret(data.clientSecret);
     setPaidAmount(amountUsd!);
     setWallet(normalizedWallet);
@@ -222,6 +257,11 @@ export function ClientPayCheckout() {
   }
 
   function resetToPick() {
+    try {
+      sessionStorage.removeItem(ONRAMP_SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
     setCardSecret(null);
     setOnrampSecret(null);
     setPaidAmount(null);
@@ -271,7 +311,14 @@ export function ClientPayCheckout() {
         {error ? <p className="form-error">{error}</p> : null}
         <StripeInstantEmbed
           clientSecret={onrampSecret}
-          onPaid={() => setStatus("Paid — crypto is settling to your wallet.")}
+          onPaid={() => {
+            try {
+              sessionStorage.removeItem(ONRAMP_SESSION_KEY);
+            } catch {
+              /* ignore */
+            }
+            setStatus("Paid — crypto is settling to your wallet.");
+          }}
           onFailed={(message) => setError(message)}
         />
       </div>

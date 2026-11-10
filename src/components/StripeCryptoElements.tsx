@@ -19,6 +19,8 @@ const CryptoElementsContext = createContext<OnrampContextValue>({
   onramp: null,
 });
 
+const DEFAULT_APPEARANCE = { theme: "dark" as const };
+
 export function CryptoElements({
   stripeOnramp,
   children,
@@ -61,9 +63,14 @@ type OnrampElementProps = {
   onComplete?: () => void;
 };
 
+/**
+ * Mount Stripe Crypto Onramp once per clientSecret.
+ * Callbacks are stored in refs so parent re-renders (status/email/Link)
+ * do NOT remount the widget back to Continue.
+ */
 export function OnrampElement({
   clientSecret,
-  appearance = { theme: "dark" },
+  appearance = DEFAULT_APPEARANCE,
   className,
   style,
   onReady,
@@ -73,6 +80,16 @@ export function OnrampElement({
   const stripeOnramp = useStripeOnramp();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [mounted, setMounted] = useState(false);
+  const onReadyRef = useRef(onReady);
+  const onErrorRef = useRef(onError);
+  const onCompleteRef = useRef(onComplete);
+  const appearanceTheme = appearance.theme;
+
+  useEffect(() => {
+    onReadyRef.current = onReady;
+    onErrorRef.current = onError;
+    onCompleteRef.current = onComplete;
+  }, [onReady, onError, onComplete]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -85,7 +102,7 @@ export function OnrampElement({
     try {
       const session = stripeOnramp.createSession({
         clientSecret,
-        appearance,
+        appearance: { theme: appearanceTheme },
       });
 
       session.mount(el);
@@ -99,7 +116,7 @@ export function OnrampElement({
           status === "fulfillment_complete" ||
           status === "fulfillment_processing"
         ) {
-          onComplete?.();
+          onCompleteRef.current?.();
         }
       };
 
@@ -116,20 +133,22 @@ export function OnrampElement({
 
       if (!cancelled) {
         setMounted(true);
-        onReady?.();
+        onReadyRef.current?.();
       }
 
       return () => {
         cancelled = true;
         maybeSession.removeEventListener?.("onramp_session_updated", onChange);
+        // Do not wipe DOM on soft React Strict Mode double-invoke mid-interaction
+        // beyond the cancelled flag — only clear when this effect truly tears down.
         el.innerHTML = "";
       };
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to open Stripe Onramp";
-      onError?.(message);
+      onErrorRef.current?.(message);
     }
-  }, [clientSecret, stripeOnramp, appearance, onReady, onError, onComplete]);
+  }, [clientSecret, stripeOnramp, appearanceTheme]);
 
   return (
     <div className="stripe-onramp-mount-wrap">
