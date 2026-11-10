@@ -37,8 +37,18 @@ export function getPaybisHmacKey(): string {
   return (process.env.PAYBIS_HMAC_KEY || "").trim();
 }
 
+/** Paybis partnerId is a product UUID from the partner dashboard. */
+function isLikelyPaybisPartnerId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
 export function isPaybisConfigured(): boolean {
-  return Boolean(getPaybisPartnerId() && getPaybisHmacKey());
+  const partnerId = getPaybisPartnerId();
+  const hmacKey = getPaybisHmacKey();
+  // Reject placeholders like "partner-demo" that only produce widget errors.
+  return Boolean(partnerId && hmacKey && isLikelyPaybisPartnerId(partnerId));
 }
 
 export function paybisWidgetOrigin(env: PaybisEnv = getPaybisEnvironment()): string {
