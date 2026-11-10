@@ -504,34 +504,67 @@ a.capacity-secondary:hover { background: rgba(16, 32, 60, 0.05); }
   font-weight: 650;
 }
 .launch-meter-panel .launch-ok { color: #e7d3a4 !important; }
-.launch-overall { margin-top: 18px; }
-.launch-overall p {
-  margin: 10px 0 0;
-  font-size: 13px;
-  opacity: 0.85;
+.apple-banner .capacity-banner-copy { grid-column: 1 / -1; }
+.apple-banner {
+  grid-template-columns: 1.55fr 0.85fr;
 }
-.launch-overall strong { color: #e7d3a4; }
-.launch-meter {
-  height: 8px;
+.apple-aside .capacity-meter-value {
+  font-size: clamp(28px, 3vw, 36px);
+  letter-spacing: -0.02em;
+}
+.apple-path {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 22px 22px 18px;
+  box-shadow: var(--shadow);
+  animation: rise 0.65s 0.08s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.apple-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.apple-steps li {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 14px 13px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.apple-steps .n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
+  background: var(--navy);
+  color: #f6f1e6;
+  font-weight: 700;
+  font-size: 0.85rem;
 }
-.launch-meter i {
+.apple-steps strong {
   display: block;
-  height: 100%;
-  background: linear-gradient(90deg, #c4a46a, #e7d3a4);
-  border-radius: inherit;
-  animation: launchFill 2.8s ease-in-out infinite alternate;
+  color: var(--navy);
+  font-size: 1.02rem;
+  margin-bottom: 4px;
 }
-.capacity-banner-copy .launch-meter,
-.launch-files .launch-meter {
-  background: #e8edf3;
+.apple-steps p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
-.capacity-banner-copy .launch-meter i,
-.launch-files .launch-meter i {
-  background: linear-gradient(90deg, #1a3a6e, #5ad0c8);
-  animation: none;
+.apple-note {
+  margin-top: 14px;
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 .launch-flow {
   list-style: none;
