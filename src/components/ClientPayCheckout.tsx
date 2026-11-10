@@ -6,7 +6,7 @@ import {
   EmbeddedCheckout,
   EmbeddedCheckoutProvider,
 } from "@stripe/react-stripe-js";
-import { PaybisInstantEmbed } from "@/components/PaybisInstantEmbed";
+import { CrossmintB2CEmbed } from "@/components/CrossmintB2CEmbed";
 import { ThirdwebInstantEmbed } from "@/components/ThirdwebInstantEmbed";
 import {
   MAX_AMOUNT_USD,
@@ -25,26 +25,26 @@ import {
   type ThirdwebInstantNetworkId,
 } from "@/lib/thirdwebPublic";
 import { getStripePublishableKey } from "@/lib/stripePublic";
+import { getClientApiKey } from "@/lib/crossmint";
 
 const publishableKey = getStripePublishableKey();
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 const thirdwebReady = Boolean(getThirdwebClientId());
+const crossmintReady = Boolean(getClientApiKey());
 const QUICK_AMOUNTS = [5, 10, 25, 50, 100, 250, 500, 1000] as const;
 
-type PayPath = "instant" | "buyInstant" | "paybis" | "card";
-type Mode = "pick" | "instant" | "buyInstant" | "card";
+type PayPath = "instant" | "crossmint" | "card";
+type Mode = "pick" | "instant" | "crossmint" | "card";
 
 /**
  * Instant = thirdweb buy-widget on-page.
- * Buy Instant = Paybis widget embedded on-page (no redirect).
- * Paybis = redirect to paybis.com.
+ * Buy with Crossmint Business B2C = Crossmint embedded onramp on-page.
  * Card = Stripe Embedded Checkout backup.
  */
 export function ClientPayCheckout() {
   const rangeLabel = checkoutAmountRangeLabel();
-  const [embedReady, setEmbedReady] = useState(false);
   const [path, setPath] = useState<PayPath>(
-    thirdwebReady ? "instant" : "card",
+    thirdwebReady ? "instant" : crossmintReady ? "crossmint" : "card",
   );
   const [amountInput, setAmountInput] = useState(String(MIN_AMOUNT_USD));
   const [email, setEmail] = useState("");
@@ -63,42 +63,24 @@ export function ClientPayCheckout() {
   const normalizedWallet = normalizeWalletAddress(network, wallet);
   const walletOk = isValidWalletAddress(network, wallet);
   const walletDirty = wallet.trim().length > 0;
-  const emailOk =
-    !email.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailTrimmed = email.trim();
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed);
+  const emailRequiredOk = path === "crossmint" ? emailOk : !emailTrimmed || emailOk;
 
   const canStart =
     amountOk &&
     walletOk &&
-    emailOk &&
+    emailRequiredOk &&
     (path === "instant"
       ? thirdwebReady
-      : path === "buyInstant"
-        ? true
-        : path === "paybis"
-          ? true
-          : Boolean(publishableKey));
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/onramp/paybis/session")
-      .then((r) => r.json())
-      .then((data: { embedReady?: boolean; partnerConfigured?: boolean }) => {
-        if (!cancelled) {
-          setEmbedReady(Boolean(data.embedReady ?? data.partnerConfigured));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setEmbedReady(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      : path === "crossmint"
+        ? crossmintReady && emailOk
+        : Boolean(publishableKey));
 
   useEffect(() => {
     document.documentElement.classList.toggle(
       "onramp-active",
-      mode === "instant" || mode === "buyInstant" || mode === "card",
+      mode === "instant" || mode === "crossmint" || mode === "card",
     );
     return () => document.documentElement.classList.remove("onramp-active");
   }, [mode]);
@@ -114,36 +96,20 @@ export function ClientPayCheckout() {
     setStatus("");
   }
 
-  function startBuyInstant() {
+  function startCrossmint() {
+    if (!crossmintReady) {
+      throw new Error("Crossmint Business B2C is not configured yet.");
+    }
+    if (!emailOk) {
+      throw new Error("Email is required for Crossmint Business B2C.");
+    }
     if (!isThirdwebInstantNetwork(network)) {
       throw new Error("Choose Ethereum, Polygon, Base, or BNB Chain.");
     }
     setWallet(normalizedWallet);
     setPaidAmount(amountUsd!);
-    setMode("buyInstant");
+    setMode("crossmint");
     setStatus("");
-  }
-
-  async function startPaybisRedirect() {
-    if (!isThirdwebInstantNetwork(network)) {
-      throw new Error("Choose Ethereum, Polygon, Base, or BNB Chain.");
-    }
-    const res = await fetch("/api/onramp/paybis/session", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        amountUsd,
-        network,
-        wallet: normalizedWallet,
-        email: email.trim() || undefined,
-        mode: "redirect",
-      }),
-    });
-    const data = (await res.json()) as { url?: string; error?: string };
-    if (!res.ok || !data.url) {
-      throw new Error(data.error || "Could not open Paybis");
-    }
-    window.location.assign(data.url);
   }
 
   async function startCard() {
@@ -155,7 +121,7 @@ export function ClientPayCheckout() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         amountUsd,
-        email: email.trim() || undefined,
+        email: emailTrimmed || undefined,
         network,
         wallet: normalizedWallet,
       }),
@@ -188,7 +154,11 @@ export function ClientPayCheckout() {
       setError("Enter a valid wallet address (0x + 40 hex).");
       return;
     }
-    if (!emailOk) {
+    if (path === "crossmint" && !emailOk) {
+      setError("Enter a valid email for Crossmint Business B2C.");
+      return;
+    }
+    if (!emailRequiredOk) {
       setError("Enter a valid email.");
       return;
     }
@@ -196,8 +166,7 @@ export function ClientPayCheckout() {
     setLoading(true);
     try {
       if (path === "card") await startCard();
-      else if (path === "paybis") await startPaybisRedirect();
-      else if (path === "buyInstant") startBuyInstant();
+      else if (path === "crossmint") startCrossmint();
       else startInstant();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Payment failed to start");
@@ -240,12 +209,12 @@ export function ClientPayCheckout() {
     );
   }
 
-  if (mode === "buyInstant" && paidAmount != null) {
+  if (mode === "crossmint" && paidAmount != null) {
     return (
       <div className="payment-stack onramp-focus">
         <div className="destination-summary">
           <p>
-            Buy Instant <strong>{formatUsd(paidAmount)}</strong> via Paybis →{" "}
+            Crossmint Business B2C <strong>{formatUsd(paidAmount)}</strong> →{" "}
             <code className="break">{wallet.trim()}</code> on {network}
           </p>
           <button type="button" className="ghost-link" onClick={resetToPick}>
@@ -254,11 +223,11 @@ export function ClientPayCheckout() {
         </div>
         {status ? <p className="form-hint">{status}</p> : null}
         {error ? <p className="form-error">{error}</p> : null}
-        <PaybisInstantEmbed
+        <CrossmintB2CEmbed
           amountUsd={paidAmount}
           network={network}
           walletAddress={normalizedWallet || wallet.trim()}
-          email={email.trim() || undefined}
+          email={emailTrimmed}
           onPaid={() => setStatus("Paid — crypto is settling to your wallet.")}
           onFailed={(message) => setError(message)}
         />
@@ -296,7 +265,8 @@ export function ClientPayCheckout() {
       <div className="setup-panel soft">
         <h2>Buy crypto</h2>
         <p>
-          Instant or Buy Instant stay on this page. Paybis opens paybis.com.
+          Instant or Crossmint Business B2C stay on this page. Card backup is
+          also available.
         </p>
 
         <div
@@ -315,18 +285,13 @@ export function ClientPayCheckout() {
           <button
             type="button"
             className={
-              path === "buyInstant" ? "amount-chip active" : "amount-chip"
+              path === "crossmint"
+                ? "amount-chip crossmint-path active"
+                : "amount-chip crossmint-path"
             }
-            onClick={() => setPath("buyInstant")}
+            onClick={() => setPath("crossmint")}
           >
-            Buy Instant
-          </button>
-          <button
-            type="button"
-            className={path === "paybis" ? "amount-chip active" : "amount-chip"}
-            onClick={() => setPath("paybis")}
-          >
-            Paybis
+            Buy with Crossmint Business B2C
           </button>
           <button
             type="button"
@@ -337,11 +302,10 @@ export function ClientPayCheckout() {
           </button>
         </div>
 
-        {path === "buyInstant" && !embedReady ? (
+        {path === "crossmint" && !crossmintReady ? (
           <p className="form-hint">
-            Buy Instant embeds Paybis on this page once Partner ID + HMAC are
-            set (richoffline666@gmail.com). Until then use Paybis redirect or
-            Instant.
+            Crossmint Business B2C needs the Crossmint client key configured.
+            Use Instant or Card backup for now.
           </p>
         ) : null}
 
@@ -414,16 +378,20 @@ export function ClientPayCheckout() {
         ) : null}
 
         <label className="field">
-          Email (optional)
+          Email{path === "crossmint" ? "" : " (optional)"}
           <input
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="you@example.com"
+            required={path === "crossmint"}
           />
         </label>
-        {email.trim() && !emailOk ? (
+        {path === "crossmint" && !emailOk ? (
+          <p className="form-error">Email is required for Crossmint Business B2C.</p>
+        ) : null}
+        {path !== "crossmint" && emailTrimmed && !emailOk ? (
           <p className="form-error">Enter a valid email.</p>
         ) : null}
 
@@ -433,26 +401,22 @@ export function ClientPayCheckout() {
           type="button"
           className="primary-cta"
           onClick={startPay}
-          disabled={loading || !canStart || (path === "buyInstant" && !embedReady)}
+          disabled={loading || !canStart}
         >
           {loading
             ? "Opening…"
             : path === "card"
               ? `Card backup ${amountOk ? amountLabel : rangeLabel}`
-              : path === "paybis"
-                ? `Open Paybis ${amountOk ? amountLabel : rangeLabel}`
-                : path === "buyInstant"
-                  ? `Buy Instant ${amountOk ? amountLabel : rangeLabel}`
-                  : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
+              : path === "crossmint"
+                ? `Buy with Crossmint Business B2C ${amountOk ? amountLabel : rangeLabel}`
+                : `Buy crypto ${amountOk ? amountLabel : rangeLabel}`}
         </button>
         <p className="form-hint">
           {path === "card"
             ? "Card backup pays on this page; crypto is sent later."
-            : path === "paybis"
-              ? "Opens paybis.com — pay with card there; crypto goes to your wallet."
-              : path === "buyInstant"
-                ? "Paybis checkout stays on this page — no redirect."
-                : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
+            : path === "crossmint"
+              ? "Crossmint Business B2C stays on this page — card / Apple Pay / Google Pay."
+              : "Instant stays on this page. Crypto goes to your wallet when payment completes."}
         </p>
       </div>
     </div>

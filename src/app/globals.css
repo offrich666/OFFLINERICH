@@ -670,6 +670,13 @@ code {
   text-align: center;
 }
 
+.path-chips .amount-chip.crossmint-path {
+  flex: 1 1 100%;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  padding-inline: 0.65rem;
+}
+
 .primary-cta {
   width: 100%;
   min-height: 52px;
