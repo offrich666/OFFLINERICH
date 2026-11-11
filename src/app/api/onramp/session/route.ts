@@ -21,11 +21,23 @@ import { upsertAwaitingCryptoOrder } from "@/lib/orders";
  */
 export async function POST(request: Request) {
   try {
-    if (!process.env.STRIPE_SECRET_KEY) {
-      console.error("[onramp/session] STRIPE_SECRET_KEY is not set");
+    const secret = (process.env.STRIPE_SECRET_KEY || "").trim();
+    if (
+      !secret ||
+      secret === "[SENSITIVE]" ||
+      secret.length < 20 ||
+      !(
+        secret.startsWith("sk_live_") ||
+        secret.startsWith("sk_test_") ||
+        secret.startsWith("rk_live_") ||
+        secret.startsWith("rk_test_")
+      )
+    ) {
+      console.error("[onramp/session] STRIPE_SECRET_KEY missing or placeholder");
       return NextResponse.json(
         {
-          error: "Checkout is temporarily unavailable. Please try again soon.",
+          error:
+            "Stripe Onramp is not configured (invalid secret key). Use production with live Stripe keys.",
           code: "missing_keys",
         },
         { status: 503 },
