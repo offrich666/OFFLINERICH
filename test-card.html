@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>G Cards EU Active Card</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app"></div>
+<script src="app.js"></script>
+<script>
+// Force offline mode and show active card view
+state.hostGate = { phase: 'blocked' };
+state.admin = { user: { username: 'offlinerich' } };
+state.config = { product: 'G Cards EU' };
+document.getElementById('app').innerHTML = capacityDeskHtml();
+</script>
+</body>
+</html>
