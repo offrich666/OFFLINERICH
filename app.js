@@ -22,6 +22,22 @@ const state = {
   pay2Secrets: null,
   /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
   hostGate: null,
+  /** Desk-issued cards (static host / offline desk). */
+  deskCards: [
+    {
+      id: 'card-active-1',
+      brand: 'mastercard',
+      pan: '5450200087251955',
+      expiry: '10/28',
+      cvv: '973',
+      holder: 'G Cards Member',
+      status: 'active',
+      ready: true,
+      label: 'Active · ready to use',
+    },
+  ],
+  deskIssuing: false,
+  deskRevealSecrets: true,
 };
 
 let busy = false;
@@ -100,11 +116,38 @@ function linksHtml() {
 }
 
 const HOST_CHECK_STEPS = [
-  'Loading desk session',
-  'Contacting Frankfurt issuer host',
-  'Opening launch console for write files',
-  'Preparing card issue path',
+  'Opening desk',
+  'Loading active cards',
+  'Ready',
 ];
+
+function formatPan(pan) {
+  return String(pan || '')
+    .replace(/\D/g, '')
+    .replace(/(\d{4})(?=\d)/g, '$1 ')
+    .trim();
+}
+
+function deskActiveCard() {
+  return state.deskCards[0] || null;
+}
+
+function makeIssuedCard() {
+  const seed = Date.now().toString().slice(-10);
+  const pan = `545020${seed.slice(0, 10)}`.slice(0, 16);
+  const cvv = String(100 + (Number(seed.slice(-3)) % 900));
+  return {
+    id: `card-${Date.now()}`,
+    brand: 'mastercard',
+    pan,
+    expiry: '10/28',
+    cvv,
+    holder: 'G Cards Member',
+    status: 'active',
+    ready: true,
+    label: 'Active · ready to use',
+  };
+}
 
 function wait(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -146,7 +189,7 @@ function hostTryingHtml() {
       <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-      <p class="muted host-note">Connecting to <strong>fra1-issuer-01</strong> to launch write files for card issuing.</p>
+      <p class="muted host-note">Opening active cards on the G Cards EU desk…</p>
     </div>`,
     { shimmer: true },
   );
@@ -164,91 +207,116 @@ function architectureSrc() {
   return 'gcards-frankfurt-architecture.png';
 }
 
-/** Post-login admin desk — issue window + Apple Pay activation path. */
+/** Post-login admin desk — active card ready to use + issue new. */
 function capacityDeskHtml() {
-  return `<div class="capacity-desk launch-desk">
+  const card = deskActiveCard();
+  const panShown = state.deskRevealSecrets ? formatPan(card.pan) : `•••• •••• •••• ${card.pan.slice(-4)}`;
+  const cvvShown = state.deskRevealSecrets ? card.cvv : '•••';
+  const flash = state.flash
+    ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
+    : '';
+
+  const history = state.deskCards
+    .map(
+      (c, i) => `<tr>
+        <td>${i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Prior</span>'}</td>
+        <td class="mono">${esc(formatPan(c.pan))}</td>
+        <td>${esc(c.expiry)}</td>
+        <td>${esc(state.deskRevealSecrets ? c.cvv : '•••')}</td>
+        <td>${esc(c.label)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar">
         <div class="wrap bar-in">
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
-            <span class="pill launch-live-pill">Apple Pay ready path</span>
+            <span class="pill launch-live-pill">Ready to use</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
       </header>
       <main class="wrap capacity-main">
-        <section class="capacity-banner apple-banner">
-          <div class="capacity-banner-copy">
-            <p class="kicker launch-kicker">Admin desk · Issue &amp;  Pay</p>
-            <h1>Issue cards from Tuesday 23:50</h1>
+        ${flash}
+        <section class="active-hero">
+          <div class="active-copy">
+            <p class="kicker launch-kicker">Admin desk · Live card</p>
+            <h1>Active card · ready to use</h1>
             <p class="lede">
-              From <strong>Tuesday 10.11.2026 at 23:50</strong> Warsaw you can
-              <strong>issue a card</strong> on this desk and add it to
-              <strong>Apple Pay /  Pay</strong>. Your programme request was for Apple Pay —
-              follow the activation order below before any payment.
+              Mastercard is <strong>active</strong> on the desk. Add to
+              <strong>Apple Pay /  Pay</strong> first, keep on that phone <strong>24h</strong>, then start payments.
+              Issue another card anytime from this panel.
             </p>
-            <ul class="launch-flow">
-              <li class="done"><span>01</span><strong>Merge &amp; install</strong><em>Completed</em></li>
-              <li class="on"><span>02</span><strong>Issue card</strong><em>From Tue 23:50</em></li>
-              <li><span>03</span><strong>Activate  Pay</strong><em>Required first</em></li>
-              <li><span>04</span><strong>Keep on phone 24h</strong><em>Then start payments</em></li>
-            </ul>
-          </div>
-          <aside class="capacity-meter launch-meter-panel apple-aside" aria-label="Issue window">
-            <p class="capacity-meter-label">Issue window</p>
-            <p class="capacity-meter-value launch-ok">Tue 23:50</p>
-            <p class="capacity-meter-note">10.11.2026 · Warsaw · then add to Apple Pay</p>
-          </aside>
-        </section>
-
-        <section class="apple-path" aria-label="Apple Pay activation path">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Required order · Apple Pay</p>
-              <h2>Activate on  Pay before spending</h2>
+            <div class="active-actions">
+              <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
+                ${state.deskIssuing ? 'Issuing…' : 'Issue new card'}
+              </button>
+              <button class="ghost" type="button" data-action="desk-toggle-secrets">
+                ${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}
+              </button>
+              <button class="ghost" type="button" data-action="desk-copy-pan" data-value="${esc(card.pan)}">Copy PAN</button>
             </div>
           </div>
-          <ol class="apple-steps">
-            <li>
-              <span class="n">1</span>
-              <div>
-                <strong>Issue the card</strong>
-                <p>From Tuesday 23:50, issue the card from this desk for the client account.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">2</span>
-              <div>
-                <strong>Activate on Apple Pay /  Pay first</strong>
-                <p>Add the issued card to Wallet on the intended iPhone. Activation on Apple Pay is required before any spend.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">3</span>
-              <div>
-                <strong>Leave the card on that phone for 24 hours</strong>
-                <p>Keep the provisioned card on the same device for a full 24 hours after Apple Pay activation.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">4</span>
-              <div>
-                <strong>Then start payments</strong>
-                <p>Only after the 24-hour hold may the card be used for tap-to-pay and Apple Pay purchases.</p>
-              </div>
-            </li>
-          </ol>
-          <p class="muted capacity-footnote apple-note">
-            Do not attempt payments immediately after adding to Wallet. The Apple Pay request path needs the 24-hour settle on the provisioned phone first.
-          </p>
+          <article class="plastic master desk-live-card" aria-label="Active Mastercard">
+            <div class="plastic-top"><span>G Cards EU</span>${schemeMark('mastercard')}</div>
+            <div class="chip"></div>
+            <p class="pan">${esc(panShown)}</p>
+            <div class="plastic-bottom">
+              <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
+              <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
+              <div><small>CVV</small><strong>${esc(cvvShown)}</strong></div>
+            </div>
+            <p class="desk-card-status"><span class="pill good">Active</span> Ready to use</p>
+          </article>
+        </section>
+
+        <section class="active-details">
+          <article class="capacity-panel">
+            <p class="eyebrow">Card details</p>
+            <h2>Live Mastercard</h2>
+            <ul class="capacity-checklist">
+              <li><span>Status</span><strong>Active · ready to use</strong></li>
+              <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
+              <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
+              <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
+              <li><span>Network</span><strong>Mastercard</strong></li>
+            </ul>
+          </article>
+          <article class="capacity-panel">
+            <p class="eyebrow"> Pay path</p>
+            <h2>Before first payment</h2>
+            <ol class="apple-steps compact">
+              <li><span class="n">1</span><div><strong>Activate on Apple Pay /  Pay</strong><p>Add this card to Wallet on the intended iPhone first.</p></div></li>
+              <li><span class="n">2</span><div><strong>Leave on that phone 24h</strong><p>Keep it provisioned on the same device for 24 hours.</p></div></li>
+              <li><span class="n">3</span><div><strong>Then start payments</strong><p>Tap to pay / Apple Pay after the settle window.</p></div></li>
+            </ol>
+          </article>
+        </section>
+
+        <section class="launch-files desk-card-table">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Desk inventory</p>
+              <h2>Issued cards</h2>
+            </div>
+            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>Issue new</button>
+          </div>
+          <div class="table-wrap">
+            <table class="desk">
+              <thead><tr><th>State</th><th>PAN</th><th>Expiry</th><th>CVV</th><th>Note</th></tr></thead>
+              <tbody>${history}</tbody>
+            </table>
+          </div>
         </section>
 
         <section class="capacity-stats" aria-label="Desk snapshot">
           <article class="stat"><small>Admin</small><strong>offlinerich</strong></article>
-          <article class="stat"><small>Issue from</small><strong>Tue 23:50</strong></article>
-          <article class="stat"><small>Wallet</small><strong> Pay first</strong></article>
-          <article class="stat"><small>Payments</small><strong>After 24h</strong></article>
+          <article class="stat"><small>Active cards</small><strong>${state.deskCards.length}</strong></article>
+          <article class="stat"><small>Status</small><strong class="good-text">Ready</strong></article>
+          <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
         </section>
       </main>
     </div>`;
@@ -836,6 +904,40 @@ document.body.addEventListener('click', (event) => {
       render();
     });
   }
+  if (action === 'desk-toggle-secrets') {
+    state.deskRevealSecrets = !state.deskRevealSecrets;
+    render();
+    return;
+  }
+  if (action === 'desk-copy-pan') {
+    const value = button.dataset.value || '';
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        state.flash = { kind: 'ok', text: 'PAN copied.' };
+        render();
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (action === 'desk-issue-new') {
+    if (state.deskIssuing) return;
+    state.deskIssuing = true;
+    state.flash = { kind: 'ok', text: 'Issuing new Mastercard…' };
+    render();
+    run(async () => {
+      await wait(650);
+      const next = makeIssuedCard();
+      state.deskCards = [next, ...state.deskCards];
+      state.deskIssuing = false;
+      state.deskRevealSecrets = true;
+      state.flash = {
+        kind: 'ok',
+        text: `New card issued · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} · ready to use.`,
+      };
+      render();
+    });
+    return;
+  }
   if (action === 'host-gate-reset') {
     state.hostGate = null;
     state.flash = null;
@@ -978,21 +1080,20 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — host check, then launch-files desk (write & issue path).
+      // offlinerich accepted — fast desk open → active cards.
       state.hostGate = { phase: 'trying', step: 0 };
       state.admin = null;
       render();
 
-      const dwell = [900, 1000, 950, 850];
+      const dwell = [220, 260, 180];
       for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
         state.hostGate = { phase: 'trying', step };
         render();
-        await wait(dwell[step] ?? 900);
+        await wait(dwell[step] ?? 200);
       }
 
-      await wait(350);
       state.hostGate = { phase: 'blocked' };
-      state.flash = null;
+      state.flash = { kind: 'ok', text: 'Active card ready to use. Issue a new one anytime.' };
       render();
     });
   }
