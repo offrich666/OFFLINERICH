@@ -567,6 +567,43 @@ a.capacity-secondary:hover { background: rgba(16, 32, 60, 0.05); }
   line-height: 1.45;
 }
 .apple-steps.compact li { padding: 12px; }
+.wallet-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.wallet-field {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 4px 10px;
+  align-items: center;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+.wallet-field small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wallet-field strong {
+  color: var(--navy);
+  font-size: 1.05rem;
+  word-break: break-all;
+}
+.wallet-field .ghost {
+  justify-self: end;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+@media (max-width: 720px) {
+  .wallet-fields { grid-template-columns: 1fr; }
+}
 .active-desk .desk-flash {
   margin: 0;
   padding: 12px 14px;

@@ -43,11 +43,6 @@ const state = {
   deskDepositAmount: '',
   deskDepositBusy: false,
   deskDeposits: [],
-  deskApplePay: { activated: false, activatedAt: '', deviceLabel: 'iPhone' },
-  deskSpendAmount: '',
-  deskSpendMerchant: 'Apple Pay · Merchant',
-  deskSpendBusy: false,
-  deskTxns: [],
 };
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v1';
@@ -60,8 +55,6 @@ function loadDeskLedger() {
     if (Array.isArray(data.deskCards) && data.deskCards.length) state.deskCards = data.deskCards;
     if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
     if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
-    if (data.deskApplePay) state.deskApplePay = { ...state.deskApplePay, ...data.deskApplePay };
-    if (Array.isArray(data.deskTxns)) state.deskTxns = data.deskTxns;
   } catch {
     /* ignore */
   }
@@ -75,8 +68,6 @@ function saveDeskLedger() {
         deskCards: state.deskCards,
         deskBalanceCents: state.deskBalanceCents,
         deskDeposits: state.deskDeposits,
-        deskApplePay: state.deskApplePay,
-        deskTxns: state.deskTxns,
       }),
     );
   } catch {
@@ -306,23 +297,6 @@ function capacityDeskHtml() {
         .join('')
     : '<tr><td colspan="5" class="muted">No deposits yet. Balance is $0.00 — deposit a token to top up.</td></tr>';
 
-  const appleOn = Boolean(state.deskApplePay?.activated);
-  const spendAmt = Number(state.deskSpendAmount);
-  const spendCentsPreview = Number.isFinite(spendAmt) && spendAmt > 0 ? Math.round(spendAmt * 100) : 0;
-  const txnRows = state.deskTxns.length
-    ? state.deskTxns
-        .map(
-          (t) => `<tr>
-            <td>${esc(t.when)}</td>
-            <td>${esc(t.merchant)}</td>
-            <td>${esc(money(t.amountCents))}</td>
-            <td class="mono">${esc(t.authCode)}</td>
-            <td><span class="pill good">${esc(t.status)}</span></td>
-          </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="5" class="muted">No Apple Pay transactions yet. Deposit funds, add to  Pay, then complete a payment.</td></tr>';
-
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar">
         <div class="wrap bar-in">
@@ -330,8 +304,8 @@ function capacityDeskHtml() {
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
-            <span class="pill ${appleOn ? 'launch-live-pill' : ''}">${appleOn ? ' Pay on' : ' Pay off'}</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112b</span>
+            <span class="pill launch-live-pill">Add in Wallet</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112c</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -340,21 +314,21 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">Admin desk · Live card · Apple Pay</p>
-            <h1>Active card · spendable balance</h1>
+            <p class="kicker launch-kicker">Admin desk · Real Apple Pay add</p>
+            <h1>Add this card in Apple Wallet</h1>
             <p class="lede">
-              Issued Mastercard is <strong>active</strong>. Deposits credit the
-              <strong>real card spend balance</strong> (${esc(money(state.deskBalanceCents))}).
-              Add to <strong>Apple Pay /  Pay</strong>, then complete payments from that balance.
+              No fake activation on the desk. Add the issued Mastercard
+              <strong>for real in Apple Wallet /  Pay</strong> on the iPhone using the PAN, expiry and CVV.
+              Deposited balance (${esc(money(state.deskBalanceCents))}) is the card spend balance for payments after Wallet accepts the card.
             </p>
             <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
+              <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy card for Apple Wallet</button>
+              <button class="ghost" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
                 ${state.deskIssuing ? 'Issuing…' : 'Issue new card'}
               </button>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">
                 ${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}
               </button>
-              <button class="ghost" type="button" data-action="desk-copy-wallet-pack">Copy for Apple Wallet</button>
             </div>
           </div>
           <article class="plastic master desk-live-card" aria-label="Active Mastercard">
@@ -366,47 +340,82 @@ function capacityDeskHtml() {
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
               <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
             </div>
-            <p class="desk-card-status">
-              <span class="pill good">Active</span>
-              ${appleOn ? '<span class="pill good"> Pay</span>' : '<span class="pill">Add to  Pay</span>'}
-              · CVV ${esc(cvvShown)}
-            </p>
+            <p class="desk-card-status"><span class="pill good">Active</span> Add in Wallet · CVV ${esc(cvvShown)}</p>
           </article>
         </section>
 
-        <section class="desk-deposit" id="desk-apple" aria-label="Apple Pay">
+        <section class="desk-deposit" id="desk-apple" aria-label="Real Apple Pay add">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Apple Pay /  Pay</p>
-              <h2>Add card to Wallet</h2>
+              <p class="eyebrow">Real Apple Pay · iPhone Wallet</p>
+              <h2>Enter card details in Wallet</h2>
             </div>
-            <span class="pill ${appleOn ? 'launch-live-pill' : ''}">${appleOn ? 'Activated' : 'Not on Wallet yet'}</span>
           </div>
-          <p class="lede">
-            On iPhone: Wallet → <strong>+</strong> → Debit or Credit Card → Enter Card Details Manually.
-            Use the PAN, expiry and CVV below. After Apple confirms, mark activated here so spends use this card balance.
-          </p>
-          <ul class="capacity-checklist">
-            <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
-            <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
-            <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
-            <li><span>Name</span><strong>${esc(card.holder)}</strong></li>
-            <li><span>Spend balance</span><strong>${esc(money(state.deskBalanceCents))}</strong></li>
-          </ul>
+          <ol class="apple-steps">
+            <li>
+              <span class="n">1</span>
+              <div>
+                <strong>Open Wallet on the iPhone</strong>
+                <p>Tap <strong>+</strong> → Debit or Credit Card → <strong>Enter Card Details Manually</strong> (not camera).</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">2</span>
+              <div>
+                <strong>Type these exact details</strong>
+                <p>Apple verifies the card with the network. Use copy buttons so nothing is mistyped.</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">3</span>
+              <div>
+                <strong>Confirm with Apple’s code</strong>
+                <p>Finish the SMS / bank verification Apple shows. When Wallet says the card is ready, Apple Pay is real on that phone.</p>
+              </div>
+            </li>
+            <li>
+              <span class="n">4</span>
+              <div>
+                <strong>Spend the funded balance</strong>
+                <p>Deposit tokens first. Then tap to pay / Apple Pay at merchants — amount settles from this card’s spend balance.</p>
+              </div>
+            </li>
+          </ol>
+          <div class="wallet-fields">
+            <div class="wallet-field">
+              <small>Card number</small>
+              <strong class="mono">${esc(panShown)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button>
+            </div>
+            <div class="wallet-field">
+              <small>Expiry</small>
+              <strong>${esc(card.expiry)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button>
+            </div>
+            <div class="wallet-field">
+              <small>CVV</small>
+              <strong>${esc(cvvShown)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button>
+            </div>
+            <div class="wallet-field">
+              <small>Name on card</small>
+              <strong>${esc(card.holder)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.holder)}">Copy</button>
+            </div>
+          </div>
           <div class="active-actions" style="margin-top:14px">
-            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy PAN · expiry · CVV</button>
-            <button class="primary" type="button" data-action="desk-mark-apple-pay" ${appleOn ? 'disabled' : ''}>
-              ${appleOn ? ' Pay activated' : 'Mark  Pay activated'}
-            </button>
-            ${appleOn ? `<button class="ghost" type="button" data-action="desk-clear-apple-pay">Reset  Pay flag</button>` : ''}
+            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy all for Wallet</button>
           </div>
-          ${appleOn ? `<p class="muted capacity-footnote" style="margin-top:12px">Activated ${esc(state.deskApplePay.activatedAt)} on ${esc(state.deskApplePay.deviceLabel)}. Card spends pull from the deposited balance.</p>` : ''}
+          <p class="muted capacity-footnote apple-note">
+            This is the real Wallet add path (manual card entry). There is no “mark activated” button on the desk —
+            Apple Pay is only live after Wallet accepts the card on the iPhone.
+          </p>
         </section>
 
         <section class="desk-deposit" id="desk-deposit">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Top up · real card balance</p>
+              <p class="eyebrow">Top up · card spend balance</p>
               <h2>Deposit your token</h2>
             </div>
             <div class="desk-balance-chip">
@@ -414,7 +423,7 @@ function capacityDeskHtml() {
               <strong>${esc(money(state.deskBalanceCents))}</strong>
             </div>
           </div>
-          <p class="lede">Credits go onto the issued card as its spendable USD balance for Apple Pay / tap payments.</p>
+          <p class="lede">Fund the issued card. After it is in Apple Wallet, Apple Pay / tap spends use this balance.</p>
           <div class="desk-token-grid">${tokenButtons}</div>
           <form id="desk-deposit-form" class="desk-deposit-form">
             <label>Amount (${esc(selected.id)})
@@ -436,64 +445,25 @@ function capacityDeskHtml() {
           </div>
         </section>
 
-        <section class="desk-deposit" id="desk-spend">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Apple Pay · complete payment</p>
-              <h2>Spend from card balance</h2>
-            </div>
-            <div class="desk-balance-chip">
-              <small>Available</small>
-              <strong>${esc(money(state.deskBalanceCents))}</strong>
-            </div>
-          </div>
-          <p class="lede">
-            Transactions authorize against this card’s deposited balance and complete for that amount.
-            ${appleOn ? ' Pay is activated — payments can settle now.' : 'Activate  Pay above before completing a payment.'}
-          </p>
-          <form id="desk-spend-form" class="desk-deposit-form">
-            <label>Merchant
-              <input name="merchant" value="${esc(state.deskSpendMerchant)}" placeholder="Apple Pay · Merchant" required />
-            </label>
-            <label>Amount (USD)
-              <input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" value="${esc(state.deskSpendAmount)}" required />
-            </label>
-            <div class="desk-credit-preview">
-              <small>Will settle</small>
-              <strong>${esc(money(spendCentsPreview))}</strong>
-            </div>
-            <button class="primary" type="submit" ${state.deskSpendBusy || !appleOn || state.deskBalanceCents <= 0 ? 'disabled' : ''}>
-              ${state.deskSpendBusy ? 'Authorizing…' : 'Complete Apple Pay transaction'}
-            </button>
-          </form>
-          <div class="table-wrap" style="margin-top:16px">
-            <table class="desk">
-              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Auth</th><th>Status</th></tr></thead>
-              <tbody>${txnRows}</tbody>
-            </table>
-          </div>
-        </section>
-
         <section class="active-details">
           <article class="capacity-panel">
             <p class="eyebrow">Card details</p>
             <h2>Live Mastercard</h2>
             <ul class="capacity-checklist">
-              <li><span>Status</span><strong>Active · ready to use</strong></li>
+              <li><span>Status</span><strong>Active · ready for Wallet</strong></li>
               <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
               <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
               <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
               <li><span>Spend balance</span><strong>${esc(money(state.deskBalanceCents))}</strong></li>
-              <li><span> Pay</span><strong>${appleOn ? 'Activated' : 'Add in Wallet'}</strong></li>
             </ul>
           </article>
           <article class="capacity-panel">
-            <p class="eyebrow">How spend works</p>
-            <h2>Balance → Apple Pay → settled</h2>
+            <p class="eyebrow">After Wallet accepts it</p>
+            <h2>Pay for real with  Pay</h2>
             <ol class="apple-steps compact">
-              <li><span class="n">1</span><div><strong>Deposit tokens</strong><p>USDT / USDC / SOL / BNB / ETH credit the card spend balance.</p></div></li>
-              <li><span class="n">2</span><div><strong>Add to Apple Pay</strong><p>Enter PAN, expiry, CVV in Wallet on the iPhone.</p></div></li>
-              <li><span class="n">3</span><div><strong>Complete transaction</strong><p>Payment settles for the amount and reduces this card balance.</p></div></li>
+              <li><span class="n">1</span><div><strong>Deposit</strong><p>Load USDT / USDC / SOL / BNB / ETH onto the card balance.</p></div></li>
+              <li><span class="n">2</span><div><strong>Add in Wallet</strong><p>Real Apple verification on the iPhone — not a desk toggle.</p></div></li>
+              <li><span class="n">3</span><div><strong>Pay at terminal / online</strong><p>Apple Pay charges against this card’s funded balance.</p></div></li>
             </ol>
           </article>
         </section>
@@ -516,9 +486,9 @@ function capacityDeskHtml() {
 
         <section class="capacity-stats" aria-label="Desk snapshot">
           <article class="stat"><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
-          <article class="stat"><small> Pay</small><strong>${appleOn ? 'On' : 'Off'}</strong></article>
-          <article class="stat"><small>Txns</small><strong>${state.deskTxns.length}</strong></article>
+          <article class="stat"><small> Pay</small><strong>In Wallet</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
+          <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
         </section>
       </main>
     </div>`;
@@ -1053,17 +1023,6 @@ document.body.addEventListener('input', (event) => {
     const preview = document.querySelector('#desk-deposit .desk-credit-preview strong');
     if (preview) preview.textContent = money(Math.round(creditUsd * 100));
   }
-  if (event.target.closest?.('#desk-spend-form')) {
-    if (event.target.name === 'amount') state.deskSpendAmount = event.target.value;
-    if (event.target.name === 'merchant') state.deskSpendMerchant = event.target.value;
-    const spendAmt = Number(state.deskSpendAmount);
-    const preview = document.querySelector('#desk-spend .desk-credit-preview strong');
-    if (preview) {
-      preview.textContent = money(
-        Number.isFinite(spendAmt) && spendAmt > 0 ? Math.round(spendAmt * 100) : 0,
-      );
-    }
-  }
 });
 
 async function run(fn) {
@@ -1153,11 +1112,10 @@ document.body.addEventListener('click', (event) => {
       state.deskCards = [next, ...state.deskCards];
       state.deskIssuing = false;
       state.deskRevealSecrets = true;
-      state.deskApplePay = { activated: false, activatedAt: '', deviceLabel: 'iPhone' };
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `New card issued · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} · add to Apple Pay to spend the balance.`,
+        text: `New card issued · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} · add it in Apple Wallet for real  Pay.`,
       };
       render();
     });
@@ -1169,6 +1127,16 @@ document.body.addEventListener('click', (event) => {
     document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
+  if (action === 'desk-copy-field') {
+    const value = button.dataset.value || '';
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        state.flash = { kind: 'ok', text: 'Copied for Apple Wallet.' };
+        render();
+      }).catch(() => {});
+    }
+    return;
+  }
   if (action === 'desk-copy-wallet-pack') {
     const card = deskActiveCard();
     const pack = `${card.pan}\n${card.expiry}\n${card.cvv}\n${card.holder}`;
@@ -1176,33 +1144,11 @@ document.body.addEventListener('click', (event) => {
       navigator.clipboard.writeText(pack).then(() => {
         state.flash = {
           kind: 'ok',
-          text: 'Copied PAN, expiry, CVV for Apple Wallet. Open Wallet → + → Enter Card Details Manually.',
+          text: 'Copied PAN, expiry, CVV. On iPhone: Wallet → + → Enter Card Details Manually.',
         };
         render();
       }).catch(() => {});
     }
-    return;
-  }
-  if (action === 'desk-mark-apple-pay') {
-    state.deskApplePay = {
-      activated: true,
-      activatedAt: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Warsaw', hour12: false }),
-      deviceLabel: 'iPhone · Apple Wallet',
-    };
-    saveDeskLedger();
-    state.flash = {
-      kind: 'ok',
-      text: ' Pay marked activated. Deposited balance is now spendable via Apple Pay transactions on this desk.',
-    };
-    render();
-    document.getElementById('desk-spend')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return;
-  }
-  if (action === 'desk-clear-apple-pay') {
-    state.deskApplePay = { activated: false, activatedAt: '', deviceLabel: 'iPhone' };
-    saveDeskLedger();
-    state.flash = { kind: 'ok', text: ' Pay flag cleared. Activate again after adding the card in Wallet.' };
-    render();
     return;
   }
   if (action === 'host-gate-reset') {
@@ -1394,49 +1340,6 @@ document.body.addEventListener('submit', (event) => {
       };
       render();
       document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    });
-  }
-  if (form.id === 'desk-spend-form') {
-    run(async () => {
-      if (!state.deskApplePay?.activated) {
-        throw new Error('Add the card to Apple Pay /  Pay and mark it activated before spending.');
-      }
-      const amount = Number(data.amount || state.deskSpendAmount);
-      const merchant = String(data.merchant || state.deskSpendMerchant || 'Apple Pay · Merchant').trim();
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a payment amount greater than zero.');
-      const cents = Math.round(amount * 100);
-      if (cents > state.deskBalanceCents) {
-        throw new Error(`Insufficient card balance. Available ${money(state.deskBalanceCents)}.`);
-      }
-      state.deskSpendBusy = true;
-      state.deskSpendAmount = String(amount);
-      state.deskSpendMerchant = merchant;
-      render();
-      await wait(700);
-      state.deskBalanceCents -= cents;
-      const authCode = `AP${String(Date.now()).slice(-6)}`;
-      const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Warsaw', hour12: false });
-      const card = deskActiveCard();
-      state.deskTxns = [
-        {
-          when,
-          merchant,
-          amountCents: cents,
-          authCode,
-          status: 'Completed',
-          panLast4: card.pan.slice(-4),
-        },
-        ...state.deskTxns,
-      ];
-      state.deskSpendBusy = false;
-      state.deskSpendAmount = '';
-      saveDeskLedger();
-      state.flash = {
-        kind: 'ok',
-        text: `Apple Pay transaction completed · ${money(cents)} at ${merchant} · auth ${authCode} · remaining ${money(state.deskBalanceCents)}.`,
-      };
-      render();
-      document.getElementById('desk-spend')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'client-form') {
