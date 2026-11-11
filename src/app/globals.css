@@ -202,6 +202,9 @@ code {
 .checkout-layout-simple {
   max-width: 560px;
   gap: 1.25rem;
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
 }
 
 .checkout-copy-simple h1 {
@@ -453,6 +456,55 @@ code {
   word-break: break-all;
 }
 
+.thirdweb-instant-embed {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0.35rem 0 1rem;
+  gap: 0.55rem;
+}
+
+.instant-buy-hint,
+.instant-paid-note {
+  text-align: center;
+  margin: 0;
+  padding: 0 0.35rem;
+}
+
+.thirdweb-instant-frame {
+  display: block;
+  width: 100%;
+  min-height: min(680px, 85dvh);
+  height: min(780px, 88dvh);
+  border: 0;
+  border-radius: 14px;
+  background: #12100e;
+}
+
+.paybis-instant-frame {
+  background: #0b0f14;
+}
+
+@media (max-width: 640px) {
+  .thirdweb-instant-embed {
+    max-width: none;
+    padding: 0 0 0.75rem;
+  }
+
+  .thirdweb-instant-frame {
+    min-height: min(720px, 90dvh);
+    height: min(860px, 92dvh);
+    border-radius: 10px;
+  }
+
+  .onramp-focus .destination-summary {
+    font-size: 0.92rem;
+  }
+}
+
 .onramp-embed {
   background: #0f1116;
   padding: 0.35rem;
@@ -461,9 +513,52 @@ code {
 .transak-iframe {
   display: block;
   width: 100%;
-  min-height: min(720px, 78vh);
   border: 0;
   background: #0f1116;
+}
+
+.stripe-onramp-frame {
+  width: 100%;
+  min-height: min(920px, 92dvh);
+  height: auto;
+  border-radius: 14px;
+  overflow: visible;
+  background: #0f1116;
+}
+
+.stripe-onramp-frame iframe {
+  min-height: min(920px, 92dvh) !important;
+  height: min(980px, 95dvh) !important;
+}
+
+.instant-complete-panel {
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.instant-complete-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.instant-complete-actions .primary-cta {
+  width: min(100%, 320px);
+}
+
+@media (max-width: 640px) {
+  .stripe-onramp-frame {
+    min-height: min(980px, 95dvh);
+    border-radius: 10px;
+  }
+
+  .stripe-onramp-frame iframe {
+    min-height: min(980px, 95dvh) !important;
+    height: min(1040px, 98dvh) !important;
+  }
 }
 
 .stripe-embed {
@@ -473,6 +568,21 @@ code {
 
 .stripe-embed iframe {
   width: 100%;
+}
+
+.stripe-onramp-shell {
+  max-width: 560px;
+  width: 100%;
+  overflow: visible;
+}
+
+.stripe-onramp-shell .stripe-onramp-frame {
+  /* Stripe mounts a nested widget — keep room for Continue */
+  padding-bottom: 1.25rem;
+}
+
+html.onramp-active .destination-summary {
+  margin-bottom: 0.35rem;
 }
 
 .stripe-onramp,
@@ -569,8 +679,104 @@ code {
   border: 1px solid var(--line);
   color: var(--fog);
   border-radius: 8px;
-  padding: 0.65rem 0.75rem;
+  padding: 0.75rem 0.85rem;
   font: inherit;
+  font-size: 16px; /* avoid iOS zoom on focus */
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+}
+
+.amount-chip {
+  min-height: 44px;
+}
+
+.path-chips .amount-chip {
+  flex: 1 1 calc(50% - 0.5rem);
+  text-align: center;
+}
+
+.path-chips .amount-chip.crossmint-path {
+  flex: 1 1 100%;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  padding-inline: 0.65rem;
+}
+
+.primary-cta {
+  width: 100%;
+  min-height: 52px;
+  font-size: 1.05rem;
+}
+
+.instant-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instant-steps li {
+  margin: 0;
+  padding: 0.55rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  text-align: center;
+  color: var(--mist);
+  line-height: 1.25;
+}
+
+.instant-steps li.done {
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--line));
+  color: var(--fog);
+  background: color-mix(in srgb, var(--gold) 10%, transparent);
+}
+
+.instant-complete-panel h2 {
+  font-size: clamp(1.35rem, 4vw, 1.7rem);
+}
+
+@media (max-width: 640px) {
+  .checkout-page .topbar {
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+  }
+
+  .checkout-panel {
+    padding: 0.75rem;
+  }
+
+  .setup-panel {
+    padding: 1rem 0.75rem;
+  }
+
+  .amount-chips {
+    gap: 0.45rem;
+  }
+
+  .amount-chip {
+    flex: 1 1 calc(33.33% - 0.45rem);
+    padding: 0.6rem 0.4rem;
+    font-size: 0.85rem;
+  }
+
+  .destination-summary {
+    font-size: 0.95rem;
+  }
+
+  .instant-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .instant-steps li {
+    font-size: 0.85rem;
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+  }
 }
 
 .form-hint {
@@ -741,7 +947,14 @@ html.onramp-active .onramp-mount,
 html.onramp-active .onramp-mount iframe,
 html.onramp-active .onramp-embed,
 html.onramp-active .onramp-embed iframe {
-  min-height: min(720px, 78vh) !important;
+  min-height: min(920px, 92dvh) !important;
+}
+
+html.onramp-active .stripe-onramp-frame,
+html.onramp-active .stripe-onramp-frame iframe {
+  min-height: min(980px, 95dvh) !important;
+  height: min(1040px, 98dvh) !important;
+  overflow: visible !important;
 }
 
 @media (max-width: 720px) {

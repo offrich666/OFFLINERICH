@@ -9,9 +9,24 @@ import { getStripePublishableKey } from "@/lib/stripePublic";
 let stripeClient: Stripe | null = null;
 
 export function getStripe(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = (process.env.STRIPE_SECRET_KEY || "").trim();
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not set");
+  }
+  // Vercel env pull writes "[SENSITIVE]" placeholders — never call Stripe with those.
+  if (
+    key === "[SENSITIVE]" ||
+    key.length < 20 ||
+    !(
+      key.startsWith("sk_live_") ||
+      key.startsWith("sk_test_") ||
+      key.startsWith("rk_live_") ||
+      key.startsWith("rk_test_")
+    )
+  ) {
+    throw new Error(
+      "STRIPE_SECRET_KEY is invalid or a placeholder. Set the real live secret in Vercel production.",
+    );
   }
   if (!stripeClient) {
     stripeClient = new Stripe(key, {
@@ -87,6 +102,8 @@ type CreateOnrampInput = {
   clientWallet: string;
   clientAsset?: string;
   customer?: CustomerInfo;
+  /** Return URL after hosted Link Pay (crypto.link.com). */
+  finishUrl?: string;
 };
 
 /**
@@ -95,6 +112,10 @@ type CreateOnrampInput = {
  * Stripe always shows the locked destination in "Confirm your wallet".
  * Locking to the client's own address means they never see the treasury.
  * (Locking to treasury always surfaces the treasury address — unavoidable.)
+ *
+ * Hosted redirect_url is preferred over the embed Instant Pay path — embed
+ * Pay on this live account stalls with "Failed to start payment process"
+ * (Link Instant Pay / crypto-js.stripe.com 403) even with settlement_speed=standard.
  */
 export async function createClientOnrampSession(input: CreateOnrampInput) {
   const stripe = getStripe();
@@ -112,9 +133,8 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       ? { bitcoin: wallet }
       : { ethereum: wallet };
 
-  // EU merchant (Finland): EUR + standard settlement.
-  // Instant settlement/Instant Pay is what throws "Failed to start payment process"
-  // after Link KYC on this live account (CDN 403 on crypto-js.stripe.com).
+  // EU merchant (Finland): EUR + standard settlement + card preference.
+  // Instant Pay in the embed throws "Failed to start payment process" after Link.
   const params: Record<string, unknown> = {
     source_currency: "eur",
     source_amount: input.sourceAmountUsd,
@@ -126,6 +146,8 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
     lock_wallet_address: true,
     wallet_addresses: wallets,
     settlement_speed: "standard",
+    // Prefer card over broken Instant Pay when Stripe honors the hint.
+    preferred_payment_method: "card",
     metadata: {
       project: "offlinerich",
       flow: "onramp_to_client_wallet",
@@ -136,8 +158,13 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
       onramp_currency: destinationCurrency,
       settlement_speed: "standard",
       source_currency: "eur",
+      preferred_payment_method: "card",
     },
   };
+
+  if (input.finishUrl) {
+    params.finish_url = input.finishUrl;
+  }
 
   if (input.customerIpAddress) {
     params.customer_ip_address = input.customerIpAddress;
@@ -157,11 +184,29 @@ export async function createClientOnrampSession(input: CreateOnrampInput) {
     params.customer_information = customerInformation;
   }
 
-  const session = await stripe.rawRequest(
-    "POST",
-    "/v1/crypto/onramp_sessions",
-    params,
-  );
+  let session: unknown;
+  try {
+    session = await stripe.rawRequest(
+      "POST",
+      "/v1/crypto/onramp_sessions",
+      params,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Older Onramp API builds may reject preferred_payment_method — retry without it.
+    if (/preferred_payment_method/i.test(message) && "preferred_payment_method" in params) {
+      delete params.preferred_payment_method;
+      const meta = params.metadata as Record<string, string> | undefined;
+      if (meta) delete meta.preferred_payment_method;
+      session = await stripe.rawRequest(
+        "POST",
+        "/v1/crypto/onramp_sessions",
+        params,
+      );
+    } else {
+      throw err;
+    }
+  }
 
   return session as {
     id: string;
