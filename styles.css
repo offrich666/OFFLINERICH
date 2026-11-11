@@ -643,9 +643,83 @@ a.capacity-secondary:hover { background: rgba(16, 32, 60, 0.05); }
 .desk-card-table .desk th {
   white-space: nowrap;
 }
+.desk-deposit {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 22px 22px 18px;
+  box-shadow: var(--shadow);
+  animation: rise 0.5s 0.04s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.desk-balance-chip {
+  text-align: right;
+}
+.desk-balance-chip small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.desk-balance-chip strong {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.6rem;
+  color: var(--navy);
+  font-variant-numeric: tabular-nums;
+}
+.desk-token-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0 16px;
+}
+.desk-token {
+  width: 100%;
+}
+.desk-deposit-form {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr auto;
+  gap: 12px;
+  align-items: end;
+}
+.desk-deposit-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.desk-deposit-form input {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  font-size: 1rem;
+}
+.desk-credit-preview {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.desk-credit-preview small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.desk-credit-preview strong {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.35rem;
+  color: var(--navy);
+}
 @media (max-width: 960px) {
   .active-hero,
   .active-details { grid-template-columns: 1fr; }
+  .desk-token-grid { grid-template-columns: 1fr 1fr; }
+  .desk-deposit-form { grid-template-columns: 1fr; }
 }
 .launch-flow {
   list-style: none;

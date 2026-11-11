@@ -38,7 +38,20 @@ const state = {
   ],
   deskIssuing: false,
   deskRevealSecrets: true,
+  deskBalanceCents: 0,
+  deskDepositToken: 'USDT',
+  deskDepositAmount: '',
+  deskDepositBusy: false,
+  deskDeposits: [],
 };
+
+const DESK_DEPOSIT_TOKENS = [
+  { id: 'USDT', name: 'Tether', chain: 'Multi-chain', usd: 1 },
+  { id: 'USDC', name: 'USD Coin', chain: 'Multi-chain', usd: 1 },
+  { id: 'SOL', name: 'Solana', chain: 'Solana', usd: 178 },
+  { id: 'BNB', name: 'BNB', chain: 'BNB Chain', usd: 620 },
+  { id: 'ETH', name: 'Ethereum', chain: 'Ethereum', usd: 3200 },
+];
 
 let busy = false;
 let mountGeneration = 0;
@@ -228,12 +241,37 @@ function capacityDeskHtml() {
     )
     .join('');
 
+  const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+  const amountNum = Number(state.deskDepositAmount);
+  const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * selected.usd : 0;
+  const tokenButtons = DESK_DEPOSIT_TOKENS.map(
+    (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
+        <span><b>${esc(t.id)}</b><span>${esc(t.name)} · ${esc(t.chain)}</span></span>
+        <span>${t.usd === 1 ? '$1.00' : `~$${t.usd}`}</span>
+      </button>`,
+  ).join('');
+
+  const depositRows = state.deskDeposits.length
+    ? state.deskDeposits
+        .map(
+          (d) => `<tr>
+            <td>${esc(d.when)}</td>
+            <td><strong>${esc(d.token)}</strong></td>
+            <td>${esc(d.amount)}</td>
+            <td>${esc(money(d.creditCents))}</td>
+            <td><span class="pill good">Credited</span></td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">No deposits yet. Balance is $0.00 — deposit a token to top up.</td></tr>';
+
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar">
         <div class="wrap bar-in">
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
+            <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Ready to use</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
@@ -246,9 +284,9 @@ function capacityDeskHtml() {
             <p class="kicker launch-kicker">Admin desk · Live card</p>
             <h1>Active card · ready to use</h1>
             <p class="lede">
-              Mastercard is <strong>active</strong> on the desk. Add to
-              <strong>Apple Pay /  Pay</strong> first, keep on that phone <strong>24h</strong>, then start payments.
-              Issue another card anytime from this panel.
+              Mastercard is <strong>active</strong>. Card balance is
+              <strong>${esc(money(state.deskBalanceCents))}</strong>. Deposit
+              <strong>USDT · USDC · SOL · BNB · ETH</strong> to top up, then use after  Pay activation.
             </p>
             <div class="active-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
@@ -267,10 +305,43 @@ function capacityDeskHtml() {
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
-              <div><small>CVV</small><strong>${esc(cvvShown)}</strong></div>
+              <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
             </div>
-            <p class="desk-card-status"><span class="pill good">Active</span> Ready to use</p>
+            <p class="desk-card-status"><span class="pill good">Active</span> Ready to use · CVV ${esc(cvvShown)}</p>
           </article>
+        </section>
+
+        <section class="desk-deposit" id="desk-deposit">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Top up</p>
+              <h2>Deposit your token</h2>
+            </div>
+            <div class="desk-balance-chip">
+              <small>Card balance</small>
+              <strong>${esc(money(state.deskBalanceCents))}</strong>
+            </div>
+          </div>
+          <p class="lede">Choose a token, enter the amount, and credit the active card. Balance starts at <strong>$0.00</strong>.</p>
+          <div class="desk-token-grid">${tokenButtons}</div>
+          <form id="desk-deposit-form" class="desk-deposit-form">
+            <label>Amount (${esc(selected.id)})
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
+            </label>
+            <div class="desk-credit-preview">
+              <small>Estimated card credit</small>
+              <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
+            </div>
+            <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>
+              ${state.deskDepositBusy ? 'Depositing…' : `Deposit ${esc(selected.id)}`}
+            </button>
+          </form>
+          <div class="table-wrap" style="margin-top:16px">
+            <table class="desk">
+              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Status</th></tr></thead>
+              <tbody>${depositRows}</tbody>
+            </table>
+          </div>
         </section>
 
         <section class="active-details">
@@ -282,7 +353,7 @@ function capacityDeskHtml() {
               <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
               <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
               <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
-              <li><span>Network</span><strong>Mastercard</strong></li>
+              <li><span>Balance</span><strong>${esc(money(state.deskBalanceCents))}</strong></li>
             </ul>
           </article>
           <article class="capacity-panel">
@@ -313,7 +384,7 @@ function capacityDeskHtml() {
         </section>
 
         <section class="capacity-stats" aria-label="Desk snapshot">
-          <article class="stat"><small>Admin</small><strong>offlinerich</strong></article>
+          <article class="stat"><small>Balance</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
           <article class="stat"><small>Active cards</small><strong>${state.deskCards.length}</strong></article>
           <article class="stat"><small>Status</small><strong class="good-text">Ready</strong></article>
           <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
@@ -835,12 +906,22 @@ document.body.addEventListener('pointerout', (event) => {
 });
 
 document.body.addEventListener('input', (event) => {
-  if (event.target.id !== 'client-search') return;
-  state.search = event.target.value;
-  const list = document.querySelector('.client-list');
-  if (!list) return;
-  const rows = clientRows();
-  list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
+  if (event.target.id === 'client-search') {
+    state.search = event.target.value;
+    const list = document.querySelector('.client-list');
+    if (!list) return;
+    const rows = clientRows();
+    list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
+    return;
+  }
+  if (event.target.closest?.('#desk-deposit-form') && event.target.name === 'amount') {
+    state.deskDepositAmount = event.target.value;
+    const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+    const amountNum = Number(state.deskDepositAmount);
+    const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * selected.usd : 0;
+    const preview = document.querySelector('.desk-credit-preview strong');
+    if (preview) preview.textContent = money(Math.round(creditUsd * 100));
+  }
 });
 
 async function run(fn) {
@@ -936,6 +1017,12 @@ document.body.addEventListener('click', (event) => {
       };
       render();
     });
+    return;
+  }
+  if (action === 'desk-select-token') {
+    state.deskDepositToken = button.dataset.id || 'USDT';
+    render();
+    document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
   if (action === 'host-gate-reset') {
@@ -1095,6 +1182,37 @@ document.body.addEventListener('submit', (event) => {
       state.hostGate = { phase: 'blocked' };
       state.flash = { kind: 'ok', text: 'Active card ready to use. Issue a new one anytime.' };
       render();
+    });
+  }
+  if (form.id === 'desk-deposit-form') {
+    run(async () => {
+      const amount = Number(data.amount || state.deskDepositAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a deposit amount greater than zero.');
+      const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+      state.deskDepositBusy = true;
+      state.deskDepositAmount = String(amount);
+      render();
+      await wait(500);
+      const creditCents = Math.round(amount * token.usd * 100);
+      state.deskBalanceCents += creditCents;
+      const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Warsaw', hour12: false });
+      state.deskDeposits = [
+        {
+          when,
+          token: token.id,
+          amount: `${amount} ${token.id}`,
+          creditCents,
+        },
+        ...state.deskDeposits,
+      ];
+      state.deskDepositBusy = false;
+      state.deskDepositAmount = '';
+      state.flash = {
+        kind: 'ok',
+        text: `Deposited ${amount} ${token.id} · credited ${money(creditCents)}. Balance ${money(state.deskBalanceCents)}.`,
+      };
+      render();
+      document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'client-form') {

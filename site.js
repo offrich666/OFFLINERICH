@@ -44,7 +44,6 @@
   }
 
   function hasApi() {
-    if (host === "127.0.0.1" || host === "localhost") return false;
     return !staticHost;
   }
 
