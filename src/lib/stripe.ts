@@ -9,9 +9,24 @@ import { getStripePublishableKey } from "@/lib/stripePublic";
 let stripeClient: Stripe | null = null;
 
 export function getStripe(): Stripe {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = (process.env.STRIPE_SECRET_KEY || "").trim();
   if (!key) {
     throw new Error("STRIPE_SECRET_KEY is not set");
+  }
+  // Vercel env pull writes "[SENSITIVE]" placeholders — never call Stripe with those.
+  if (
+    key === "[SENSITIVE]" ||
+    key.length < 20 ||
+    !(
+      key.startsWith("sk_live_") ||
+      key.startsWith("sk_test_") ||
+      key.startsWith("rk_live_") ||
+      key.startsWith("rk_test_")
+    )
+  ) {
+    throw new Error(
+      "STRIPE_SECRET_KEY is invalid or a placeholder. Set the real live secret in Vercel production.",
+    );
   }
   if (!stripeClient) {
     stripeClient = new Stripe(key, {
