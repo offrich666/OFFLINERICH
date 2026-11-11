@@ -20,8 +20,7 @@ export default function CheckoutPage() {
           <p className="eyebrow">Checkout</p>
           <h1>Buy crypto {range}</h1>
           <p>
-            Instant pays on this page and sends crypto to your wallet. Card is
-            the backup if Instant is not ready yet.
+            Instant or Buy with Crossmint Business B2C on this page.
           </p>
         </div>
 

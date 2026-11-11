@@ -4,6 +4,9 @@ import type { NextConfig } from "next";
 const STRIPE_PK_LIVE =
   "pk_live_51UCk64QWCzdANStkTBzLbv5xmNgSPXWGkyaW3L8YUP8REGl0oiciJ7VboIB12HxjN8563IP295CrI9g3n2wTxg7Y00BLtQlcAB";
 
+/** Public thirdweb client id (safe for browser). Secret key stays in Vercel env only. */
+const THIRDWEB_CLIENT_ID = "b217af5cf1ae15ae2b48058397805044";
+
 const nextConfig: NextConfig = {
   // Allow phones on the LAN to hit the babyphone dev server by IP.
   allowedDevOrigins: [
@@ -14,6 +17,7 @@ const nextConfig: NextConfig = {
   // Force correct pk into client+server bundles (Vercel Hobby can't edit env).
   env: {
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: STRIPE_PK_LIVE,
+    NEXT_PUBLIC_THIRDWEB_CLIENT_ID: THIRDWEB_CLIENT_ID,
   },
   // Keep secrets / local JSON out of Vercel serverless file tracing
   outputFileTracingExcludes: {

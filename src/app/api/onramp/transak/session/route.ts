@@ -113,7 +113,8 @@ export async function POST(request: Request) {
       walletAddress: wallet,
       email: email || undefined,
       referrerDomain,
-      redirectURL: `${origin}/checkout/return`,
+      // Stay on checkout after pay — do not bounce buyers off-site
+      redirectURL: `${origin}/checkout?paid=1`,
       userIp,
     };
 
