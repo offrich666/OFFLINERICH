@@ -9,8 +9,17 @@ export default function Home() {
       <header className="topbar">
         <span className="brand-mark">OFFLINERICH</span>
         <div className="topbar-actions">
-          <Link href="/babyphone" className="ghost-link">
-            CribLink
+          <Link href="/tokens" className="ghost-link">
+            Tokens
+          </Link>
+          <Link href="/funds" className="ghost-link">
+            Funds
+          </Link>
+          <Link href="/sniper" className="ghost-link">
+            Sniper
+          </Link>
+          <Link href="/auth" className="ghost-link">
+            Account
           </Link>
           <Link href="/checkout" className="top-cta">
             Pay
@@ -26,6 +35,9 @@ export default function Home() {
         <div className="cta-row">
           <Link href="/checkout" className="primary-cta">
             Buy crypto
+          </Link>
+          <Link href="/auth" className="secondary-cta">
+            Create account
           </Link>
         </div>
       </section>

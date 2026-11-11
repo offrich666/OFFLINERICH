@@ -41,10 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local transfer order queue
-/data
-
-# local transfer order queue
+# local transfer order queue / auth data
 /data
 
 certificates
