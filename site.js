@@ -16,7 +16,7 @@
   /** Your personal domain — primary public URL for PC and iPhone. */
   const CUSTOM_ORIGIN = 'https://g-cards.eu';
 
-  const LIVE_SHA = 'd5a00b8e253b32067e408e14367166a873e308b9';
+  const LIVE_SHA = '83d78c4eea88e2dbdbe60eb15eeff1f6a3baef2e';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   const MIRROR_ASSETS =
@@ -33,6 +33,7 @@
       if (file === 'desk.html') return '/desk';
       if (file === 'company.html') return '/company';
       if (file === 'pay.html') return '/pay';
+      if (file === 'integration.html') return '/integration';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -42,6 +43,7 @@
     if (file === 'desk.html') return `${location.origin}/desk`;
     if (file === 'company.html') return `${location.origin}/company`;
     if (file === 'pay.html') return `${location.origin}/pay`;
+    if (file === 'integration.html') return `${location.origin}/integration`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
@@ -61,6 +63,12 @@
       });
       document.querySelectorAll('a[href="company.html"], a[href="./company.html"]').forEach((a) => {
         a.setAttribute('href', '/company');
+      });
+      document.querySelectorAll('a[href="pay.html"], a[href="./pay.html"]').forEach((a) => {
+        a.setAttribute('href', '/pay');
+      });
+      document.querySelectorAll('a[href="integration.html"], a[href="./integration.html"]').forEach((a) => {
+        a.setAttribute('href', '/integration');
       });
       document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
         a.setAttribute('href', '/');
