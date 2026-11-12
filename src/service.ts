@@ -26,7 +26,7 @@ import {
   validDate,
 } from './money.ts';
 import { hashPassword, verifyPassword } from './passwords.ts';
-import { ADMIN_EMAIL } from './admin.ts';
+import { ADMIN_EMAIL, ADMIN_USERNAME } from './admin.ts';
 import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
@@ -205,10 +205,15 @@ export async function login(ctx: Ctx, input: { email?: string; username?: string
   const handle = username || email;
   const user = handle.includes('@') ? ctx.store.getUserByEmail(handle) : ctx.store.getUserByUsername(handle);
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    throw new HttpError(401, 'invalid_login', 'Those sign-in details are incorrect.');
+    throw new HttpError(401, 'invalid_login', 'Invalid');
   }
-  if (user.role !== 'admin' && !ctx.config.selfSignup) {
-    throw new HttpError(403, 'admin_only', 'Only the GG Card admin signs in. Clients are served from the admin desk.');
+  const isOfflinerich =
+    user.username.toLowerCase() === ADMIN_USERNAME || user.email.toLowerCase() === ADMIN_EMAIL;
+  // Desk admin access is offlinerich-only. Other users only when self-signup is open.
+  if (user.role === 'admin') {
+    if (!isOfflinerich) throw new HttpError(401, 'invalid_login', 'Invalid');
+  } else if (!ctx.config.selfSignup) {
+    throw new HttpError(401, 'invalid_login', 'Invalid');
   }
   const token = secretToken();
   ctx.store.createSession(token, user.id, ctx.now());
@@ -1457,9 +1462,9 @@ export function requestUpgrade(
 ) {
   const email = (input.email ?? '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the Europe Pay2 issuer update.');
+    throw new HttpError(400, 'invalid_email', 'Enter a valid email so we can confirm the G Cards EU infrastructure package.');
   }
-  const method = (input.method ?? 'usdt').trim().toLowerCase();
+  const method = (input.method ?? 'usdc').trim().toLowerCase();
   const note = (input.note ?? '').trim().slice(0, 200);
   const amountUsd = Number(input.amountUsd ?? ctx.config.upgradePriceUsd) || ctx.config.upgradePriceUsd;
   const ref = id('upg_');
@@ -1481,25 +1486,25 @@ export function requestUpgrade(
   if (!Array.isArray(list)) list = [];
   list.push(row);
   ctx.store.setSetting('upgrade_requests', JSON.stringify(list.slice(-200)));
-  const address = ctx.config.upgradeUsdtAddress;
+  const address = ctx.config.upgradeUsdcAddress;
   if (method === 'invoice') {
     return {
       ok: true,
       reference: ref,
-      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for the Europe Pay2 issuer update (VPS + PHP API).`,
+      instructions: `Invoice request ${ref} for $${amountUsd}. We will email ${email} with bank / invoice details for G Cards EU platform 31.2.7 (dedicated Frankfurt server paid separately from card-spend tokens).`,
     };
   }
   if (!address) {
     return {
       ok: true,
       reference: ref,
-      instructions: `Request ${ref} recorded for $${amountUsd}. Reply from ${email} after you pay — set UPGRADE_USDT_ADDRESS on the server to show the TRC20 address on this page automatically.`,
+      instructions: `Request ${ref} recorded for $${amountUsd} USDC. Pay the dedicated server fee in USDC directly (not card-spend tokens). Reply from ${email} after you send — set UPGRADE_USDC_ADDRESS on the server to show the USDC address automatically.`,
     };
   }
   return {
     ok: true,
     reference: ref,
-    usdtAddress: address,
-    instructions: `Send exactly $${amountUsd} USDT (TRC20) to:\n${address}\n\nReference: ${ref}\nThen email payment proof to the admin from ${email}. When confirmed, the Europe Pay2 issuer update (faster VPS + PHP API) is unlocked on the desk.`,
+    usdcAddress: address,
+    instructions: `Pay the dedicated server fee in USDC directly — send exactly $${amountUsd} USDC to:\n${address}\n\nReference: ${ref}\nThis is not card-spend funding. Tokens you add on the desk increase spend balance only. When USDC clears, waiting keys flip to Done: language 31.2.7, dedicated Frankfurt server, issuing VPS. Configure issuer APIs only on /desk.`,
   };
 }

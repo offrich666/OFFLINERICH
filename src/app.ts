@@ -3,13 +3,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ensureAdmin } from './admin.ts';
 import { chainById, CHAINS } from './chains.ts';
-import { accessLinks } from './links.ts';
+import { accessLinks, phoneAccessUrl } from './links.ts';
 import { loadConfig, overlaySaved, readiness, type Config, type Env } from './config.ts';
 import type { RpcClient } from './erc20.ts';
 import { HttpError } from './errors.ts';
 import { createImmersveIssuer, createUnavailableIssuer } from './issuer.ts';
 import { createPay2Client } from './pay2.ts';
 import { createPriceClient, type PriceClient } from './prices.ts';
+import { qrSvg } from './qr.ts';
 import * as service from './service.ts';
 import { openStore, type Store } from './store.ts';
 
@@ -176,9 +177,32 @@ export function createApp(options: CreateAppOptions = {}) {
       chains: CHAINS.map((chain) => ({ id: chain.id, name: chain.name })),
       readiness: readiness(config),
       product: 'GG Card',
-      links: accessLinks(config.port),
+      links: accessLinks(config.port, config.publicBaseUrl),
+      publicBaseUrl: config.publicBaseUrl || null,
     });
   });
+
+  app.get('/api/phone-access', asyncRoute(async (req, res) => {
+    const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const requestOrigin = host ? `${proto}://${host}` : '';
+    const url = phoneAccessUrl(config.port, config.publicBaseUrl, requestOrigin);
+    if (!url) {
+      res.json({
+        ok: false,
+        url: null,
+        qrSvg: null,
+        hint: 'Set PUBLIC_BASE_URL to an HTTPS tunnel or domain. 127.0.0.1 does not open on iPhone.',
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      url,
+      qrSvg: await qrSvg(url),
+      hint: 'Open this HTTPS link in Safari on cellular (5G/LTE) or Wi‑Fi. Do not use 127.0.0.1 — that is the phone itself.',
+    });
+  }));
 
   app.post('/api/register', asyncRoute(async (req, res) => {
     if (!config.selfSignup) {
@@ -235,14 +259,16 @@ export function createApp(options: CreateAppOptions = {}) {
     res.json({
       priceUsd: config.upgradePriceUsd,
       currency: 'usd',
-      product: 'Europe Pay2 issuer update',
-      usdtNetwork: 'TRC20',
-      usdtAddress: config.upgradeUsdtAddress || null,
+      product: 'G Cards EU platform 31.2.7 dedicated server package',
+      currencyAsset: 'USDC',
+      usdcAddress: config.upgradeUsdcAddress || null,
       includes: [
-        'Faster issue VPS',
-        'PHP issuer API language layer',
-        'Europe-ready Pay2.House path',
-        'Desk access on desktop, tablet, and phone',
+        'Programming language upgrade to 31.2.7',
+        'Dedicated Frankfurt server paid in USDC (legacy host too slow)',
+        'Issuing VPS for the more powerful build',
+        'Old → new migration + payment-location data deletion',
+        'Card spend funded by desk tokens (separate from server fee)',
+        'Business prepaid metal · $1M / tx · no KYC',
       ],
     });
   });
@@ -351,7 +377,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.locals.port = config.port;
-  app.locals.links = accessLinks(config.port);
+  app.locals.links = accessLinks(config.port, config.publicBaseUrl);
   app.locals.closeStore = () => store.close();
   return app;
 }

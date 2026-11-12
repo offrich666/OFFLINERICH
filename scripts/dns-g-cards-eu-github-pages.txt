@@ -1,0 +1,14 @@
+# Njalla DNS for g-cards.eu → GitHub Pages (after Pages is enabled on the repo)
+# Delete the Vercel A record first.
+
+Type  Name  Value
+A     @     185.199.108.153
+A     @     185.199.109.153
+A     @     185.199.110.153
+A     @     185.199.111.153
+CNAME www   offrich666.github.io
+
+# One-time on GitHub (you already have this account — not Vercel):
+# https://github.com/offrich666/OFFLINERICH/settings/pages
+# Source: Deploy from a branch → gh-pages → / (root) → Save
+# Custom domain: g-cards.eu → Save → wait for DNS check → Enforce HTTPS
