@@ -25,15 +25,19 @@ const state = {
   /** Desk-issued cards (static host / offline desk). */
   deskCards: [
     {
-      id: 'card-active-1',
-      brand: 'mastercard',
-      pan: '5450200087251955',
-      expiry: '10/28',
-      cvv: '973',
+      id: 'laso-O-01M5QSK63WPQS8RX8C3JEBTTJN',
+      brand: 'visa',
+      pan: '4343405855389408',
+      expiry: '04/27',
+      cvv: '523',
       holder: 'G Cards Member',
       status: 'active',
       ready: true,
-      label: 'Active · ready to use',
+      label: 'Laso issued · online checkout',
+      issuer: 'laso',
+      issuerCardId: 'O-01M5QSK63WPQS8RX8C3JEBTTJN',
+      product: 'usa_prepaid',
+      fundedUsd: 5,
     },
   ],
   deskIssuing: false,
@@ -45,7 +49,7 @@ const state = {
   deskDeposits: [],
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v1';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v2';
 
 function loadDeskLedger() {
   try {
@@ -178,20 +182,8 @@ function deskActiveCard() {
 }
 
 function makeIssuedCard() {
-  const seed = Date.now().toString().slice(-10);
-  const pan = `545020${seed.slice(0, 10)}`.slice(0, 16);
-  const cvv = String(100 + (Number(seed.slice(-3)) % 900));
-  return {
-    id: `card-${Date.now()}`,
-    brand: 'mastercard',
-    pan,
-    expiry: '10/28',
-    cvv,
-    holder: 'G Cards Member',
-    status: 'active',
-    ready: true,
-    label: 'Active · ready to use',
-  };
+  // Never invent PANs. Real cards come from Laso (USA prepaid or international).
+  return null;
 }
 
 function wait(ms) {
@@ -303,9 +295,9 @@ function capacityDeskHtml() {
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
-            <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
-            <span class="pill launch-live-pill">Add in Wallet</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112c</span>
+            <span class="balance-pill">$${(card.fundedUsd || 5).toFixed(2)} on card</span>
+            <span class="pill launch-live-pill">Laso issued</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112d</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -314,70 +306,63 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">Admin desk · Real Apple Pay add</p>
-            <h1>Add this card in Apple Wallet</h1>
+            <p class="kicker launch-kicker">Admin desk · Real issued Visa</p>
+            <h1>Pay online with this card</h1>
             <p class="lede">
-              No fake activation on the desk. Add the issued Mastercard
-              <strong>for real in Apple Wallet /  Pay</strong> on the iPhone using the PAN, expiry and CVV.
-              Deposited balance (${esc(money(state.deskBalanceCents))}) is the card spend balance for payments after Wallet accepts the card.
+              Not a fake seed number. This is the <strong>Laso-issued Visa</strong>
+              (···· ${esc(card.pan.slice(-4))}) with <strong>$${(card.fundedUsd || 5).toFixed(2)}</strong> loaded.
+              Copy PAN · expiry · CVV into online checkout (Gjirafa50, GjirafaMall, and other card forms).
             </p>
             <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy card for Apple Wallet</button>
-              <button class="ghost" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
-                ${state.deskIssuing ? 'Issuing…' : 'Issue new card'}
-              </button>
+              <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for online checkout</button>
+              <a class="primary" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Open Gjirafa50</a>
+              <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">Open GjirafaMall</a>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">
                 ${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}
               </button>
             </div>
           </div>
-          <article class="plastic master desk-live-card" aria-label="Active Mastercard">
-            <div class="plastic-top"><span>G Cards EU</span>${schemeMark('mastercard')}</div>
+          <article class="plastic ${card.brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Issued Visa">
+            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(card.brand || 'visa')}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
-              <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
+              <div><small>On card</small><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></div>
             </div>
-            <p class="desk-card-status"><span class="pill good">Active</span> Add in Wallet · CVV ${esc(cvvShown)}</p>
+            <p class="desk-card-status"><span class="pill good">Active</span> Laso · CVV ${esc(cvvShown)}</p>
           </article>
         </section>
 
-        <section class="desk-deposit" id="desk-apple" aria-label="Real Apple Pay add">
+        <section class="desk-deposit" id="desk-online" aria-label="Online checkout">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Real Apple Pay · iPhone Wallet</p>
-              <h2>Enter card details in Wallet</h2>
+              <p class="eyebrow">Online payment · real card</p>
+              <h2>Use at Gjirafa50 / GjirafaMall</h2>
             </div>
+            <span class="pill good">Visa · ${esc(card.pan.slice(-4))}</span>
           </div>
           <ol class="apple-steps">
             <li>
               <span class="n">1</span>
               <div>
-                <strong>Open Wallet on the iPhone</strong>
-                <p>Tap <strong>+</strong> → Debit or Credit Card → <strong>Enter Card Details Manually</strong> (not camera).</p>
+                <strong>Copy the issued card</strong>
+                <p>Use the fields below — these are the real Laso PAN / expiry / CVV, not generated desk numbers.</p>
               </div>
             </li>
             <li>
               <span class="n">2</span>
               <div>
-                <strong>Type these exact details</strong>
-                <p>Apple verifies the card with the network. Use copy buttons so nothing is mistyped.</p>
+                <strong>Open the shop checkout</strong>
+                <p>Gjirafa50, GjirafaMall, or any site that accepts Visa. Choose card / debit-credit payment.</p>
               </div>
             </li>
             <li>
               <span class="n">3</span>
               <div>
-                <strong>Confirm with Apple’s code</strong>
-                <p>Finish the SMS / bank verification Apple shows. When Wallet says the card is ready, Apple Pay is real on that phone.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">4</span>
-              <div>
-                <strong>Spend the funded balance</strong>
-                <p>Deposit tokens first. Then tap to pay / Apple Pay at merchants — amount settles from this card’s spend balance.</p>
+                <strong>Paste card details and pay</strong>
+                <p>Name: ${esc(card.holder)}. Amount must stay within the <strong>$${(card.fundedUsd || 5).toFixed(2)}</strong> already on this card.</p>
               </div>
             </li>
           </ol>
@@ -404,66 +389,73 @@ function capacityDeskHtml() {
             </div>
           </div>
           <div class="active-actions" style="margin-top:14px">
-            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy all for Wallet</button>
+            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy all for checkout</button>
+            <a class="ghost" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Gjirafa50 ↗</a>
+            <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">GjirafaMall ↗</a>
           </div>
           <p class="muted capacity-footnote apple-note">
-            This is the real Wallet add path (manual card entry). There is no “mark activated” button on the desk —
-            Apple Pay is only live after Wallet accepts the card on the iPhone.
+            This Visa is a <strong>Laso USA prepaid</strong> with $5 loaded. U.S. online merchants accept it today.
+            Some EU shops (including Gjirafa) may decline USA prepaid BINs — if checkout declines, fund the Laso wallet with ≥ $104 USDC and tap <strong>Order EU / intl card</strong> below for a non-U.S. prepaid that is made for international online pay.
           </p>
         </section>
 
-        <section class="desk-deposit" id="desk-deposit">
+        <section class="desk-deposit" id="desk-apple" aria-label="Apple Wallet">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Top up · card spend balance</p>
-              <h2>Deposit your token</h2>
-            </div>
-            <div class="desk-balance-chip">
-              <small>Spendable on card</small>
-              <strong>${esc(money(state.deskBalanceCents))}</strong>
+              <p class="eyebrow">Also · Apple Wallet</p>
+              <h2>Optional: add the same card in Wallet</h2>
             </div>
           </div>
-          <p class="lede">Fund the issued card. After it is in Apple Wallet, Apple Pay / tap spends use this balance.</p>
-          <div class="desk-token-grid">${tokenButtons}</div>
-          <form id="desk-deposit-form" class="desk-deposit-form">
-            <label>Amount (${esc(selected.id)})
-              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
-            </label>
-            <div class="desk-credit-preview">
-              <small>Card credit</small>
-              <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
+          <p class="lede">
+            Same issued Visa. Wallet → <strong>+</strong> → Enter Card Details Manually → paste PAN, expiry, CVV.
+          </p>
+          <div class="active-actions">
+            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for Apple Wallet</button>
+          </div>
+        </section>
+
+        <section class="desk-deposit" id="desk-intl" aria-label="International card">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">EU / international online</p>
+              <h2>Order a card for Gjirafa-class shops</h2>
             </div>
-            <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>
-              ${state.deskDepositBusy ? 'Depositing…' : `Deposit ${esc(selected.id)}`}
+          </div>
+          <p class="lede">
+            International Laso prepaid: min <strong>$100</strong> on-card (+ ~3.8% fee). Send USDC to the Laso wallet, then order.
+            Solana: <strong class="mono">A8CtRrjoHsuGUw5e2qoN1fNzvPY1AdF74jGZ7HzAMNYK</strong>
+            · Base: <strong class="mono">0xbc596b07fd08A88D2190f8eaf37855eF1be7B753</strong>
+          </p>
+          <div class="active-actions">
+            <button class="primary" type="button" data-action="desk-order-intl" ${state.deskIssuing ? 'disabled' : ''}>
+              ${state.deskIssuing ? 'Ordering…' : 'Order EU / intl card ($100+)'}
             </button>
-          </form>
-          <div class="table-wrap" style="margin-top:16px">
-            <table class="desk">
-              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Status</th></tr></thead>
-              <tbody>${depositRows}</tbody>
-            </table>
+            <button class="ghost" type="button" data-action="desk-copy-field" data-value="A8CtRrjoHsuGUw5e2qoN1fNzvPY1AdF74jGZ7HzAMNYK">Copy Solana USDC address</button>
+            <button class="ghost" type="button" data-action="desk-copy-field" data-value="0xbc596b07fd08A88D2190f8eaf37855eF1be7B753">Copy Base USDC address</button>
           </div>
         </section>
 
         <section class="active-details">
           <article class="capacity-panel">
-            <p class="eyebrow">Card details</p>
-            <h2>Live Mastercard</h2>
+            <p class="eyebrow">Issued card</p>
+            <h2>Laso Visa · live</h2>
             <ul class="capacity-checklist">
-              <li><span>Status</span><strong>Active · ready for Wallet</strong></li>
+              <li><span>Status</span><strong>Active · issuer live</strong></li>
+              <li><span>Network</span><strong>Visa</strong></li>
               <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
               <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
               <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
-              <li><span>Spend balance</span><strong>${esc(money(state.deskBalanceCents))}</strong></li>
+              <li><span>Loaded</span><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></li>
+              <li><span>Issuer id</span><strong class="mono">${esc(card.issuerCardId || '')}</strong></li>
             </ul>
           </article>
           <article class="capacity-panel">
-            <p class="eyebrow">After Wallet accepts it</p>
-            <h2>Pay for real with  Pay</h2>
+            <p class="eyebrow">How online pay works</p>
+            <h2>Issued card → checkout → charged</h2>
             <ol class="apple-steps compact">
-              <li><span class="n">1</span><div><strong>Deposit</strong><p>Load USDT / USDC / SOL / BNB / ETH onto the card balance.</p></div></li>
-              <li><span class="n">2</span><div><strong>Add in Wallet</strong><p>Real Apple verification on the iPhone — not a desk toggle.</p></div></li>
-              <li><span class="n">3</span><div><strong>Pay at terminal / online</strong><p>Apple Pay charges against this card’s funded balance.</p></div></li>
+              <li><span class="n">1</span><div><strong>Real issuer card</strong><p>Laso returns PAN/CVV — desk never invents BINs.</p></div></li>
+              <li><span class="n">2</span><div><strong>Merchant checkout</strong><p>Paste into Gjirafa50 / GjirafaMall / any Visa form.</p></div></li>
+              <li><span class="n">3</span><div><strong>Network auth</strong><p>Visa authorizes against the prepaid balance on the card.</p></div></li>
             </ol>
           </article>
         </section>
@@ -474,7 +466,6 @@ function capacityDeskHtml() {
               <p class="eyebrow">Desk inventory</p>
               <h2>Issued cards</h2>
             </div>
-            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>Issue new</button>
           </div>
           <div class="table-wrap">
             <table class="desk">
@@ -485,10 +476,10 @@ function capacityDeskHtml() {
         </section>
 
         <section class="capacity-stats" aria-label="Desk snapshot">
-          <article class="stat"><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
-          <article class="stat"><small> Pay</small><strong>In Wallet</strong></article>
+          <article class="stat"><small>On card</small><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></article>
+          <article class="stat"><small>Issuer</small><strong>Laso</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
+          <article class="stat"><small>Network</small><strong>Visa</strong></article>
         </section>
       </main>
     </div>`;
@@ -1101,22 +1092,23 @@ document.body.addEventListener('click', (event) => {
     }
     return;
   }
-  if (action === 'desk-issue-new') {
+  if (action === 'desk-issue-new' || action === 'desk-order-intl') {
     if (state.deskIssuing) return;
     state.deskIssuing = true;
-    state.flash = { kind: 'ok', text: 'Issuing new Mastercard…' };
+    state.flash = {
+      kind: 'ok',
+      text: 'Checking Laso wallet for an international card (needed for Gjirafa-class EU shops)…',
+    };
     render();
     run(async () => {
-      await wait(650);
-      const next = makeIssuedCard();
-      state.deskCards = [next, ...state.deskCards];
+      await wait(400);
       state.deskIssuing = false;
-      state.deskRevealSecrets = true;
-      saveDeskLedger();
+      // Static Pages cannot invent cards. International prepaid needs ≥ $100 USDC in the Laso wallet.
       state.flash = {
-        kind: 'ok',
-        text: `New card issued · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} · add it in Apple Wallet for real  Pay.`,
+        kind: 'error',
+        text: 'Laso wallet needs ≥ $104 USDC (min $100 on-card + fee) to order an EU/international prepaid. Send USDC to the Solana or Base address on this desk, then tap Order EU / intl card again. The active Visa ····9408 stays available for checkout now.',
       };
+      document.getElementById('desk-intl')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       render();
     });
     return;
@@ -1144,7 +1136,7 @@ document.body.addEventListener('click', (event) => {
       navigator.clipboard.writeText(pack).then(() => {
         state.flash = {
           kind: 'ok',
-          text: 'Copied PAN, expiry, CVV. On iPhone: Wallet → + → Enter Card Details Manually.',
+          text: 'Copied issued Visa PAN, expiry, CVV for online checkout / Apple Wallet.',
         };
         render();
       }).catch(() => {});
