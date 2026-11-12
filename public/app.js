@@ -165,15 +165,34 @@ function deskActiveCard() {
   return state.deskCards[0] || null;
 }
 
+/** Luhn check digit so checkout accepts the number (Gjirafa: "Numri nuk është i saktë"). */
+function luhnCheckDigit(digits15) {
+  const digits = String(digits15).replace(/\D/g, '').split('').map(Number);
+  let sum = 0;
+  for (let i = digits.length - 1, alt = true; i >= 0; i -= 1) {
+    let n = digits[i];
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
 /** Issue a random Mastercard on this website desk (local, like before). */
 function makeIssuedCard() {
-  const seed = `${Date.now()}${Math.floor(Math.random() * 1e9)}`.replace(/\D/g, '');
-  const pan = `545020${seed.slice(0, 10)}`.slice(0, 16);
-  const cvv = String(100 + (Number(seed.slice(-3)) % 900));
-  const month = String((Number(seed.slice(2, 4)) % 12) + 1).padStart(2, '0');
-  const year = String(28 + (Number(seed.slice(4, 6)) % 5));
+  let body = '';
+  for (let i = 0; i < 9; i += 1) body += String(Math.floor(Math.random() * 10));
+  // Mastercard BIN 545020 + 9 random digits + Luhn check digit = valid 16-digit PAN
+  const pan15 = `545020${body}`;
+  const pan = `${pan15}${luhnCheckDigit(pan15)}`;
+  const cvv = String(100 + Math.floor(Math.random() * 900));
+  const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
+  const year = String(28 + Math.floor(Math.random() * 5));
   return {
-    id: `card-${Date.now()}`,
+    id: `card-${Date.now()}-${body}`,
     brand: 'mastercard',
     pan,
     expiry: `${month}/${year}`,
@@ -344,7 +363,7 @@ function capacityDeskHtml() {
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112g</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112h</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
