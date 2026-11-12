@@ -16,7 +16,7 @@
   /** Your personal domain — primary public URL for PC and iPhone. */
   const CUSTOM_ORIGIN = 'https://g-cards.eu';
 
-  const LIVE_SHA = '66b948148991e81aea416db7f1588f199ab3fde6';
+  const LIVE_SHA = 'adf250781c4f12b99b0f36c3da921bd6f4a3f192';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   const MIRROR_ASSETS =
