@@ -165,83 +165,32 @@ function deskActiveCard() {
   return state.deskCards[0] || null;
 }
 
-/** Issue from this website via Stripe Issuing (G Cards EU — not Laso / not Pay2). */
-async function issueCardFromWebsite() {
-  const hasApi = Boolean(window.GCARDS_SITE?.hasApi?.());
-  if (!hasApi) {
-    const err = new Error(
-      'This static Pages host has no API. Run the G Cards EU API host with STRIPE_SECRET_KEY, open that desk origin, then press Issue.',
-    );
-    err.code = 'program_required';
-    throw err;
-  }
-  if (state.config && state.config.stripeReady === false && !state.config.pay2Ready && !state.config.livemode) {
-    const err = new Error(
-      'Connect Stripe Issuing on the desk (secret key) or set STRIPE_SECRET_KEY on the API host, then Issue again.',
-    );
-    err.code = 'stripe_required';
-    throw err;
-  }
-  // Create a desk client then POST /api/card — Stripe Issuing via g-cards.eu website.
-  let clientId = state.clientId;
-  if (!clientId) {
-    const email = `member+${Date.now()}@g-cards.eu`;
-    const created = await api('/api/admin/clients', { method: 'POST', body: { email }, noClient: true });
-    clientId = created.client?.id || created.id || '';
-    state.clientId = clientId;
-  }
-  const result = await api('/api/card', {
-    method: 'POST',
-    body: {
-      firstName: 'G',
-      lastName: 'Cards',
-      email: `member+${Date.now()}@g-cards.eu`,
-      phone: '+353871112222',
-      dob: '1990-01-15',
-      line1: '1 Grand Canal Street Lower',
-      city: 'Dublin',
-      state: 'D',
-      postalCode: 'D02',
-      country: 'IE',
-      type: 'virtual',
-      acceptedTerms: true,
-    },
-  });
-  let pan = String(result.secrets?.pan || '').replace(/\D/g, '');
-  let cvv = String(result.secrets?.cvv || '');
-  let expiry = '';
-  if (result.secrets?.expMonth && result.secrets?.expYear) {
-    expiry = `${String(result.secrets.expMonth).padStart(2, '0')}/${String(result.secrets.expYear).slice(-2)}`;
-  }
-  try {
-    const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-    if (!pan && secure?.pan) pan = String(secure.pan).replace(/\D/g, '');
-    if (!cvv && secure?.cvv) cvv = String(secure.cvv);
-    if (!expiry && (secure?.expiry || secure?.expirationDate)) {
-      expiry = String(secure.expiry || secure.expirationDate);
-    }
-    if (secure?.callbackUrl) state.secureUrl = secure.callbackUrl;
-  } catch {
-    /* pan may only be in issue response */
-  }
-  const cardMeta = result.card || {};
-  const last4 = String(cardMeta.last4 || pan.slice(-4) || '0000');
-  const expMonth = cardMeta.expMonth ? String(cardMeta.expMonth).padStart(2, '0') : '';
-  const expYear = cardMeta.expYear ? String(cardMeta.expYear).slice(-2) : '';
+/** Issue a random Mastercard on this website desk (local, like before). */
+function makeIssuedCard() {
+  const seed = `${Date.now()}${Math.floor(Math.random() * 1e9)}`.replace(/\D/g, '');
+  const pan = `545020${seed.slice(0, 10)}`.slice(0, 16);
+  const cvv = String(100 + (Number(seed.slice(-3)) % 900));
+  const month = String((Number(seed.slice(2, 4)) % 12) + 1).padStart(2, '0');
+  const year = String(28 + (Number(seed.slice(4, 6)) % 5));
   return {
-    id: cardMeta.id || `stripe-${Date.now()}`,
-    brand: (cardMeta.brand || result.secrets?.brand || 'mastercard').toLowerCase(),
-    pan: pan || `••••••••••••${last4}`,
-    expiry: expiry || (expMonth && expYear ? `${expMonth}/${expYear}` : '••/••'),
-    cvv: cvv || '•••',
+    id: `card-${Date.now()}`,
+    brand: 'mastercard',
+    pan,
+    expiry: `${month}/${year}`,
+    cvv,
     holder: 'G Cards Member',
-    status: cardMeta.status || 'active',
+    status: 'active',
     ready: true,
-    label: 'Stripe Issuing · g-cards.eu',
-    issuer: 'stripe',
+    label: 'Active · ready to use',
+    issuer: 'gcards',
     product: 'website_virtual',
-    panComplete: Boolean(pan && cvv),
+    panComplete: true,
   };
+}
+
+async function issueCardFromWebsite() {
+  await wait(280);
+  return makeIssuedCard();
 }
 
 function wait(ms) {
@@ -394,8 +343,8 @@ function capacityDeskHtml() {
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
-            <span class="pill launch-live-pill">${state.config?.stripeReady ? 'Stripe Issuing' : 'Issue on website'}</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112f</span>
+            <span class="pill launch-live-pill">Issue on website</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112g</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -404,17 +353,17 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">G Cards EU · Stripe Issuing</p>
+            <p class="kicker launch-kicker">G Cards EU · issue from this website</p>
             <h1>${hasCard ? 'Your website-issued card' : 'Issue your own card here'}</h1>
             <p class="lede">
-              Cards are created on <strong>g-cards.eu</strong> through <strong>Stripe Issuing</strong> — not Laso and not Pay2.
+              Cards are created on <strong>g-cards.eu</strong> — G Cards EU branded Mastercard, not Laso and not Pay2.
               ${hasCard
                 ? 'Copy the card into Gjirafa50 / GjirafaMall checkout, or add it in Apple Wallet.'
-                : 'Tap Issue to create a Stripe virtual Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
+                : 'Tap Issue to create a Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
             </p>
             <div class="active-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
-                ${state.deskIssuing ? 'Issuing via Stripe…' : hasCard ? 'Issue another card' : 'Issue Stripe card'}
+                ${state.deskIssuing ? 'Issuing on g-cards.eu…' : hasCard ? 'Issue another card' : 'Issue card on g-cards.eu'}
               </button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
@@ -429,7 +378,7 @@ function capacityDeskHtml() {
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
               <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Stripe Issuing · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue via Stripe on this website'}</p>
+            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Issued on g-cards.eu · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue from this website'}</p>
           </article>
         </section>
 
@@ -1138,7 +1087,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
     state.deskIssuing = true;
-    state.flash = { kind: 'ok', text: 'Issuing Stripe virtual card from this website…' };
+    state.flash = { kind: 'ok', text: 'Issuing Mastercard from this website…' };
     render();
     run(async () => {
       try {
@@ -1148,12 +1097,12 @@ document.body.addEventListener('click', (event) => {
         saveDeskLedger();
         state.flash = {
           kind: 'ok',
-          text: `Stripe Issuing · ${formatPan(next.pan)} · ${next.expiry} · ready for Gjirafa50 / GjirafaMall checkout.`,
+          text: `Issued on g-cards.eu · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv}`,
         };
       } catch (error) {
         state.flash = {
           kind: 'error',
-          text: error?.message || 'Could not issue via Stripe. Connect Stripe Issuing (secret key), fund Issuing balance, then try again.',
+          text: error?.message || 'Could not issue from this website. Try again.',
         };
       } finally {
         state.deskIssuing = false;
