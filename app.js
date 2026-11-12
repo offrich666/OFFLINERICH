@@ -165,17 +165,24 @@ function deskActiveCard() {
   return state.deskCards[0] || null;
 }
 
-/** Issue from this website via G Cards EU card program API (not Laso / not Pay2). */
+/** Issue from this website via Stripe Issuing (G Cards EU — not Laso / not Pay2). */
 async function issueCardFromWebsite() {
   const hasApi = Boolean(window.GCARDS_SITE?.hasApi?.());
   if (!hasApi) {
     const err = new Error(
-      'g-cards.eu static desk cannot authorize Visa/Mastercard by itself. Connect the G Cards EU card program on the API host, then Issue again from this website.',
+      'This static Pages host has no API. Run the G Cards EU API host with STRIPE_SECRET_KEY, open that desk origin, then press Issue.',
     );
     err.code = 'program_required';
     throw err;
   }
-  // Create a desk client then POST /api/card — G Cards EU website issue.
+  if (state.config && state.config.stripeReady === false && !state.config.pay2Ready && !state.config.livemode) {
+    const err = new Error(
+      'Connect Stripe Issuing on the desk (secret key) or set STRIPE_SECRET_KEY on the API host, then Issue again.',
+    );
+    err.code = 'stripe_required';
+    throw err;
+  }
+  // Create a desk client then POST /api/card — Stripe Issuing via g-cards.eu website.
   let clientId = state.clientId;
   if (!clientId) {
     const email = `member+${Date.now()}@g-cards.eu`;
@@ -189,45 +196,49 @@ async function issueCardFromWebsite() {
       firstName: 'G',
       lastName: 'Cards',
       email: `member+${Date.now()}@g-cards.eu`,
-      phone: '+38344111222',
+      phone: '+353871112222',
       dob: '1990-01-15',
-      line1: 'Prishtina',
-      city: 'Prishtina',
-      state: 'KS',
-      postalCode: '10000',
-      country: 'XK',
+      line1: '1 Grand Canal Street Lower',
+      city: 'Dublin',
+      state: 'D',
+      postalCode: 'D02',
+      country: 'IE',
       type: 'virtual',
       acceptedTerms: true,
     },
   });
-  // Pull secrets if the platform returns a secure details path
-  let pan = '';
-  let cvv = '';
+  let pan = String(result.secrets?.pan || '').replace(/\D/g, '');
+  let cvv = String(result.secrets?.cvv || '');
   let expiry = '';
+  if (result.secrets?.expMonth && result.secrets?.expYear) {
+    expiry = `${String(result.secrets.expMonth).padStart(2, '0')}/${String(result.secrets.expYear).slice(-2)}`;
+  }
   try {
     const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
-    if (secure?.pan) pan = String(secure.pan).replace(/\D/g, '');
-    if (secure?.cvv) cvv = String(secure.cvv);
-    if (secure?.expiry) expiry = String(secure.expiry);
+    if (!pan && secure?.pan) pan = String(secure.pan).replace(/\D/g, '');
+    if (!cvv && secure?.cvv) cvv = String(secure.cvv);
+    if (!expiry && (secure?.expiry || secure?.expirationDate)) {
+      expiry = String(secure.expiry || secure.expirationDate);
+    }
     if (secure?.callbackUrl) state.secureUrl = secure.callbackUrl;
   } catch {
-    /* pan may only be in iframe */
+    /* pan may only be in issue response */
   }
   const cardMeta = result.card || {};
   const last4 = String(cardMeta.last4 || pan.slice(-4) || '0000');
   const expMonth = cardMeta.expMonth ? String(cardMeta.expMonth).padStart(2, '0') : '';
   const expYear = cardMeta.expYear ? String(cardMeta.expYear).slice(-2) : '';
   return {
-    id: cardMeta.id || `gcards-${Date.now()}`,
-    brand: (cardMeta.brand || 'mastercard').toLowerCase(),
+    id: cardMeta.id || `stripe-${Date.now()}`,
+    brand: (cardMeta.brand || result.secrets?.brand || 'mastercard').toLowerCase(),
     pan: pan || `••••••••••••${last4}`,
     expiry: expiry || (expMonth && expYear ? `${expMonth}/${expYear}` : '••/••'),
     cvv: cvv || '•••',
     holder: 'G Cards Member',
     status: cardMeta.status || 'active',
     ready: true,
-    label: 'Issued on g-cards.eu',
-    issuer: 'gcards',
+    label: 'Stripe Issuing · g-cards.eu',
+    issuer: 'stripe',
     product: 'website_virtual',
     panComplete: Boolean(pan && cvv),
   };
@@ -383,8 +394,8 @@ function capacityDeskHtml() {
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
-            <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112e</span>
+            <span class="pill launch-live-pill">${state.config?.stripeReady ? 'Stripe Issuing' : 'Issue on website'}</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112f</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -393,17 +404,17 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">G Cards EU · issue from this website</p>
+            <p class="kicker launch-kicker">G Cards EU · Stripe Issuing</p>
             <h1>${hasCard ? 'Your website-issued card' : 'Issue your own card here'}</h1>
             <p class="lede">
-              Cards are created on <strong>g-cards.eu</strong> — G Cards EU branded, not Laso and not Pay2.
+              Cards are created on <strong>g-cards.eu</strong> through <strong>Stripe Issuing</strong> — not Laso and not Pay2.
               ${hasCard
                 ? 'Copy the card into Gjirafa50 / GjirafaMall checkout, or add it in Apple Wallet.'
-                : 'Tap Issue to create a G Cards EU Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
+                : 'Tap Issue to create a Stripe virtual Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
             </p>
             <div class="active-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
-                ${state.deskIssuing ? 'Issuing on g-cards.eu…' : hasCard ? 'Issue another card' : 'Issue card on g-cards.eu'}
+                ${state.deskIssuing ? 'Issuing via Stripe…' : hasCard ? 'Issue another card' : 'Issue Stripe card'}
               </button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
@@ -418,7 +429,7 @@ function capacityDeskHtml() {
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
               <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Issued on g-cards.eu · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue from this website'}</p>
+            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Stripe Issuing · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue via Stripe on this website'}</p>
           </article>
         </section>
 
@@ -616,7 +627,7 @@ function clientRowHtml(account) {
 function consoleHtml() {
   const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
   const issued = accounts.filter((account) => account.card).length;
-  const live = Boolean(state.config?.livemode || state.config?.pay2Ready);
+  const live = Boolean(state.config?.livemode || state.config?.pay2Ready || state.config?.stripeReady);
   const rows = clientRows();
   const links = state.config?.links || [];
   return `<header class="bar">
@@ -634,7 +645,7 @@ function consoleHtml() {
         <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
         <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
         <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
-        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${state.config?.pay2Ready ? 'Pay2' : state.config?.livemode ? 'Immersve' : 'Not connected'}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${state.config?.stripeReady ? 'Stripe Issuing' : state.config?.pay2Ready ? 'Pay2' : state.config?.livemode ? 'Immersve' : 'Not connected'}</strong></article>
       </section>
       <div class="console-grid">
         <section class="panel">
@@ -652,7 +663,9 @@ function consoleHtml() {
           <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
         </section>
         <div class="stack">
-          ${state.config?.pay2Ready
+          ${state.config?.stripeReady
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Stripe Issuing is connected (${esc((state.config.stripeCurrency || 'eur').toUpperCase())}). Issue from this desk. Fund the Issuing balance in the Stripe Dashboard before merchant spend.</p><span class="pill good">Stripe live</span></section>`
+            : state.config?.pay2Ready
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Pay2.House is connected on ${esc(state.config.pay2AccountNumber)}. Open a client and issue a card. Fund the Pay2 USD wallet (USDT TRC20), then top up the card.</p><span class="pill good">Pay2 live</span></section>`
             : live
             ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
@@ -667,40 +680,45 @@ function consoleHtml() {
 }
 
 function setupHtml() {
-  if (state.config?.pay2Ready || state.config?.livemode) return '';
+  if (state.config?.stripeReady || state.config?.pay2Ready || state.config?.livemode) return '';
   const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
   return `<section class="panel partner">
-    <h2>Issue cards today — Pay2.House</h2>
-    <p class="lede">Immersve partner approval takes time. Pay2.House already has BINs. Sign up, fund USDT TRC20, paste the API credentials, and this desk can issue a real virtual card for a client today.</p>
+    <h2>Issue cards today — Stripe Issuing</h2>
+    <p class="lede">G Cards EU issues from this website through Stripe Issuing (EUR virtual Mastercard). Activate Issuing, accept card issuing terms, fund the Issuing balance, then paste the secret key.</p>
     <ol class="steps">
-      <li>Create an account at <a href="https://pay2.house/" target="_blank" rel="noopener">pay2.house</a>.</li>
-      <li>Open <a href="https://pay2.house/keys/prepare" target="_blank" rel="noopener">keys/prepare</a>, create an API key, and save the <b>API key</b>, <b>key id</b>, and <b>private key PEM</b>.</li>
-      <li>Fund a USD wallet (USDT TRC20 address is on the wallet). Note the account number that starts with <code>P2U</code>.</li>
-      <li>Ask Pay2 support for a BIN, or list BINs from their API. Paste it below.</li>
-      <li>Connect here, open a client, press <b>Issue real card</b>, then <b>Show card number</b>.</li>
+      <li>Open <a href="https://dashboard.stripe.com/issuing/overview" target="_blank" rel="noopener">Issuing overview</a> for G N LABS LLC and finish activation.</li>
+      <li>Accept card issuing terms, then fund the Issuing balance (EUR).</li>
+      <li>Copy the secret key from <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">API keys</a>.</li>
+      <li>Connect here, then press <b>Issue Stripe card</b> on the desk.</li>
     </ol>
-    <form id="pay2-form" class="stack">
-      <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" required /></label>
-      <label>Key id <input name="keyId" autocomplete="off" spellcheck="false" required /></label>
-      <label>Private key PEM <textarea name="privateKeyPem" rows="6" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----" required></textarea></label>
-      <label>Account number <input name="accountNumber" autocomplete="off" spellcheck="false" placeholder="P2U…" required /></label>
-      <label>BIN number <input name="binNumber" autocomplete="off" spellcheck="false" placeholder="From Pay2 BINs / support" required /></label>
-      <button class="primary" type="submit">Connect Pay2.House</button>
+    <form id="stripe-form" class="stack">
+      <label>Secret key <input name="secretKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" required /></label>
+      <label>Publishable key (optional) <input name="publishableKey" autocomplete="off" spellcheck="false" placeholder="pk_live_…" /></label>
+      <label>Currency <input name="currency" autocomplete="off" spellcheck="false" value="eur" /></label>
+      <button class="primary" type="submit">Connect Stripe Issuing</button>
     </form>
     <details style="margin-top:16px">
-      <summary>Later: Immersve Universal EVM (own program)</summary>
-      <p class="lede" style="margin-top:10px">Use this when Immersve sends live partner keys. Not required to issue today.</p>
+      <summary>Other issuers (Pay2 / Immersve)</summary>
+      <form id="pay2-form" class="stack" style="margin-top:12px">
+        <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" /></label>
+        <label>Key id <input name="keyId" autocomplete="off" spellcheck="false" /></label>
+        <label>Private key PEM <textarea name="privateKeyPem" rows="6" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+        <label>Account number <input name="accountNumber" autocomplete="off" spellcheck="false" placeholder="P2U…" /></label>
+        <label>BIN number <input name="binNumber" autocomplete="off" spellcheck="false" placeholder="From Pay2 BINs / support" /></label>
+        <button class="ghost" type="submit">Connect Pay2.House</button>
+      </form>
+      <p class="lede" style="margin-top:10px">Immersve when you have partner keys.</p>
       <form id="setup-form" class="stack">
-        <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" required /></label>
-        <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" required /></label>
-        <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" required /></label>
-        <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" required /></label>
-        <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" required /></label>
-        <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" required /></label>
+        <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" /></label>
+        <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" /></label>
+        <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" /></label>
+        <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" /></label>
+        <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" /></label>
+        <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" /></label>
         <label>Funds Storage address <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x…" /></label>
         <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
-        <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" required /></label>
-        <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" required /></label>
+        <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" /></label>
+        <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" /></label>
         <button class="ghost" type="submit">Connect Immersve</button>
       </form>
     </details>
@@ -709,10 +727,10 @@ function setupHtml() {
 
 function issueForm() {
   if (state.me.card) return '';
-  if (!state.config?.livemode && !state.config?.pay2Ready) {
+  if (!state.config?.livemode && !state.config?.pay2Ready && !state.config?.stripeReady) {
     return `<section class="panel">
       <h2>Issue the card</h2>
-      <p class="lede gate">Connect Pay2.House on the desk to issue a card today, or Immersve when you have partner keys.</p>
+      <p class="lede gate">Connect Stripe Issuing on the desk to issue a card today.</p>
       <button class="primary" type="button" data-action="back-to-desk">Connect on the desk</button>
     </section>`;
   }
@@ -728,7 +746,9 @@ function issueForm() {
   }
   return `<section class="panel">
     <h2>Issue the card</h2>
-    <p class="lede">${state.config?.pay2Ready
+    <p class="lede">${state.config?.stripeReady
+      ? 'Stripe Issuing creates a real EUR virtual Mastercard for this client from g-cards.eu. Fund the Stripe Issuing balance before spend.'
+      : state.config?.pay2Ready
       ? 'Pay2.House creates a real virtual card for this client from your funded Pay2 account. Wallet link is optional for Pay2.'
       : 'Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.'}</p>
     <form id="card-form" class="grid-2">
@@ -875,13 +895,16 @@ function dashboardHtml() {
 
 function walletsGate() {
   if (state.me.card) {
+    if (state.config?.stripeReady || state.me.card.issuerMode === 'stripe') {
+      return '<p class="lede">Press Show card number to read the Stripe Issuing PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>';
+    }
     return state.config?.pay2Ready || state.me.card.issuerMode === 'pay2'
       ? '<p class="lede">Press Show card number to read the Pay2.House PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>'
       : '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
   }
-  const why = state.config?.pay2Ready || state.config?.livemode
+  const why = state.config?.stripeReady || state.config?.pay2Ready || state.config?.livemode
     ? 'Issue this client’s card first. The number appears here right after.'
-    : 'No card exists yet. Connect Pay2.House on the desk to issue today, then show the number here.';
+    : 'No card exists yet. Connect Stripe Issuing on the desk to issue today, then show the number here.';
   return `<p class="lede gate">${esc(why)}</p>`;
 }
 
@@ -1115,7 +1138,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
     state.deskIssuing = true;
-    state.flash = { kind: 'ok', text: 'Issuing G Cards EU card from this website…' };
+    state.flash = { kind: 'ok', text: 'Issuing Stripe virtual card from this website…' };
     render();
     run(async () => {
       try {
@@ -1125,12 +1148,12 @@ document.body.addEventListener('click', (event) => {
         saveDeskLedger();
         state.flash = {
           kind: 'ok',
-          text: `Issued on g-cards.eu · ${formatPan(next.pan)} · ${next.expiry} · ready for Gjirafa50 / GjirafaMall checkout.`,
+          text: `Stripe Issuing · ${formatPan(next.pan)} · ${next.expiry} · ready for Gjirafa50 / GjirafaMall checkout.`,
         };
       } catch (error) {
         state.flash = {
           kind: 'error',
-          text: error?.message || 'Could not issue from this website. Connect the G Cards EU card program, then try again.',
+          text: error?.message || 'Could not issue via Stripe. Connect Stripe Issuing (secret key), fund Issuing balance, then try again.',
         };
       } finally {
         state.deskIssuing = false;
@@ -1441,6 +1464,18 @@ document.body.addEventListener('submit', (event) => {
   }
   if (form.id === 'link-form') {
     run(() => linkAddress(String(data.address), String(data.signature || '')));
+  }
+  if (form.id === 'stripe-form') {
+    run(async () => {
+      const result = await api('/api/setup/stripe', { method: 'POST', body: data, noClient: true });
+      const euros = ((result.issuingAvailableCents || 0) / 100).toFixed(2);
+      state.flash = {
+        kind: 'ok',
+        text: `Stripe Issuing connected (${String(result.currency || 'eur').toUpperCase()}). Issuing balance €${euros}. Press Issue Stripe card.`,
+      };
+      await loadDesk();
+      render();
+    });
   }
   if (form.id === 'pay2-form') {
     run(async () => {
