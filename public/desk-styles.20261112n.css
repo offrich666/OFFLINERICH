@@ -948,3 +948,63 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; }
 
 textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius:12px; padding:11px 12px; color:var(--ink); font:inherit; min-height:120px; }
 .pay2-pan { display:grid; place-items:start; padding:8px; }
+
+/* Build 20261112o — balance → card + details */
+.desk-live-card.is-clickable { cursor: pointer; }
+.desk-live-card.is-clickable:focus-visible {
+  outline: 2px solid #e7d3a4;
+  outline-offset: 4px;
+}
+.desk-card-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.desk-card-row:hover,
+.desk-card-row.is-open {
+  background: rgba(231, 211, 164, 0.22);
+}
+.desk-card-row td:last-child {
+  white-space: nowrap;
+}
+.desk-detail-panel {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+  animation: rise 0.4s cubic-bezier(.2,.8,.2,1) backwards;
+  display: grid;
+  gap: 18px;
+}
+.desk-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.desk-detail-head h2 {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 560;
+  letter-spacing: -0.02em;
+  margin: 4px 0 0;
+  color: var(--navy);
+}
+.desk-detail-plastic {
+  max-width: 420px;
+  min-height: 220px;
+}
+.desk-detail-fields {
+  margin-top: 0;
+}
+.desk-detail-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.desk-fund-form {
+  grid-template-columns: 1.2fr 1fr auto auto;
+}
+@media (max-width: 960px) {
+  .desk-detail-cols { grid-template-columns: 1fr; }
+  .desk-fund-form { grid-template-columns: 1fr; }
+}
