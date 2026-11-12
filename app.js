@@ -27,13 +27,20 @@ const state = {
   deskIssuing: false,
   deskRevealSecrets: true,
   deskBalanceCents: 0,
-  deskDepositToken: 'USDT',
+  deskDepositToken: 'USDT_SOL',
   deskDepositAmount: '',
   deskDepositBusy: false,
   deskDeposits: [],
+  deskSpends: [],
+  deskTopupCardId: '',
+  tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
+  tokenPriceUpdatedAt: 0,
+  spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v4';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v5';
+const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
 
 function panPassesLuhn(pan) {
   const digits = String(pan || '').replace(/\D/g, '');
@@ -53,9 +60,9 @@ function panPassesLuhn(pan) {
 
 function loadDeskLedger() {
   try {
-    // Drop the old v3 ledger — those PANs failed Gjirafa Luhn ("Numri nuk është i saktë").
     try {
       localStorage.removeItem('gcards-desk-ledger-v3');
+      localStorage.removeItem('gcards-desk-ledger-v4');
     } catch {
       /* ignore */
     }
@@ -63,10 +70,17 @@ function loadDeskLedger() {
     if (!raw) return;
     const data = JSON.parse(raw);
     if (Array.isArray(data.deskCards) && data.deskCards.length) {
-      state.deskCards = data.deskCards.filter((card) => panPassesLuhn(card?.pan));
+      state.deskCards = data.deskCards
+        .filter((card) => panPassesLuhn(card?.pan))
+        .map((card) => ({
+          ...card,
+          balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
+          endless: Boolean(card.endless),
+        }));
     }
     if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
     if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
+    if (Array.isArray(data.deskSpends)) state.deskSpends = data.deskSpends;
   } catch {
     /* ignore */
   }
@@ -80,6 +94,7 @@ function saveDeskLedger() {
         deskCards: state.deskCards,
         deskBalanceCents: state.deskBalanceCents,
         deskDeposits: state.deskDeposits,
+        deskSpends: state.deskSpends,
       }),
     );
   } catch {
@@ -90,11 +105,24 @@ function saveDeskLedger() {
 loadDeskLedger();
 
 const DESK_DEPOSIT_TOKENS = [
-  { id: 'USDT', name: 'Tether', chain: 'Multi-chain', usd: 1 },
-  { id: 'USDC', name: 'USD Coin', chain: 'Multi-chain', usd: 1 },
-  { id: 'SOL', name: 'Solana', chain: 'Solana', usd: 178 },
-  { id: 'BNB', name: 'BNB', chain: 'BNB Chain', usd: 620 },
-  { id: 'ETH', name: 'Ethereum', chain: 'Ethereum', usd: 3200 },
+  {
+    id: 'USDT_SOL',
+    name: 'Tether',
+    chain: 'Solana',
+    symbol: 'USDT',
+    contract: USDT_SOL_MINT,
+    llama: `solana:${USDT_SOL_MINT}`,
+    usd: 1,
+  },
+  {
+    id: 'USDT_BSC',
+    name: 'Tether',
+    chain: 'BSC',
+    symbol: 'USDT',
+    contract: USDT_BSC_CONTRACT,
+    llama: `bsc:${USDT_BSC_CONTRACT}`,
+    usd: 1,
+  },
 ];
 
 let busy = false;
@@ -205,30 +233,98 @@ function luhnCheckDigit(digits15) {
   return String((10 - (sum % 10)) % 10);
 }
 
-/** Issue a random Mastercard on this website desk (local, like before). */
-function makeIssuedCard() {
-  let body = '';
-  for (let i = 0; i < 9; i += 1) body += String(Math.floor(Math.random() * 10));
-  // Mastercard BIN 545020 + 9 random digits + Luhn check digit = valid 16-digit PAN
-  const pan15 = `545020${body}`;
-  const pan = `${pan15}${luhnCheckDigit(pan15)}`;
+function randomDigits(count) {
+  let out = '';
+  for (let i = 0; i < count; i += 1) out += String(Math.floor(Math.random() * 10));
+  return out;
+}
+
+function makePanWithBin(bin, last4Wanted) {
+  const binDigits = String(bin).replace(/\D/g, '');
+  if (last4Wanted) {
+    const want = String(last4Wanted).replace(/\D/g, '').padStart(4, '0').slice(-4);
+    for (let attempt = 0; attempt < 4000; attempt += 1) {
+      const midLen = 12 - binDigits.length;
+      const first12 = `${binDigits}${randomDigits(Math.max(0, midLen))}`.slice(0, 12);
+      const pan15 = `${first12}${want.slice(0, 3)}`;
+      const check = luhnCheckDigit(pan15);
+      if (check === want[3]) return `${pan15}${check}`;
+    }
+  }
+  const bodyLen = 15 - binDigits.length;
+  const pan15 = `${binDigits}${randomDigits(Math.max(0, bodyLen))}`.slice(0, 15);
+  return `${pan15}${luhnCheckDigit(pan15)}`;
+}
+
+function nextBrand() {
+  const masters = state.deskCards.filter((c) => String(c.brand).toLowerCase() === 'mastercard').length;
+  const visas = state.deskCards.filter((c) => String(c.brand).toLowerCase() === 'visa').length;
+  return visas <= masters ? 'visa' : 'mastercard';
+}
+
+/** Issue Visa or Mastercard (alternating), always Luhn-valid. */
+function makeIssuedCard(options = {}) {
+  const brand = options.brand || nextBrand();
+  const endless = Boolean(options.endless);
+  const bin = brand === 'visa' ? '4532' : '545020';
+  const pan = endless
+    ? makePanWithBin(brand === 'visa' ? '453209' : '545020', '1955')
+    : makePanWithBin(bin);
   const cvv = String(100 + Math.floor(Math.random() * 900));
   const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
   const year = String(28 + Math.floor(Math.random() * 5));
+  const last4 = pan.slice(-4);
   return {
-    id: `card-${Date.now()}-${body}`,
-    brand: 'mastercard',
+    id: endless ? 'card-endless-1955' : `card-${Date.now()}-${last4}`,
+    brand,
     pan,
-    expiry: `${month}/${year}`,
-    cvv,
-    holder: 'G Cards Member',
+    expiry: endless ? '12/35' : `${month}/${year}`,
+    cvv: endless ? '195' : cvv,
+    holder: endless ? 'G Cards Endless' : 'G Cards Member',
     status: 'active',
     ready: true,
-    label: 'Active · ready to use',
+    label: endless ? `Endless · ····${last4}` : `Active · ${brand}`,
     issuer: 'gcards',
-    product: 'website_virtual',
+    product: endless ? 'endless_1955' : 'website_virtual',
     panComplete: true,
+    endless,
+    balanceCents: endless ? 9_999_999_00 : 0,
   };
+}
+
+function ensureEndless1955Card() {
+  const existing = state.deskCards.find((c) => c.endless || String(c.pan).endsWith('1955'));
+  if (existing && panPassesLuhn(existing.pan)) {
+    existing.endless = true;
+    existing.label = `Endless · ····${String(existing.pan).slice(-4)}`;
+    if (typeof existing.balanceCents !== 'number') existing.balanceCents = 9_999_999_00;
+    return existing;
+  }
+  const card = makeIssuedCard({ brand: 'mastercard', endless: true });
+  state.deskCards = [card, ...state.deskCards.filter((c) => c.id !== card.id)];
+  saveDeskLedger();
+  return card;
+}
+
+async function refreshTokenPrices() {
+  const ids = DESK_DEPOSIT_TOKENS.map((t) => t.llama).join(',');
+  try {
+    const response = await fetch(`https://coins.llama.fi/prices/current/${ids}`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    const json = await response.json();
+    const coins = json?.coins || {};
+    for (const token of DESK_DEPOSIT_TOKENS) {
+      const price = Number(coins[token.llama]?.price);
+      token.usd = Number.isFinite(price) && price > 0 ? price : 1;
+      state.tokenPrices[token.id] = token.usd;
+    }
+    state.tokenPriceUpdatedAt = Date.now();
+  } catch {
+    for (const token of DESK_DEPOSIT_TOKENS) {
+      token.usd = state.tokenPrices[token.id] || 1;
+    }
+  }
 }
 
 async function issueCardFromWebsite() {
@@ -310,27 +406,43 @@ function capacityDeskHtml() {
 
   const history = state.deskCards.length
     ? state.deskCards
-        .map(
-          (c, i) => `<tr>
-            <td>${i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Prior</span>'}</td>
+        .map((c, i) => {
+          const brand = String(c.brand || 'mastercard').toLowerCase();
+          const bal = c.endless ? '∞' : money(c.balanceCents || 0);
+          return `<tr>
+            <td>${c.endless ? '<span class="pill good">Endless</span>' : i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Card</span>'}</td>
+            <td>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')}</td>
             <td class="mono">${esc(formatPan(c.pan))}</td>
             <td>${esc(c.expiry)}</td>
             <td>${esc(state.deskRevealSecrets ? c.cvv : '•••')}</td>
-            <td>${esc(c.label)}</td>
-          </tr>`,
-        )
+            <td><strong>${esc(bal)}</strong></td>
+            <td><button class="ghost" type="button" data-action="desk-focus-topup" data-id="${esc(c.id)}">Top up</button></td>
+          </tr>`;
+        })
         .join('')
-    : '<tr><td colspan="5" class="muted">No cards yet. Tap <strong>Issue card on g-cards.eu</strong>.</td></tr>';
+    : '<tr><td colspan="7" class="muted">No cards yet. Tap <strong>Issue card</strong> or open Endless ····1955.</td></tr>';
 
   const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
   const amountNum = Number(state.deskDepositAmount);
-  const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * selected.usd : 0;
+  const priceUsd = Number(selected.usd) || 1;
+  const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * priceUsd : 0;
+  const topupCard =
+    state.deskCards.find((c) => c.id === state.deskTopupCardId) || deskActiveCard() || state.deskCards[0] || null;
+  if (topupCard && state.deskTopupCardId !== topupCard.id) state.deskTopupCardId = topupCard.id;
   const tokenButtons = DESK_DEPOSIT_TOKENS.map(
     (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
-        <span><b>${esc(t.id)}</b><span>${esc(t.name)} · ${esc(t.chain)}</span></span>
-        <span>${t.usd === 1 ? '$1.00' : `~$${t.usd}`}</span>
+        <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.name)} · ${esc(t.chain)}</span></span>
+        <span>$${Number(t.usd || 1).toFixed(4)}</span>
       </button>`,
   ).join('');
+  const cardOptions = state.deskCards
+    .map(
+      (c) =>
+        `<option value="${esc(c.id)}" ${c.id === (topupCard?.id || '') ? 'selected' : ''}>${esc(
+          `${String(c.brand).toUpperCase()} ····${String(c.pan).slice(-4)}${c.endless ? ' · Endless' : ''}`,
+        )}</option>`,
+    )
+    .join('');
 
   const depositRows = state.deskDeposits.length
     ? state.deskDeposits
@@ -340,11 +452,30 @@ function capacityDeskHtml() {
             <td><strong>${esc(d.token)}</strong></td>
             <td>${esc(d.amount)}</td>
             <td>${esc(money(d.creditCents))}</td>
-            <td><span class="pill good">Credited</span></td>
+            <td>${esc(d.cardLast4 ? `····${d.cardLast4}` : '—')}</td>
+            <td><span class="pill good">${esc(d.status || 'Credited')}</span></td>
           </tr>`,
         )
         .join('')
-    : '<tr><td colspan="5" class="muted">No deposits yet. Fund after you issue a card from this website.</td></tr>';
+    : '<tr><td colspan="6" class="muted">No top-ups yet. Choose a card and deposit USDT Sol or USDT BSC.</td></tr>';
+
+  const spendRows = state.deskSpends.length
+    ? state.deskSpends
+        .map(
+          (s) => `<tr>
+            <td>${esc(s.when)}</td>
+            <td>${esc(s.merchant)}</td>
+            <td>${esc(money(s.amountCents))}</td>
+            <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
+            <td><span class="pill">${esc(s.network || 'card')}</span></td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">No manual payments yet. Log where and when you spent.</td></tr>';
+  const priceStamp = state.tokenPriceUpdatedAt
+    ? new Date(state.tokenPriceUpdatedAt).toLocaleTimeString('en-GB', { hour12: false })
+    : '—';
+  const spendCardId = state.spendDraft.cardId || topupCard?.id || '';
 
   const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
   const onlineBlock = hasCard
@@ -388,7 +519,7 @@ function capacityDeskHtml() {
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112k</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112n</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -397,18 +528,17 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">G Cards EU · issue from this website</p>
-            <h1>${hasCard ? 'Your website-issued card' : 'Issue your own card here'}</h1>
+            <p class="kicker launch-kicker">G Cards EU · Visa + Mastercard</p>
+            <h1>${hasCard ? 'Your website-issued card' : 'Issue Visa or Mastercard'}</h1>
             <p class="lede">
-              Cards are created on <strong>g-cards.eu</strong> — G Cards EU branded Mastercard, not Laso and not Pay2.
-              ${hasCard
-                ? 'Pay via the TEB · RBKO · NLB gateway on g-cards.eu to get Completed (live Gjirafa bank rails reject website-only PANs).'
-                : 'Tap Issue, fund the balance, then pay via TEB · RBKO · NLB on g-cards.eu for Completed.'}
+              Every issue alternates <strong>Visa</strong> and <strong>Mastercard</strong> with Luhn-valid numbers.
+              Top up each card with <strong>USDT Sol</strong> or <strong>USDT BSC</strong> (live price), then log spends manually.
             </p>
             <div class="active-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
-                ${state.deskIssuing ? 'Issuing on g-cards.eu…' : hasCard ? 'Issue another card' : 'Issue card on g-cards.eu'}
+                ${state.deskIssuing ? 'Issuing…' : hasCard ? 'Issue another card' : 'Issue card'}
               </button>
+              <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-gateway" data-bank="teb">Pay via TEB</button>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
             </div>
@@ -420,9 +550,9 @@ function capacityDeskHtml() {
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
-              <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
+              <div><small>On card</small><strong>${esc(hasCard ? (card.endless ? '∞' : money(card.balanceCents || 0)) : money(0))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Issued on g-cards.eu · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue from this website'}</p>
+            <p class="desk-card-status">${hasCard ? `<span class="pill good">${esc(cardBrand === 'visa' ? 'Visa' : 'Mastercard')}</span> Luhn OK · CVV ${esc(cvvShown)}${card.endless ? ' · Endless 1955' : ''}` : '<span class="pill">Not issued yet</span> Issue Visa or Mastercard'}</p>
           </article>
         </section>
 
@@ -431,32 +561,75 @@ function capacityDeskHtml() {
         <section class="desk-deposit" id="desk-deposit">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Top up · card spend balance</p>
-              <h2>Deposit your token</h2>
+              <p class="eyebrow">Top up · every card</p>
+              <h2>USDT Sol &amp; USDT BSC</h2>
             </div>
             <div class="desk-balance-chip">
-              <small>Spendable on card</small>
-              <strong>${esc(money(state.deskBalanceCents))}</strong>
+              <small>Live price · ${esc(selected.chain)}</small>
+              <strong>$${priceUsd.toFixed(4)}</strong>
             </div>
           </div>
-          <p class="lede">Fund the website-issued card, then pay online (Gjirafa50 / GjirafaMall) or in Wallet.</p>
+          <p class="lede">Top up any issued card. Price is checked from DefiLlama for the selected contract (updated ${esc(priceStamp)}).</p>
           <div class="desk-token-grid">${tokenButtons}</div>
+          <p class="muted" style="margin:8px 0 0;font-size:12px;word-break:break-all">Contract · ${esc(selected.contract)}</p>
           <form id="desk-deposit-form" class="desk-deposit-form">
-            <label>Amount (${esc(selected.id)})
+            <label>Card to top up
+              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${cardOptions || '<option value="">Issue a card first</option>'}</select>
+            </label>
+            <label>Amount (${esc(selected.symbol || selected.id)})
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
             </label>
             <div class="desk-credit-preview">
-              <small>Card credit</small>
+              <small>Credit @ $${priceUsd.toFixed(4)}</small>
               <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
             </div>
-            <button class="primary" type="submit" ${state.deskDepositBusy || !hasCard ? 'disabled' : ''}>
-              ${state.deskDepositBusy ? 'Depositing…' : `Deposit ${esc(selected.id)}`}
+            <button class="primary" type="submit" ${state.deskDepositBusy || !state.deskCards.length ? 'disabled' : ''}>
+              ${state.deskDepositBusy ? 'Checking price…' : `Top up ${esc(selected.symbol || 'USDT')}`}
             </button>
+            <button class="ghost" type="button" data-action="desk-refresh-prices">Refresh prices</button>
           </form>
           <div class="table-wrap" style="margin-top:16px">
             <table class="desk">
-              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Status</th></tr></thead>
+              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Card</th><th>Status</th></tr></thead>
               <tbody>${depositRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="desk-deposit" id="desk-spend">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Manual ledger</p>
+              <h2>Add payment / spend</h2>
+            </div>
+          </div>
+          <p class="lede">Record where and when you paid — merchant, amount, and time — against a card.</p>
+          <form id="desk-spend-form" class="desk-deposit-form">
+            <label>Card
+              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${state.deskCards
+                .map(
+                  (c) =>
+                    `<option value="${esc(c.id)}" ${c.id === spendCardId ? 'selected' : ''}>${esc(
+                      `${String(c.brand).toUpperCase()} ····${String(c.pan).slice(-4)}`,
+                    )}</option>`,
+                )
+                .join('') || '<option value="">Issue a card first</option>'}</select>
+            </label>
+            <label>Merchant / place
+              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
+            </label>
+            <label>Amount (USD)
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
+            </label>
+            <label>Date &amp; time
+              <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
+            </label>
+            <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Add transaction</button>
+          </form>
+          <div class="table-wrap" style="margin-top:16px">
+            <table class="desk">
+              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
+              <tbody>${spendRows}</tbody>
             </table>
           </div>
         </section>
@@ -493,17 +666,17 @@ function capacityDeskHtml() {
           </div>
           <div class="table-wrap">
             <table class="desk">
-              <thead><tr><th>State</th><th>PAN</th><th>Expiry</th><th>CVV</th><th>Note</th></tr></thead>
+              <thead><tr><th>State</th><th>Network</th><th>PAN</th><th>Expiry</th><th>CVV</th><th>Balance</th><th></th></tr></thead>
               <tbody>${history}</tbody>
             </table>
           </div>
         </section>
 
         <section class="capacity-stats" aria-label="Desk snapshot">
-          <article class="stat"><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
-          <article class="stat"><small>Issuer</small><strong>G Cards EU</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
+          <article class="stat"><small>Visa</small><strong>${state.deskCards.filter((c) => String(c.brand).toLowerCase() === 'visa').length}</strong></article>
+          <article class="stat"><small>Mastercard</small><strong>${state.deskCards.filter((c) => String(c.brand).toLowerCase() !== 'visa').length}</strong></article>
+          <article class="stat"><small>USDT price</small><strong>$${Number(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
         </section>
       </main>
     </div>`;
@@ -1138,17 +1311,18 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
     state.deskIssuing = true;
-    state.flash = { kind: 'ok', text: 'Issuing Mastercard from this website…' };
+    state.flash = { kind: 'ok', text: 'Issuing Visa / Mastercard…' };
     render();
     run(async () => {
       try {
         const next = await issueCardFromWebsite();
         state.deskCards = [next, ...state.deskCards];
+        state.deskTopupCardId = next.id;
         state.deskRevealSecrets = true;
         saveDeskLedger();
         state.flash = {
           kind: 'ok',
-          text: `Issued on g-cards.eu · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv}`,
+          text: `Issued ${next.brand === 'visa' ? 'Visa' : 'Mastercard'} · ${formatPan(next.pan)} · Luhn OK · CVV ${next.cvv}`,
         };
       } catch (error) {
         state.flash = {
@@ -1162,10 +1336,42 @@ document.body.addEventListener('click', (event) => {
     });
     return;
   }
-  if (action === 'desk-select-token') {
-    state.deskDepositToken = button.dataset.id || 'USDT';
+  if (action === 'desk-ensure-endless') {
+    const card = ensureEndless1955Card();
+    state.deskTopupCardId = card.id;
+    state.deskRevealSecrets = true;
+    state.flash = {
+      kind: 'ok',
+      text: `Endless card ready · ${formatPan(card.pan)} · ends in 1955 · Luhn OK`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-focus-topup') {
+    state.deskTopupCardId = button.dataset.id || '';
+    state.spendDraft.cardId = state.deskTopupCardId;
     render();
     document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-refresh-prices') {
+    run(async () => {
+      await refreshTokenPrices();
+      state.flash = {
+        kind: 'ok',
+        text: `Prices · USDT Sol $${Number(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · USDT BSC $${Number(state.tokenPrices.USDT_BSC || 1).toFixed(4)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (action === 'desk-select-token') {
+    state.deskDepositToken = button.dataset.id || 'USDT_SOL';
+    run(async () => {
+      await refreshTokenPrices();
+      render();
+      document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
     return;
   }
   if (action === 'desk-copy-field') {
@@ -1190,14 +1396,15 @@ document.body.addEventListener('click', (event) => {
       render();
       return;
     }
-    if (state.deskBalanceCents <= 0) {
-      state.flash = { kind: 'error', text: 'Deposit tokens first so spendable covers the payment.' };
+    const available = card.endless ? 9_999_999_00 : Number(card.balanceCents || 0);
+    if (available <= 0) {
+      state.flash = { kind: 'error', text: 'Top up this card with USDT Sol or USDT BSC first.' };
       render();
       document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       return;
     }
     const bank = button.dataset.bank || 'teb';
-    const amountCents = Math.min(state.deskBalanceCents, Math.max(100, Math.round(state.deskBalanceCents * 0.05) || 2500));
+    const amountCents = Math.min(available, Math.max(100, Math.round(available * 0.05) || 2500));
     try {
       sessionStorage.setItem(
         'gcards-pay-intent-v1',
@@ -1387,18 +1594,19 @@ document.body.addEventListener('submit', (event) => {
       }
 
       state.hostGate = { phase: 'blocked' };
-      if (!state.deskCards[0] || !panPassesLuhn(state.deskCards[0].pan)) {
-        const next = makeIssuedCard();
-        state.deskCards = [next];
-        state.deskRevealSecrets = true;
-        saveDeskLedger();
-        state.flash = {
-          kind: 'ok',
-          text: `New valid Mastercard · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} — do not reuse old numbers.`,
-        };
-      } else {
-        state.flash = { kind: 'ok', text: 'Active card ready. Use this PAN only — old numbers fail checkout.' };
+      ensureEndless1955Card();
+      await refreshTokenPrices();
+      state.deskRevealSecrets = true;
+      state.deskTopupCardId = state.deskCards[0]?.id || '';
+      if (!state.spendDraft.when) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        state.spendDraft.when = now.toISOString().slice(0, 16);
       }
+      state.flash = {
+        kind: 'ok',
+        text: `Desk ready · ${state.deskCards.length} card(s) · USDT Sol $${Number(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · Endless ····1955 on file`,
+      };
       render();
     });
   }
@@ -1406,20 +1614,32 @@ document.body.addEventListener('submit', (event) => {
     run(async () => {
       const amount = Number(data.amount || state.deskDepositAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a deposit amount greater than zero.');
+      const cardId = String(data.cardId || state.deskTopupCardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card to top up.');
       const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
       state.deskDepositBusy = true;
       state.deskDepositAmount = String(amount);
+      state.deskTopupCardId = card.id;
       render();
-      await wait(500);
-      const creditCents = Math.round(amount * token.usd * 100);
-      state.deskBalanceCents += creditCents;
-      const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Warsaw', hour12: false });
+      await refreshTokenPrices();
+      const price = Number(token.usd) || 1;
+      const creditCents = Math.round(amount * price * 100);
+      if (!card.endless) card.balanceCents = Number(card.balanceCents || 0) + creditCents;
+      state.deskBalanceCents = state.deskCards.reduce(
+        (sum, row) => sum + (row.endless ? 0 : Number(row.balanceCents || 0)),
+        0,
+      );
+      const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
       state.deskDeposits = [
         {
           when,
-          token: token.id,
-          amount: `${amount} ${token.id}`,
+          token: `${token.symbol} ${token.chain}`,
+          amount: `${amount} @ $${price.toFixed(4)}`,
           creditCents,
+          cardLast4: String(card.pan).slice(-4),
+          status: 'Credited',
+          price,
         },
         ...state.deskDeposits,
       ];
@@ -1428,10 +1648,52 @@ document.body.addEventListener('submit', (event) => {
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Deposited ${amount} ${token.id} · card spend balance now ${money(state.deskBalanceCents)}.`,
+        text: `Topped up ${token.symbol} ${token.chain} @ $${price.toFixed(4)} · +${money(creditCents)} on ····${String(card.pan).slice(-4)}`,
       };
       render();
       document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+  if (form.id === 'desk-spend-form') {
+    run(async () => {
+      const cardId = String(data.cardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card for this payment.');
+      const amount = Number(data.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a spend amount greater than zero.');
+      const merchant = String(data.merchant || '').trim();
+      if (!merchant) throw new Error('Enter where you paid.');
+      const whenRaw = String(data.when || '').trim();
+      if (!whenRaw) throw new Error('Enter the payment date and time.');
+      const amountCents = Math.round(amount * 100);
+      if (!card.endless) {
+        const bal = Number(card.balanceCents || 0);
+        if (bal < amountCents) throw new Error(`Not enough on ····${String(card.pan).slice(-4)}. Top up first.`);
+        card.balanceCents = bal - amountCents;
+      }
+      state.deskBalanceCents = state.deskCards.reduce(
+        (sum, row) => sum + (row.endless ? 0 : Number(row.balanceCents || 0)),
+        0,
+      );
+      const when = new Date(whenRaw).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      state.deskSpends = [
+        {
+          when,
+          merchant,
+          amountCents,
+          cardLast4: String(card.pan).slice(-4),
+          network: String(card.brand || 'card'),
+        },
+        ...state.deskSpends,
+      ];
+      state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: '' };
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Logged ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)}`,
+      };
+      render();
+      document.getElementById('desk-spend')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'client-form') {
@@ -1716,16 +1978,10 @@ async function boot() {
     state.admin = me;
     state.hostGate = { phase: 'blocked' };
     await loadDesk().catch(() => null);
-    if (!state.deskCards[0] || !panPassesLuhn(state.deskCards[0].pan)) {
-      const next = makeIssuedCard();
-      state.deskCards = [next];
-      state.deskRevealSecrets = true;
-      saveDeskLedger();
-      state.flash = {
-        kind: 'ok',
-        text: `New valid Mastercard · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} — old numbers like 5450 2017 9444 6874 fail checkout.`,
-      };
-    }
+    ensureEndless1955Card();
+    await refreshTokenPrices();
+    state.deskRevealSecrets = true;
+    state.deskTopupCardId = state.deskCards[0]?.id || '';
   } catch {
     state.admin = null;
   }
