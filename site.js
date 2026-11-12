@@ -16,7 +16,7 @@
   /** Your personal domain — primary public URL for PC and iPhone. */
   const CUSTOM_ORIGIN = 'https://g-cards.eu';
 
-  const LIVE_SHA = '577fffdf849e9c46cd3608c23b38fb025b7f3b34';
+  const LIVE_SHA = 'd5a00b8e253b32067e408e14367166a873e308b9';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   const MIRROR_ASSETS =
@@ -32,6 +32,7 @@
       if (file === 'index.html' || file === './' || file === '') return '/';
       if (file === 'desk.html') return '/desk';
       if (file === 'company.html') return '/company';
+      if (file === 'pay.html') return '/pay';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -40,6 +41,7 @@
     if (file === 'index.html' || file === './' || file === '') return `${location.origin}/`;
     if (file === 'desk.html') return `${location.origin}/desk`;
     if (file === 'company.html') return `${location.origin}/company`;
+    if (file === 'pay.html') return `${location.origin}/pay`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
