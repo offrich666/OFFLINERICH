@@ -13,7 +13,9 @@
     { "source": "/company", "destination": "/company.html" },
     { "source": "/company/", "destination": "/company.html" },
     { "source": "/pay", "destination": "/pay.html" },
-    { "source": "/pay/", "destination": "/pay.html" }
+    { "source": "/pay/", "destination": "/pay.html" },
+    { "source": "/integration", "destination": "/integration.html" },
+    { "source": "/integration/", "destination": "/integration.html" }
   ],
   "headers": [
     {

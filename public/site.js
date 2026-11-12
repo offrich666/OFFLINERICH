@@ -33,6 +33,7 @@
       if (file === 'desk.html') return '/desk';
       if (file === 'company.html') return '/company';
       if (file === 'pay.html') return '/pay';
+      if (file === 'integration.html') return '/integration';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -42,6 +43,7 @@
     if (file === 'desk.html') return `${location.origin}/desk`;
     if (file === 'company.html') return `${location.origin}/company`;
     if (file === 'pay.html') return `${location.origin}/pay`;
+    if (file === 'integration.html') return `${location.origin}/integration`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
@@ -61,6 +63,12 @@
       });
       document.querySelectorAll('a[href="company.html"], a[href="./company.html"]').forEach((a) => {
         a.setAttribute('href', '/company');
+      });
+      document.querySelectorAll('a[href="pay.html"], a[href="./pay.html"]').forEach((a) => {
+        a.setAttribute('href', '/pay');
+      });
+      document.querySelectorAll('a[href="integration.html"], a[href="./integration.html"]').forEach((a) => {
+        a.setAttribute('href', '/integration');
       });
       document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
         a.setAttribute('href', '/');
