@@ -1008,3 +1008,174 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   .desk-detail-cols { grid-template-columns: 1fr; }
   .desk-fund-form { grid-template-columns: 1fr; }
 }
+
+/* Build 20261112p — phone-fit header + home/detail */
+.desk-bar-fit .desk-bar-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  flex-wrap: nowrap;
+}
+.desk-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.desk-bar-brand .mark.light {
+  font-size: 15px;
+  white-space: nowrap;
+}
+.desk-bar-balance {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 14px;
+  font-weight: 560;
+  color: #e7d3a4;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(231,211,164,0.28);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+.desk-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.desk-bar-meta {
+  font-size: 12px;
+  color: rgba(246,241,230,0.72);
+  white-space: nowrap;
+}
+.desk-build-pill {
+  background: #e7d3a4 !important;
+  color: #10203c !important;
+  min-width: 1.5rem;
+  justify-content: center;
+  padding: 4px 8px !important;
+}
+.desk-signout {
+  padding: 7px 10px !important;
+  font-size: 12px !important;
+}
+.desk-main-fit {
+  gap: 16px;
+  padding: 16px 0 40px;
+}
+.desk-home-hero {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 14px;
+  align-items: stretch;
+}
+.desk-home-copy {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px 18px 16px;
+  box-shadow: var(--shadow);
+}
+.desk-home-copy h1 {
+  font-family: Fraunces, Georgia, serif;
+  font-weight: 560;
+  letter-spacing: -0.03em;
+  font-size: clamp(24px, 5vw, 34px);
+  line-height: 1.15;
+  margin: 0 0 8px;
+  color: var(--navy);
+}
+.desk-home-lede { margin: 0 0 14px; font-size: 0.95rem; }
+.desk-card-menu-label {
+  display: grid;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.desk-card-menu-label select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  font-size: 1rem;
+  width: 100%;
+}
+.desk-home-actions { margin-top: 4px; }
+.desk-balance-menu,
+.desk-fund-grid > .desk-deposit {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+.desk-balance-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.desk-balance-chip-btn {
+  text-align: left;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.desk-balance-chip-btn small {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.desk-balance-chip-btn strong {
+  font-family: Fraunces, Georgia, serif;
+  font-size: 1.15rem;
+  color: var(--navy);
+}
+.desk-balance-chip-btn.on,
+.desk-balance-chip-btn:hover {
+  border-color: #c4a46a;
+  background: rgba(231, 211, 164, 0.22);
+}
+.desk-fund-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.desk-token-grid-2 { grid-template-columns: 1fr 1fr; margin: 10px 0; }
+.desk-compact .lede { display: none; }
+.desk-detail-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  justify-content: space-between;
+}
+.desk-detail-menu { flex: 1; min-width: 180px; margin: 0; }
+.desk-back { white-space: nowrap; }
+.desk-detail-hero { align-items: start; }
+.desk-detail-side { display: grid; gap: 12px; }
+.desk-spend-form {
+  grid-template-columns: 1.2fr 0.8fr 1fr auto;
+}
+.desk-empty-cards { margin: 8px 0 0; }
+@media (max-width: 860px) {
+  .desk-bar-meta { display: none; }
+  .desk-home-hero,
+  .desk-fund-grid,
+  .desk-detail-hero { grid-template-columns: 1fr; }
+  .desk-spend-form,
+  .desk-fund-form { grid-template-columns: 1fr; }
+  .wrap { width: min(1180px, calc(100% - 16px)); }
+  .desk-bar-balance { font-size: 13px; padding: 4px 9px; }
+  .desk-main-fit { padding-top: 12px; }
+  .capacity-stats { grid-template-columns: 1fr 1fr; }
+}

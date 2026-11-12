@@ -36,6 +36,7 @@ const state = {
   deskTopupCardId: '',
   deskCardFundAmount: '',
   deskDetailCardId: '',
+  deskSelectedCardId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
@@ -248,7 +249,40 @@ function formatPan(pan) {
 }
 
 function deskActiveCard() {
-  return state.deskCards[0] || null;
+  const id = state.deskDetailCardId || state.deskSelectedCardId || state.deskTopupCardId;
+  return state.deskCards.find((c) => c.id === id) || state.deskCards[0] || null;
+}
+
+function deskCardMenuLabel(c) {
+  const brand = String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
+  const bal = c.endless ? '∞' : money(c.balanceCents || 0);
+  const tag = c.endless ? 'Endless' : brand;
+  return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
+}
+
+function deskShellHtml(mainHtml) {
+  const flash = state.flash
+    ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
+    : '';
+  return `<div class="capacity-desk launch-desk active-desk">
+      <header class="bar capacity-bar desk-bar-fit">
+        <div class="wrap bar-in desk-bar-in">
+          <div class="desk-bar-brand">
+            <div class="mark light">G Cards <span>EU</span></div>
+            <span class="desk-bar-balance" title="Desk balance">${esc(money(state.deskBalanceCents))}</span>
+          </div>
+          <div class="desk-bar-actions">
+            <span class="desk-bar-meta" title="On cards">${esc(money(cardsOnCardsCents()))} on cards</span>
+            <span class="pill desk-build-pill" title="Build">p</span>
+            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main desk-main-fit">
+        ${flash}
+        ${mainHtml}
+      </main>
+    </div>`;
 }
 
 /** Luhn check digit so checkout accepts the number (Gjirafa: "Numri nuk është i saktë"). */
@@ -426,38 +460,22 @@ function architectureSrc() {
 
 /** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
+  if (state.deskDetailCardId && state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+    return deskShellHtml(deskCardDetailHtml());
+  }
+  return deskShellHtml(deskHomeHtml());
+}
+
+function deskHomeHtml() {
   const card = deskActiveCard();
   const hasCard = Boolean(card?.pan);
+  if (hasCard && !state.deskSelectedCardId) state.deskSelectedCardId = card.id;
   const panShown = hasCard
     ? state.deskRevealSecrets
       ? formatPan(card.pan)
       : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
     : '•••• •••• •••• ••••';
-  const cvvShown = hasCard ? (state.deskRevealSecrets ? card.cvv : '•••') : '•••';
-  const flash = state.flash
-    ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
-    : '';
-
-  const history = state.deskCards.length
-    ? state.deskCards
-        .map((c, i) => {
-          const brand = String(c.brand || 'mastercard').toLowerCase();
-          const bal = c.endless ? '∞' : money(c.balanceCents || 0);
-          const open = c.id === state.deskDetailCardId ? 'is-open' : '';
-          return `<tr class="desk-card-row ${open}" data-action="desk-open-detail" data-id="${esc(c.id)}" tabindex="0" role="button">
-            <td>${c.endless ? '<span class="pill good">Endless</span>' : i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Card</span>'}</td>
-            <td>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')}</td>
-            <td class="mono">${esc(formatPan(c.pan))}</td>
-            <td>${esc(c.expiry)}</td>
-            <td>${esc(state.deskRevealSecrets ? c.cvv : '•••')}</td>
-            <td><strong>${esc(bal)}</strong></td>
-            <td><button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(c.id)}">Details</button>
-              <button class="ghost" type="button" data-action="desk-focus-card-fund" data-id="${esc(c.id)}">Fund</button></td>
-          </tr>`;
-        })
-        .join('')
-    : '<tr><td colspan="7" class="muted">No cards yet. Tap <strong>Issue card</strong> or open Endless ····1955.</td></tr>';
-
+  const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
   const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
   const amountNum = Number(state.deskDepositAmount);
   const priceUsd = Number(selected.usd) || 1;
@@ -465,293 +483,265 @@ function capacityDeskHtml() {
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
-  const topupCard =
-    state.deskCards.find((c) => c.id === state.deskTopupCardId) || deskActiveCard() || state.deskCards[0] || null;
+  const topupCard = card;
   if (topupCard && state.deskTopupCardId !== topupCard.id) state.deskTopupCardId = topupCard.id;
+
   const tokenButtons = DESK_DEPOSIT_TOKENS.map(
     (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
-        <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.name)} · ${esc(t.chain)}</span></span>
+        <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.chain)}</span></span>
         <span>$${Number(t.usd || 1).toFixed(4)}</span>
       </button>`,
   ).join('');
-  const cardOptions = state.deskCards
+
+  const menuOptions = state.deskCards
     .map(
       (c) =>
-        `<option value="${esc(c.id)}" ${c.id === (topupCard?.id || '') ? 'selected' : ''}>${esc(
-          `${String(c.brand).toUpperCase()} ····${String(c.pan).slice(-4)}${c.endless ? ' · Endless' : ''} · ${
-            c.endless ? '∞' : money(c.balanceCents || 0)
-          }`,
-        )}</option>`,
+        `<option value="${esc(c.id)}" ${c.id === (card?.id || '') ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
     )
     .join('');
 
-  const depositRows = state.deskDeposits.length
-    ? state.deskDeposits
-        .map(
-          (d) => `<tr>
-            <td>${esc(d.when)}</td>
-            <td><strong>${esc(d.token)}</strong></td>
-            <td>${esc(d.amount)}</td>
-            <td>${esc(money(d.creditCents))}</td>
-            <td><span class="pill good">${esc(d.status || 'To balance')}</span></td>
-          </tr>`,
-        )
+  const balanceStrip = state.deskCards.length
+    ? state.deskCards
+        .map((c) => {
+          const on = c.id === (card?.id || '') ? 'on' : '';
+          const bal = c.endless ? '∞' : money(c.balanceCents || 0);
+          return `<button type="button" class="desk-balance-chip-btn ${on}" data-action="desk-select-card" data-id="${esc(c.id)}">
+            <small>${esc(String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'MC')}${c.endless ? ' ∞' : ''} ····${esc(String(c.pan).slice(-4))}</small>
+            <strong>${esc(bal)}</strong>
+          </button>`;
+        })
         .join('')
-    : '<tr><td colspan="5" class="muted">No balance top-ups yet. Deposit USDT Sol or USDT BSC into the desk balance.</td></tr>';
+    : '<p class="muted desk-empty-cards">No cards yet — issue one below.</p>';
 
-  const transferRows = state.deskTransfers.length
-    ? state.deskTransfers
-        .map(
-          (t) => `<tr>
-            <td>${esc(t.when)}</td>
-            <td>${esc(money(t.amountCents))}</td>
-            <td>${esc(t.cardLast4 ? `····${t.cardLast4}` : '—')}</td>
-            <td><span class="pill good">${esc(t.status || 'On card')}</span></td>
-          </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="4" class="muted">No card funds yet. Move money from desk balance onto a card.</td></tr>';
-
-  const spendRows = state.deskSpends.length
-    ? state.deskSpends
-        .map(
-          (s) => `<tr>
-            <td>${esc(s.when)}</td>
-            <td>${esc(s.merchant)}</td>
-            <td>${esc(money(s.amountCents))}</td>
-            <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill">${esc(s.network || 'card')}</span></td>
-          </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="5" class="muted">No manual payments yet. Log where and when you spent.</td></tr>';
-  const priceStamp = state.tokenPriceUpdatedAt
-    ? new Date(state.tokenPriceUpdatedAt).toLocaleTimeString('en-GB', { hour12: false })
-    : '—';
-  const spendCardId = state.spendDraft.cardId || topupCard?.id || '';
-  const detailCard =
-    state.deskCards.find((c) => c.id === state.deskDetailCardId) || null;
-  const detailBrand = detailCard ? String(detailCard.brand || 'mastercard').toLowerCase() : '';
-  const detailPan = detailCard
-    ? state.deskRevealSecrets
-      ? formatPan(detailCard.pan)
-      : `•••• •••• •••• ${String(detailCard.pan).slice(-4)}`
-    : '';
-  const detailSpends = detailCard
-    ? state.deskSpends.filter((s) => s.cardLast4 === String(detailCard.pan).slice(-4)).slice(0, 8)
-    : [];
-  const detailTransfers = detailCard
-    ? state.deskTransfers.filter((t) => t.cardLast4 === String(detailCard.pan).slice(-4)).slice(0, 8)
-    : [];
-  const detailPanel = detailCard
-    ? `<aside class="desk-detail-panel" id="desk-card-detail" role="dialog" aria-label="Card details">
-          <div class="desk-detail-head">
-            <div>
-              <p class="eyebrow">Card details</p>
-              <h2>${esc(detailBrand === 'visa' ? 'Visa' : 'Mastercard')} ····${esc(String(detailCard.pan).slice(-4))}</h2>
-            </div>
-            <button class="ghost" type="button" data-action="desk-close-detail">Close</button>
-          </div>
-          <article class="plastic ${detailBrand === 'visa' ? 'visa' : 'master'} desk-detail-plastic">
-            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(detailBrand)}</div>
-            <div class="chip"></div>
-            <p class="pan">${esc(detailPan)}</p>
-            <div class="plastic-bottom">
-              <div><small>Cardholder</small><strong>${esc(detailCard.holder)}</strong></div>
-              <div><small>Expires</small><strong>${esc(detailCard.expiry)}</strong></div>
-              <div><small>On card</small><strong>${esc(detailCard.endless ? '∞' : money(detailCard.balanceCents || 0))}</strong></div>
-            </div>
-          </article>
-          <div class="wallet-fields desk-detail-fields">
-            <div class="wallet-field"><small>Card number</small><strong class="mono">${esc(detailPan)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(detailCard.pan)}">Copy</button></div>
-            <div class="wallet-field"><small>Expiry</small><strong>${esc(detailCard.expiry)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(detailCard.expiry)}">Copy</button></div>
-            <div class="wallet-field"><small>CVV</small><strong>${esc(state.deskRevealSecrets ? detailCard.cvv : '•••')}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(detailCard.cvv)}">Copy</button></div>
-            <div class="wallet-field"><small>Balance</small><strong>${esc(detailCard.endless ? 'Endless' : money(detailCard.balanceCents || 0))}</strong></div>
-            <div class="wallet-field"><small>Status</small><strong>${esc(detailCard.endless ? 'Endless 1955' : detailCard.status || 'active')}</strong></div>
-            <div class="wallet-field"><small>Luhn</small><strong>${panPassesLuhn(detailCard.pan) ? 'Valid' : 'Invalid'}</strong></div>
-          </div>
-          <div class="active-actions">
-            <button class="primary" type="button" data-action="desk-focus-card-fund" data-id="${esc(detailCard.id)}">Fund from balance</button>
-            <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
-            <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(detailCard.id)}">Pay via TEB</button>
-          </div>
-          <div class="desk-detail-cols">
-            <div>
-              <p class="eyebrow">Funds onto card</p>
-              <div class="table-wrap"><table class="desk"><thead><tr><th>When</th><th>Amount</th></tr></thead>
-                <tbody>${
-                  detailTransfers.length
-                    ? detailTransfers.map((t) => `<tr><td>${esc(t.when)}</td><td>${esc(money(t.amountCents))}</td></tr>`).join('')
-                    : '<tr><td colspan="2" class="muted">None yet</td></tr>'
-                }</tbody></table></div>
-            </div>
-            <div>
-              <p class="eyebrow">Payments</p>
-              <div class="table-wrap"><table class="desk"><thead><tr><th>When</th><th>Merchant</th><th>Amount</th></tr></thead>
-                <tbody>${
-                  detailSpends.length
-                    ? detailSpends
-                        .map(
-                          (s) =>
-                            `<tr><td>${esc(s.when)}</td><td>${esc(s.merchant)}</td><td>${esc(money(s.amountCents))}</td></tr>`,
-                        )
-                        .join('')
-                    : '<tr><td colspan="3" class="muted">None yet</td></tr>'
-                }</tbody></table></div>
-            </div>
-          </div>
-        </aside>`
-    : '';
-
-  const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
-  const onlineBlock = hasCard
-    ? `<section class="desk-deposit" id="desk-online" aria-label="Online checkout">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Bank gateway · TEB · RBKO · NLB</p>
-              <h2>Pay and get Completed</h2>
-            </div>
-            <span class="pill good">G Cards EU · ${esc(String(card.pan).replace(/\D/g, '').slice(-4))}</span>
-          </div>
-          <p class="lede">Live Gjirafa TEB/RBKO/NLB rejects invented card numbers. Use the <strong>g-cards.eu gateway</strong> below — it authorizes this website-issued card and returns <strong>Completed</strong>.</p>
-          <ol class="apple-steps">
-            <li><span class="n">1</span><div><strong>Top up desk balance</strong><p>Deposit USDT Sol / BSC after live price check.</p></div></li>
-            <li><span class="n">2</span><div><strong>Fund a card</strong><p>Move balance onto the card you will pay with.</p></div></li>
-            <li><span class="n">3</span><div><strong>Pay</strong><p>Gateway returns Completed · Pagesa u krye me sukses.</p></div></li>
-          </ol>
-          <div class="wallet-fields">
-            <div class="wallet-field"><small>Card number</small><strong class="mono">${esc(panShown)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button></div>
-            <div class="wallet-field"><small>Expiry</small><strong>${esc(card.expiry)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
-            <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
-            <div class="wallet-field"><small>Name on card</small><strong>${esc(card.holder)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.holder)}">Copy</button></div>
-          </div>
-          <div class="active-actions" style="margin-top:14px">
-            <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb">Pay via TEB</button>
-            <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko">RBKO</button>
-            <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb">NLB</button>
-          </div>
-        </section>`
-    : '';
-
-  return `<div class="capacity-desk launch-desk active-desk">
-      <header class="bar capacity-bar">
-        <div class="wrap bar-in">
-          <div class="mark light">G Cards <span>EU</span></div>
-          <div class="row capacity-who">
-            <span class="who">Administrative panel · offlinerich</span>
-            <span class="balance-pill">${esc(money(state.deskBalanceCents))} desk balance</span>
-            <span class="pill launch-live-pill">On cards ${esc(money(cardsOnCardsCents()))}</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112o</span>
-            <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
-          </div>
-        </div>
-      </header>
-      <main class="wrap capacity-main">
-        ${flash}
-        <section class="active-hero">
-          <div class="active-copy">
-            <p class="kicker launch-kicker">G Cards EU · Visa + Mastercard</p>
-            <h1>${hasCard ? 'Your website-issued card' : 'Issue Visa or Mastercard'}</h1>
-            <p class="lede">
-              Top up the <strong>desk balance</strong> with USDT Sol / BSC, then fund each card from that balance.
-              Click any card for full details. Issues alternate Visa and Mastercard · Luhn-valid only.
-            </p>
-            <div class="active-actions">
+  return `
+        <section class="desk-home-hero">
+          <div class="desk-home-copy">
+            <p class="kicker launch-kicker">G Cards EU</p>
+            <h1>Cards &amp; balances</h1>
+            <p class="lede desk-home-lede">Select a card to check its balance. Open it for details, payments, and transactions.</p>
+            <label class="desk-card-menu-label">Card
+              <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
+                ${menuOptions || '<option value="">Issue a card first</option>'}
+              </select>
+            </label>
+            <div class="active-actions desk-home-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
-                ${state.deskIssuing ? 'Issuing…' : hasCard ? 'Issue another card' : 'Issue card'}
+                ${state.deskIssuing ? 'Issuing…' : 'Issue card'}
               </button>
               <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
-              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>
-              <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
             </div>
           </div>
-          <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="G Cards EU card">
+          <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
             <div class="plastic-top"><span>G Cards EU</span>${schemeMark(cardBrand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
-              <div><small>On card</small><strong>${esc(hasCard ? (card.endless ? '∞' : money(card.balanceCents || 0)) : money(0))}</strong></div>
+              <div><small>Balance</small><strong>${esc(hasCard ? (card.endless ? '∞' : money(card.balanceCents || 0)) : money(0))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `<span class="pill good">${esc(cardBrand === 'visa' ? 'Visa' : 'Mastercard')}</span> Luhn OK · tap for details${card.endless ? ' · Endless 1955' : ''}` : '<span class="pill">Not issued yet</span> Issue Visa or Mastercard'}</p>
+            <p class="desk-card-status">${hasCard ? `<span class="pill good">${esc(cardBrand === 'visa' ? 'Visa' : 'Mastercard')}</span>${card.endless ? ' Endless' : ''} · tap to open` : '<span class="pill">Not issued</span>'}</p>
           </article>
         </section>
 
-        ${detailPanel}
-
-        ${onlineBlock}
-
-        <section class="desk-deposit" id="desk-deposit">
+        <section class="desk-balance-menu" aria-label="Card balances">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">1 · Desk balance</p>
-              <h2>Top up balance · USDT Sol &amp; BSC</h2>
+              <p class="eyebrow">Balances</p>
+              <h2>All cards</h2>
             </div>
-            <div class="desk-balance-chip">
-              <small>Desk balance</small>
-              <strong>${esc(money(state.deskBalanceCents))}</strong>
-            </div>
+            <span class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></span>
           </div>
-          <p class="lede">Credits the house balance after a live DefiLlama price check (updated ${esc(priceStamp)}). Then move funds onto cards below.</p>
-          <div class="desk-token-grid">${tokenButtons}</div>
-          <p class="muted" style="margin:8px 0 0;font-size:12px;word-break:break-all">Contract · ${esc(selected.contract)} · $${priceUsd.toFixed(4)}</p>
-          <form id="desk-deposit-form" class="desk-deposit-form desk-fund-form">
-            <label>Amount (${esc(selected.symbol || selected.id)})
-              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
-            </label>
-            <div class="desk-credit-preview">
-              <small>To desk balance @ $${priceUsd.toFixed(4)}</small>
-              <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
+          <div class="desk-balance-strip">${balanceStrip}</div>
+        </section>
+
+        <section class="desk-fund-grid">
+          <section class="desk-deposit desk-compact" id="desk-deposit">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">Desk balance</p>
+                <h2>Top up</h2>
+              </div>
+              <div class="desk-balance-chip">
+                <small>USDT · ${esc(selected.chain)}</small>
+                <strong>$${priceUsd.toFixed(4)}</strong>
+              </div>
             </div>
-            <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>
-              ${state.deskDepositBusy ? 'Checking price…' : 'Top up balance'}
-            </button>
-            <button class="ghost" type="button" data-action="desk-refresh-prices">Refresh prices</button>
-          </form>
-          <div class="table-wrap" style="margin-top:16px">
-            <table class="desk">
-              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Status</th></tr></thead>
-              <tbody>${depositRows}</tbody>
-            </table>
+            <div class="desk-token-grid desk-token-grid-2">${tokenButtons}</div>
+            <form id="desk-deposit-form" class="desk-deposit-form desk-fund-form">
+              <label>Amount
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
+              </label>
+              <div class="desk-credit-preview">
+                <small>To desk</small>
+                <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
+              </div>
+              <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>${state.deskDepositBusy ? '…' : 'Top up'}</button>
+            </form>
+          </section>
+
+          <section class="desk-deposit desk-compact" id="desk-card-fund">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">From desk → card</p>
+                <h2>Fund card</h2>
+              </div>
+              <div class="desk-balance-chip">
+                <small>Available</small>
+                <strong>${esc(money(state.deskBalanceCents))}</strong>
+              </div>
+            </div>
+            <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
+              <label>Card
+                <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${
+                  state.deskCards
+                    .map(
+                      (c) =>
+                        `<option value="${esc(c.id)}" ${c.id === (topupCard?.id || '') ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
+                    )
+                    .join('') || '<option value="">Issue first</option>'
+                }</select>
+              </label>
+              <label>Amount
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
+              </label>
+              <div class="desk-credit-preview">
+                <small>Left on desk</small>
+                <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
+              </div>
+              <button class="primary" type="submit" ${!state.deskCards.length || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
+            </form>
+          </section>
+        </section>
+
+        <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
+          <article class="stat"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
+          <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
+          <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
+          <article class="stat"><small>USDT</small><strong>$${Number(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
+        </section>`;
+}
+
+function deskCardDetailHtml() {
+  const card = state.deskCards.find((c) => c.id === state.deskDetailCardId) || deskActiveCard();
+  if (!card) {
+    state.deskDetailCardId = '';
+    return deskHomeHtml();
+  }
+  state.deskSelectedCardId = card.id;
+  state.deskTopupCardId = card.id;
+  state.spendDraft.cardId = card.id;
+  const brand = String(card.brand || 'mastercard').toLowerCase();
+  const panShown = state.deskRevealSecrets
+    ? formatPan(card.pan)
+    : `•••• •••• •••• ${String(card.pan).slice(-4)}`;
+  const cvvShown = state.deskRevealSecrets ? card.cvv : '•••';
+  const last4 = String(card.pan).slice(-4);
+  const fundAmountNum = Number(state.deskCardFundAmount);
+  const fundCents =
+    Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
+  if (!state.spendDraft.when) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    state.spendDraft.when = now.toISOString().slice(0, 16);
+  }
+  const detailSpends = state.deskSpends.filter((s) => s.cardLast4 === last4);
+  const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4);
+  const menuOptions = state.deskCards
+    .map(
+      (c) =>
+        `<option value="${esc(c.id)}" ${c.id === card.id ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
+    )
+    .join('');
+
+  const spendRows = detailSpends.length
+    ? detailSpends
+        .map(
+          (s) => `<tr>
+            <td>${esc(s.when)}</td>
+            <td>${esc(s.merchant)}</td>
+            <td>${esc(money(s.amountCents))}</td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="3" class="muted">No payments on this card yet.</td></tr>';
+
+  const transferRows = detailTransfers.length
+    ? detailTransfers
+        .map(
+          (t) => `<tr>
+            <td>${esc(t.when)}</td>
+            <td>${esc(money(t.amountCents))}</td>
+            <td><span class="pill good">${esc(t.status || 'On card')}</span></td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="3" class="muted">No funds moved onto this card yet.</td></tr>';
+
+  return `
+        <section class="desk-detail-top">
+          <button class="ghost desk-back" type="button" data-action="desk-close-detail">← All cards</button>
+          <label class="desk-card-menu-label desk-detail-menu">Card
+            <select id="desk-card-menu-detail">
+              ${menuOptions}
+            </select>
+          </label>
+        </section>
+
+        <section class="desk-home-hero desk-detail-hero">
+          <article class="plastic ${brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Card details">
+            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(brand)}</div>
+            <div class="chip"></div>
+            <p class="pan">${esc(panShown)}</p>
+            <div class="plastic-bottom">
+              <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
+              <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
+              <div><small>Balance</small><strong>${esc(card.endless ? '∞' : money(card.balanceCents || 0))}</strong></div>
+            </div>
+            <p class="desk-card-status"><span class="pill good">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')}</span>${card.endless ? ' · Endless' : ''} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
+          </article>
+          <div class="desk-detail-side">
+            <div class="wallet-fields desk-detail-fields">
+              <div class="wallet-field"><small>Number</small><strong class="mono">${esc(panShown)}</strong>
+                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button></div>
+              <div class="wallet-field"><small>Expiry</small><strong>${esc(card.expiry)}</strong>
+                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
+              <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
+                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
+              <div class="wallet-field"><small>Balance</small><strong>${esc(card.endless ? 'Endless' : money(card.balanceCents || 0))}</strong></div>
+            </div>
+            <div class="active-actions">
+              <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
+              <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}">Pay TEB</button>
+              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}">RBKO</button>
+              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}">NLB</button>
+            </div>
           </div>
         </section>
 
-        <section class="desk-deposit" id="desk-card-fund">
+        <section class="desk-deposit desk-compact" id="desk-card-fund">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">2 · From balance → card</p>
-              <h2>Fund a card</h2>
+              <p class="eyebrow">Fund this card</p>
+              <h2>From desk balance</h2>
             </div>
-            <div class="desk-balance-chip">
-              <small>Available to move</small>
-              <strong>${esc(money(state.deskBalanceCents))}</strong>
-            </div>
+            <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
-          <p class="lede">Move desk balance onto any issued card. Endless ····1955 stays unlimited.</p>
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
-            <label>Card
-              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${cardOptions || '<option value="">Issue a card first</option>'}</select>
-            </label>
-            <label>Amount (USD)
+            <input type="hidden" name="cardId" value="${esc(card.id)}" />
+            <label>Amount
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
             </label>
             <div class="desk-credit-preview">
-              <small>Will leave on desk</small>
+              <small>Left on desk</small>
               <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
             </div>
-            <button class="primary" type="submit" ${!state.deskCards.length || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund card</button>
+            <button class="primary" type="submit" ${card.endless || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund card</button>
           </form>
-          <div class="table-wrap" style="margin-top:16px">
+          <div class="table-wrap" style="margin-top:14px">
             <table class="desk">
-              <thead><tr><th>When</th><th>Amount</th><th>Card</th><th>Status</th></tr></thead>
+              <thead><tr><th>When</th><th>Amount</th><th>Status</th></tr></thead>
               <tbody>${transferRows}</tbody>
             </table>
           </div>
@@ -760,88 +750,30 @@ function capacityDeskHtml() {
         <section class="desk-deposit" id="desk-spend">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Manual ledger</p>
-              <h2>Add payment / spend</h2>
+              <p class="eyebrow">This card</p>
+              <h2>Add payment</h2>
             </div>
           </div>
-          <p class="lede">Record where and when you paid — merchant, amount, and time — against a card.</p>
-          <form id="desk-spend-form" class="desk-deposit-form">
-            <label>Card
-              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${state.deskCards
-                .map(
-                  (c) =>
-                    `<option value="${esc(c.id)}" ${c.id === spendCardId ? 'selected' : ''}>${esc(
-                      `${String(c.brand).toUpperCase()} ····${String(c.pan).slice(-4)}`,
-                    )}</option>`,
-                )
-                .join('') || '<option value="">Issue a card first</option>'}</select>
+          <form id="desk-spend-form" class="desk-deposit-form desk-spend-form">
+            <input type="hidden" name="cardId" value="${esc(card.id)}" />
+            <label>Merchant
+              <input name="merchant" placeholder="Gjirafa50, fuel…" value="${esc(state.spendDraft.merchant)}" required />
             </label>
-            <label>Merchant / place
-              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
-            </label>
-            <label>Amount (USD)
+            <label>Amount
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
             </label>
             <label>Date &amp; time
               <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
             </label>
-            <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Add transaction</button>
+            <button class="primary" type="submit">Add</button>
           </form>
-          <div class="table-wrap" style="margin-top:16px">
+          <div class="table-wrap" style="margin-top:14px">
             <table class="desk">
-              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
+              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th></tr></thead>
               <tbody>${spendRows}</tbody>
             </table>
           </div>
-        </section>
-
-        <section class="active-details">
-          <article class="capacity-panel">
-            <p class="eyebrow">Platform</p>
-            <h2>G Cards EU issuing</h2>
-            <ul class="capacity-checklist">
-              <li><span>Where</span><strong>This website · g-cards.eu/desk</strong></li>
-              <li><span>Brand</span><strong>G Cards EU</strong></li>
-              <li><span>Not used</span><strong>Laso · Pay2 dashboards</strong></li>
-              <li><span>Merchants</span><strong>Gjirafa50 · GjirafaMall · Visa/MC</strong></li>
-            </ul>
-          </article>
-          <article class="capacity-panel">
-            <p class="eyebrow">Flow</p>
-            <h2>Balance → card → pay</h2>
-            <ol class="apple-steps compact">
-              <li><span class="n">1</span><div><strong>Top up desk balance</strong><p>USDT Sol / BSC with live price.</p></div></li>
-              <li><span class="n">2</span><div><strong>Fund cards</strong><p>Move balance onto Visa / Mastercard.</p></div></li>
-              <li><span class="n">3</span><div><strong>Details &amp; checkout</strong><p>Click a card, then pay via gateway.</p></div></li>
-            </ol>
-          </article>
-        </section>
-
-        <section class="launch-files desk-card-table">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Desk inventory</p>
-              <h2>Cards issued on g-cards.eu</h2>
-            </div>
-            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>Issue</button>
-          </div>
-          <p class="lede" style="margin-top:0">Click a row to open full card details.</p>
-          <div class="table-wrap">
-            <table class="desk">
-              <thead><tr><th>State</th><th>Network</th><th>PAN</th><th>Expiry</th><th>CVV</th><th>Balance</th><th></th></tr></thead>
-              <tbody>${history}</tbody>
-            </table>
-          </div>
-        </section>
-
-        <section class="capacity-stats" aria-label="Desk snapshot">
-          <article class="stat"><small>Desk balance</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
-          <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
-          <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>USDT Sol</small><strong>$${Number(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
-        </section>
-      </main>
-    </div>`;
+        </section>`;
 }
 
 function hostBlockedHtml() {
@@ -1401,6 +1333,25 @@ document.body.addEventListener('input', (event) => {
   }
 });
 
+document.body.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) return;
+  if (target.id === 'desk-card-menu' || target.id === 'desk-card-menu-detail') {
+    const id = target.value || '';
+    state.deskSelectedCardId = id;
+    state.deskTopupCardId = id;
+    state.spendDraft.cardId = id;
+    if (target.id === 'desk-card-menu-detail' && id) {
+      state.deskDetailCardId = id;
+    }
+    render();
+  }
+  if (target.closest?.('#desk-card-fund-form') && target.name === 'cardId') {
+    state.deskTopupCardId = target.value || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
+  }
+});
+
 async function run(fn) {
   if (busy) return;
   busy = true;
@@ -1487,6 +1438,7 @@ document.body.addEventListener('click', (event) => {
         const next = await issueCardFromWebsite();
         state.deskCards = [next, ...state.deskCards];
         state.deskTopupCardId = next.id;
+        state.deskSelectedCardId = next.id;
         state.deskRevealSecrets = true;
         saveDeskLedger();
         state.flash = {
@@ -1508,6 +1460,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-ensure-endless') {
     const card = ensureEndless1955Card();
     state.deskTopupCardId = card.id;
+    state.deskSelectedCardId = card.id;
     state.deskRevealSecrets = true;
     state.flash = {
       kind: 'ok',
@@ -1516,26 +1469,37 @@ document.body.addEventListener('click', (event) => {
     render();
     return;
   }
-  if (action === 'desk-open-detail') {
+  if (action === 'desk-select-card') {
     const id = button.dataset.id || '';
+    state.deskSelectedCardId = id;
+    state.deskTopupCardId = id;
+    state.spendDraft.cardId = id;
+    if (state.deskDetailCardId) state.deskDetailCardId = id;
+    render();
+    return;
+  }
+  if (action === 'desk-open-detail') {
+    const id = button.dataset.id || state.deskSelectedCardId || '';
     state.deskDetailCardId = id;
     if (id) {
+      state.deskSelectedCardId = id;
       state.deskTopupCardId = id;
       state.spendDraft.cardId = id;
     }
     render();
-    document.getElementById('desk-card-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
   if (action === 'desk-close-detail') {
     state.deskDetailCardId = '';
     render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
   if (action === 'desk-focus-card-fund') {
     state.deskTopupCardId = button.dataset.id || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
     state.spendDraft.cardId = state.deskTopupCardId;
-    state.deskDetailCardId = state.deskTopupCardId;
     render();
     document.getElementById('desk-card-fund')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
@@ -1849,7 +1813,7 @@ document.body.addEventListener('submit', (event) => {
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
       const amountCents = Math.round(amount * 100);
       if (card.endless) {
-        state.deskDetailCardId = card.id;
+        state.deskSelectedCardId = card.id;
         state.flash = {
           kind: 'ok',
           text: 'Endless ····1955 already has unlimited balance — no transfer needed.',
@@ -1863,7 +1827,7 @@ document.body.addEventListener('submit', (event) => {
       state.deskBalanceCents -= amountCents;
       card.balanceCents = Number(card.balanceCents || 0) + amountCents;
       state.deskTopupCardId = card.id;
-      state.deskDetailCardId = card.id;
+      state.deskSelectedCardId = card.id;
       state.deskTransfers = [
         {
           when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
@@ -1880,7 +1844,6 @@ document.body.addEventListener('submit', (event) => {
         text: `Moved ${money(amountCents)} → ····${String(card.pan).slice(-4)} · card now ${money(card.balanceCents)} · desk ${money(state.deskBalanceCents)}`,
       };
       render();
-      document.getElementById('desk-card-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'desk-spend-form') {
@@ -1915,15 +1878,14 @@ document.body.addEventListener('submit', (event) => {
         },
         ...state.deskSpends,
       ];
-      state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: '' };
-      state.deskDetailCardId = card.id;
+      state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: state.spendDraft.when || '' };
+      state.deskSelectedCardId = card.id;
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
         text: `Logged ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)}`,
       };
       render();
-      document.getElementById('desk-spend')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'client-form') {
