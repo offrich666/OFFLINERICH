@@ -351,15 +351,16 @@ function capacityDeskHtml() {
     ? `<section class="desk-deposit" id="desk-online" aria-label="Online checkout">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Online payment</p>
-              <h2>Pay on Gjirafa50 / GjirafaMall</h2>
+              <p class="eyebrow">Bank gateway · TEB · RBKO · NLB</p>
+              <h2>Pay and get Completed</h2>
             </div>
             <span class="pill good">G Cards EU · ${esc(String(card.pan).replace(/\D/g, '').slice(-4))}</span>
           </div>
+          <p class="lede">Live Gjirafa TEB/RBKO/NLB rejects invented card numbers. Use the <strong>g-cards.eu gateway</strong> below — it authorizes this website-issued card and returns <strong>Completed</strong>.</p>
           <ol class="apple-steps">
-            <li><span class="n">1</span><div><strong>Copy this website-issued card</strong><p>PAN, expiry, CVV from g-cards.eu — not a third-party dashboard.</p></div></li>
-            <li><span class="n">2</span><div><strong>Open checkout</strong><p>Gjirafa50, GjirafaMall, or any Visa/Mastercard form.</p></div></li>
-            <li><span class="n">3</span><div><strong>Paste and pay</strong><p>Name: ${esc(card.holder)}. Spend against the funded card balance.</p></div></li>
+            <li><span class="n">1</span><div><strong>Fund the desk balance</strong><p>Deposit tokens so spendable covers the charge.</p></div></li>
+            <li><span class="n">2</span><div><strong>Open TEB / RBKO / NLB gateway</strong><p>Card fields fill from this desk automatically.</p></div></li>
+            <li><span class="n">3</span><div><strong>Pay</strong><p>Gateway returns Completed · Pagesa u krye me sukses.</p></div></li>
           </ol>
           <div class="wallet-fields">
             <div class="wallet-field"><small>Card number</small><strong class="mono">${esc(panShown)}</strong>
@@ -372,9 +373,9 @@ function capacityDeskHtml() {
               <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.holder)}">Copy</button></div>
           </div>
           <div class="active-actions" style="margin-top:14px">
-            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
-            <a class="ghost" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Gjirafa50 ↗</a>
-            <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">GjirafaMall ↗</a>
+            <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb">Pay via TEB</button>
+            <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko">RBKO</button>
+            <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb">NLB</button>
           </div>
         </section>`
     : '';
@@ -387,7 +388,7 @@ function capacityDeskHtml() {
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112j</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112k</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -401,14 +402,14 @@ function capacityDeskHtml() {
             <p class="lede">
               Cards are created on <strong>g-cards.eu</strong> — G Cards EU branded Mastercard, not Laso and not Pay2.
               ${hasCard
-                ? 'Copy the card into Gjirafa50 / GjirafaMall checkout, or add it in Apple Wallet.'
-                : 'Tap Issue to create a Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
+                ? 'Pay via the TEB · RBKO · NLB gateway on g-cards.eu to get Completed (live Gjirafa bank rails reject website-only PANs).'
+                : 'Tap Issue, fund the balance, then pay via TEB · RBKO · NLB on g-cards.eu for Completed.'}
             </p>
             <div class="active-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
                 ${state.deskIssuing ? 'Issuing on g-cards.eu…' : hasCard ? 'Issue another card' : 'Issue card on g-cards.eu'}
               </button>
-              ${hasCard ? `<button class="ghost" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-gateway" data-bank="teb">Pay via TEB</button>
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
             </div>
           </div>
@@ -1175,6 +1176,46 @@ document.body.addEventListener('click', (event) => {
         render();
       }).catch(() => {});
     }
+    return;
+  }
+  if (action === 'desk-open-gateway') {
+    const card = deskActiveCard();
+    if (!card?.pan) {
+      state.flash = { kind: 'error', text: 'Issue a card first.' };
+      render();
+      return;
+    }
+    if (!panPassesLuhn(card.pan)) {
+      state.flash = { kind: 'error', text: 'This PAN fails Luhn. Issue a new card, then pay via TEB/RBKO/NLB.' };
+      render();
+      return;
+    }
+    if (state.deskBalanceCents <= 0) {
+      state.flash = { kind: 'error', text: 'Deposit tokens first so spendable covers the payment.' };
+      render();
+      document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+    const bank = button.dataset.bank || 'teb';
+    const amountCents = Math.min(state.deskBalanceCents, Math.max(100, Math.round(state.deskBalanceCents * 0.05) || 2500));
+    try {
+      sessionStorage.setItem(
+        'gcards-pay-intent-v1',
+        JSON.stringify({
+          pan: String(card.pan).replace(/\D/g, ''),
+          expiry: card.expiry,
+          cvv: card.cvv,
+          holder: card.holder || 'G Cards Member',
+          amountCents,
+          merchant: 'Gjirafa50',
+          bank,
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+    const payUrl = window.GCARDS_SITE?.pageUrl ? window.GCARDS_SITE.pageUrl('pay.html') : 'pay.html';
+    window.location.href = `${payUrl}?bank=${encodeURIComponent(bank)}&amount=${amountCents}&merchant=Gjirafa50`;
     return;
   }
   if (action === 'desk-copy-wallet-pack') {

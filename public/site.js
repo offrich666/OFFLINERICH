@@ -32,6 +32,7 @@
       if (file === 'index.html' || file === './' || file === '') return '/';
       if (file === 'desk.html') return '/desk';
       if (file === 'company.html') return '/company';
+      if (file === 'pay.html') return '/pay';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -40,6 +41,7 @@
     if (file === 'index.html' || file === './' || file === '') return `${location.origin}/`;
     if (file === 'desk.html') return `${location.origin}/desk`;
     if (file === 'company.html') return `${location.origin}/company`;
+    if (file === 'pay.html') return `${location.origin}/pay`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
