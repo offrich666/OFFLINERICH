@@ -363,7 +363,7 @@ function capacityDeskHtml() {
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112h</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112i</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -955,7 +955,14 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  root.innerHTML = !state.admin ? loginHtml() : state.clientId && state.me ? dashboardHtml() : consoleHtml();
+  // Website Issue desk is the signed-in home (not the multi-client console).
+  if (state.hostGate?.phase === 'trying') {
+    root.innerHTML = hostTryingHtml();
+  } else if (state.hostGate?.phase === 'blocked' || state.admin) {
+    root.innerHTML = capacityDeskHtml();
+  } else {
+    root.innerHTML = loginHtml();
+  }
   mountGeneration += 1;
   mountLiveCard();
   enhance();
@@ -1631,7 +1638,8 @@ async function boot() {
     const me = await api('/api/me', { noClient: true });
     if (me.user?.role !== 'admin') throw new Error('not admin');
     state.admin = me;
-    await loadDesk();
+    state.hostGate = { phase: 'blocked' };
+    await loadDesk().catch(() => null);
   } catch {
     state.admin = null;
   }
