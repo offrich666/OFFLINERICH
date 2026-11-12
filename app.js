@@ -33,14 +33,38 @@ const state = {
   deskDeposits: [],
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v3';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v4';
+
+function panPassesLuhn(pan) {
+  const digits = String(pan || '').replace(/\D/g, '');
+  if (!/^\d{16}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = digits.length - 1, alt = false; i >= 0; i -= 1) {
+    let n = Number(digits[i]);
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
 
 function loadDeskLedger() {
   try {
+    // Drop the old v3 ledger — those PANs failed Gjirafa Luhn ("Numri nuk është i saktë").
+    try {
+      localStorage.removeItem('gcards-desk-ledger-v3');
+    } catch {
+      /* ignore */
+    }
     const raw = localStorage.getItem(DESK_LEDGER_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (Array.isArray(data.deskCards) && data.deskCards.length) state.deskCards = data.deskCards;
+    if (Array.isArray(data.deskCards) && data.deskCards.length) {
+      state.deskCards = data.deskCards.filter((card) => panPassesLuhn(card?.pan));
+    }
     if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
     if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
   } catch {
@@ -363,7 +387,7 @@ function capacityDeskHtml() {
             <span class="who">Administrative panel · offlinerich</span>
             <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
             <span class="pill launch-live-pill">Issue on website</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112i</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112j</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -1322,7 +1346,18 @@ document.body.addEventListener('submit', (event) => {
       }
 
       state.hostGate = { phase: 'blocked' };
-      state.flash = { kind: 'ok', text: 'Active card ready to use. Issue a new one anytime.' };
+      if (!state.deskCards[0] || !panPassesLuhn(state.deskCards[0].pan)) {
+        const next = makeIssuedCard();
+        state.deskCards = [next];
+        state.deskRevealSecrets = true;
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `New valid Mastercard · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} — do not reuse old numbers.`,
+        };
+      } else {
+        state.flash = { kind: 'ok', text: 'Active card ready. Use this PAN only — old numbers fail checkout.' };
+      }
       render();
     });
   }
@@ -1640,6 +1675,16 @@ async function boot() {
     state.admin = me;
     state.hostGate = { phase: 'blocked' };
     await loadDesk().catch(() => null);
+    if (!state.deskCards[0] || !panPassesLuhn(state.deskCards[0].pan)) {
+      const next = makeIssuedCard();
+      state.deskCards = [next];
+      state.deskRevealSecrets = true;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `New valid Mastercard · ${formatPan(next.pan)} · ${next.expiry} · CVV ${next.cvv} — old numbers like 5450 2017 9444 6874 fail checkout.`,
+      };
+    }
   } catch {
     state.admin = null;
   }
