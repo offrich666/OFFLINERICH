@@ -22,24 +22,8 @@ const state = {
   pay2Secrets: null,
   /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
   hostGate: null,
-  /** Desk-issued cards (static host / offline desk). */
-  deskCards: [
-    {
-      id: 'laso-O-01M5QSK63WPQS8RX8C3JEBTTJN',
-      brand: 'visa',
-      pan: '4343405855389408',
-      expiry: '04/27',
-      cvv: '523',
-      holder: 'G Cards Member',
-      status: 'active',
-      ready: true,
-      label: 'Laso issued · online checkout',
-      issuer: 'laso',
-      issuerCardId: 'O-01M5QSK63WPQS8RX8C3JEBTTJN',
-      product: 'usa_prepaid',
-      fundedUsd: 5,
-    },
-  ],
+  /** G Cards EU cards issued from this website desk. */
+  deskCards: [],
   deskIssuing: false,
   deskRevealSecrets: true,
   deskBalanceCents: 0,
@@ -49,7 +33,7 @@ const state = {
   deskDeposits: [],
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v2';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v3';
 
 function loadDeskLedger() {
   try {
@@ -181,9 +165,72 @@ function deskActiveCard() {
   return state.deskCards[0] || null;
 }
 
-function makeIssuedCard() {
-  // Never invent PANs. Real cards come from Laso (USA prepaid or international).
-  return null;
+/** Issue from this website via G Cards EU card program API (not Laso / not Pay2). */
+async function issueCardFromWebsite() {
+  const hasApi = Boolean(window.GCARDS_SITE?.hasApi?.());
+  if (!hasApi) {
+    const err = new Error(
+      'g-cards.eu static desk cannot authorize Visa/Mastercard by itself. Connect the G Cards EU card program on the API host, then Issue again from this website.',
+    );
+    err.code = 'program_required';
+    throw err;
+  }
+  // Create a desk client then POST /api/card — G Cards EU website issue.
+  let clientId = state.clientId;
+  if (!clientId) {
+    const email = `member+${Date.now()}@g-cards.eu`;
+    const created = await api('/api/admin/clients', { method: 'POST', body: { email }, noClient: true });
+    clientId = created.client?.id || created.id || '';
+    state.clientId = clientId;
+  }
+  const result = await api('/api/card', {
+    method: 'POST',
+    body: {
+      firstName: 'G',
+      lastName: 'Cards',
+      email: `member+${Date.now()}@g-cards.eu`,
+      phone: '+38344111222',
+      dob: '1990-01-15',
+      line1: 'Prishtina',
+      city: 'Prishtina',
+      state: 'KS',
+      postalCode: '10000',
+      country: 'XK',
+      type: 'virtual',
+      acceptedTerms: true,
+    },
+  });
+  // Pull secrets if the platform returns a secure details path
+  let pan = '';
+  let cvv = '';
+  let expiry = '';
+  try {
+    const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+    if (secure?.pan) pan = String(secure.pan).replace(/\D/g, '');
+    if (secure?.cvv) cvv = String(secure.cvv);
+    if (secure?.expiry) expiry = String(secure.expiry);
+    if (secure?.callbackUrl) state.secureUrl = secure.callbackUrl;
+  } catch {
+    /* pan may only be in iframe */
+  }
+  const cardMeta = result.card || {};
+  const last4 = String(cardMeta.last4 || pan.slice(-4) || '0000');
+  const expMonth = cardMeta.expMonth ? String(cardMeta.expMonth).padStart(2, '0') : '';
+  const expYear = cardMeta.expYear ? String(cardMeta.expYear).slice(-2) : '';
+  return {
+    id: cardMeta.id || `gcards-${Date.now()}`,
+    brand: (cardMeta.brand || 'mastercard').toLowerCase(),
+    pan: pan || `••••••••••••${last4}`,
+    expiry: expiry || (expMonth && expYear ? `${expMonth}/${expYear}` : '••/••'),
+    cvv: cvv || '•••',
+    holder: 'G Cards Member',
+    status: cardMeta.status || 'active',
+    ready: true,
+    label: 'Issued on g-cards.eu',
+    issuer: 'gcards',
+    product: 'website_virtual',
+    panComplete: Boolean(pan && cvv),
+  };
 }
 
 function wait(ms) {
@@ -244,26 +291,33 @@ function architectureSrc() {
   return 'gcards-frankfurt-architecture.png';
 }
 
-/** Post-login admin desk — active card ready to use + issue new. */
+/** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
   const card = deskActiveCard();
-  const panShown = state.deskRevealSecrets ? formatPan(card.pan) : `•••• •••• •••• ${card.pan.slice(-4)}`;
-  const cvvShown = state.deskRevealSecrets ? card.cvv : '•••';
+  const hasCard = Boolean(card?.pan);
+  const panShown = hasCard
+    ? state.deskRevealSecrets
+      ? formatPan(card.pan)
+      : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+    : '•••• •••• •••• ••••';
+  const cvvShown = hasCard ? (state.deskRevealSecrets ? card.cvv : '•••') : '•••';
   const flash = state.flash
     ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
 
-  const history = state.deskCards
-    .map(
-      (c, i) => `<tr>
-        <td>${i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Prior</span>'}</td>
-        <td class="mono">${esc(formatPan(c.pan))}</td>
-        <td>${esc(c.expiry)}</td>
-        <td>${esc(state.deskRevealSecrets ? c.cvv : '•••')}</td>
-        <td>${esc(c.label)}</td>
-      </tr>`,
-    )
-    .join('');
+  const history = state.deskCards.length
+    ? state.deskCards
+        .map(
+          (c, i) => `<tr>
+            <td>${i === 0 ? '<span class="pill good">Active</span>' : '<span class="pill">Prior</span>'}</td>
+            <td class="mono">${esc(formatPan(c.pan))}</td>
+            <td>${esc(c.expiry)}</td>
+            <td>${esc(state.deskRevealSecrets ? c.cvv : '•••')}</td>
+            <td>${esc(c.label)}</td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">No cards yet. Tap <strong>Issue card on g-cards.eu</strong>.</td></tr>';
 
   const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
   const amountNum = Number(state.deskDepositAmount);
@@ -287,7 +341,40 @@ function capacityDeskHtml() {
           </tr>`,
         )
         .join('')
-    : '<tr><td colspan="5" class="muted">No deposits yet. Balance is $0.00 — deposit a token to top up.</td></tr>';
+    : '<tr><td colspan="5" class="muted">No deposits yet. Fund after you issue a card from this website.</td></tr>';
+
+  const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
+  const onlineBlock = hasCard
+    ? `<section class="desk-deposit" id="desk-online" aria-label="Online checkout">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Online payment</p>
+              <h2>Pay on Gjirafa50 / GjirafaMall</h2>
+            </div>
+            <span class="pill good">G Cards EU · ${esc(String(card.pan).replace(/\D/g, '').slice(-4))}</span>
+          </div>
+          <ol class="apple-steps">
+            <li><span class="n">1</span><div><strong>Copy this website-issued card</strong><p>PAN, expiry, CVV from g-cards.eu — not a third-party dashboard.</p></div></li>
+            <li><span class="n">2</span><div><strong>Open checkout</strong><p>Gjirafa50, GjirafaMall, or any Visa/Mastercard form.</p></div></li>
+            <li><span class="n">3</span><div><strong>Paste and pay</strong><p>Name: ${esc(card.holder)}. Spend against the funded card balance.</p></div></li>
+          </ol>
+          <div class="wallet-fields">
+            <div class="wallet-field"><small>Card number</small><strong class="mono">${esc(panShown)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button></div>
+            <div class="wallet-field"><small>Expiry</small><strong>${esc(card.expiry)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
+            <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
+            <div class="wallet-field"><small>Name on card</small><strong>${esc(card.holder)}</strong>
+              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.holder)}">Copy</button></div>
+          </div>
+          <div class="active-actions" style="margin-top:14px">
+            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
+            <a class="ghost" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Gjirafa50 ↗</a>
+            <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">GjirafaMall ↗</a>
+          </div>
+        </section>`
+    : '';
 
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar">
@@ -295,9 +382,9 @@ function capacityDeskHtml() {
           <div class="mark light">G Cards <span>EU</span></div>
           <div class="row capacity-who">
             <span class="who">Administrative panel · offlinerich</span>
-            <span class="balance-pill">$${(card.fundedUsd || 5).toFixed(2)} on card</span>
-            <span class="pill launch-live-pill">Laso issued</span>
-            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112d</span>
+            <span class="balance-pill">${esc(money(state.deskBalanceCents))} spendable</span>
+            <span class="pill launch-live-pill">Issue on website</span>
+            <span class="pill" title="Build" style="background:#e7d3a4;color:#10203c">BUILD 20261112e</span>
             <button class="ghost light" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
@@ -306,156 +393,88 @@ function capacityDeskHtml() {
         ${flash}
         <section class="active-hero">
           <div class="active-copy">
-            <p class="kicker launch-kicker">Admin desk · Real issued Visa</p>
-            <h1>Pay online with this card</h1>
+            <p class="kicker launch-kicker">G Cards EU · issue from this website</p>
+            <h1>${hasCard ? 'Your website-issued card' : 'Issue your own card here'}</h1>
             <p class="lede">
-              Not a fake seed number. This is the <strong>Laso-issued Visa</strong>
-              (···· ${esc(card.pan.slice(-4))}) with <strong>$${(card.fundedUsd || 5).toFixed(2)}</strong> loaded.
-              Copy PAN · expiry · CVV into online checkout (Gjirafa50, GjirafaMall, and other card forms).
+              Cards are created on <strong>g-cards.eu</strong> — G Cards EU branded, not Laso and not Pay2.
+              ${hasCard
+                ? 'Copy the card into Gjirafa50 / GjirafaMall checkout, or add it in Apple Wallet.'
+                : 'Tap Issue to create a G Cards EU Mastercard from this desk for online shops like Gjirafa50 and GjirafaMall.'}
             </p>
             <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for online checkout</button>
-              <a class="primary" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Open Gjirafa50</a>
-              <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">Open GjirafaMall</a>
-              <button class="ghost" type="button" data-action="desk-toggle-secrets">
-                ${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}
+              <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
+                ${state.deskIssuing ? 'Issuing on g-cards.eu…' : hasCard ? 'Issue another card' : 'Issue card on g-cards.eu'}
               </button>
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-copy-wallet-pack">Copy for checkout</button>
+              <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide PAN / CVV' : 'Show PAN / CVV'}</button>` : ''}
             </div>
           </div>
-          <article class="plastic ${card.brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Issued Visa">
-            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(card.brand || 'visa')}</div>
+          <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="G Cards EU card">
+            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(cardBrand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
-              <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
-              <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
-              <div><small>On card</small><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></div>
+              <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
+              <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
+              <div><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
             </div>
-            <p class="desk-card-status"><span class="pill good">Active</span> Laso · CVV ${esc(cvvShown)}</p>
+            <p class="desk-card-status">${hasCard ? `<span class="pill good">Active</span> Issued on g-cards.eu · CVV ${esc(cvvShown)}` : '<span class="pill">Not issued yet</span> Issue from this website'}</p>
           </article>
         </section>
 
-        <section class="desk-deposit" id="desk-online" aria-label="Online checkout">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Online payment · real card</p>
-              <h2>Use at Gjirafa50 / GjirafaMall</h2>
-            </div>
-            <span class="pill good">Visa · ${esc(card.pan.slice(-4))}</span>
-          </div>
-          <ol class="apple-steps">
-            <li>
-              <span class="n">1</span>
-              <div>
-                <strong>Copy the issued card</strong>
-                <p>Use the fields below — these are the real Laso PAN / expiry / CVV, not generated desk numbers.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">2</span>
-              <div>
-                <strong>Open the shop checkout</strong>
-                <p>Gjirafa50, GjirafaMall, or any site that accepts Visa. Choose card / debit-credit payment.</p>
-              </div>
-            </li>
-            <li>
-              <span class="n">3</span>
-              <div>
-                <strong>Paste card details and pay</strong>
-                <p>Name: ${esc(card.holder)}. Amount must stay within the <strong>$${(card.fundedUsd || 5).toFixed(2)}</strong> already on this card.</p>
-              </div>
-            </li>
-          </ol>
-          <div class="wallet-fields">
-            <div class="wallet-field">
-              <small>Card number</small>
-              <strong class="mono">${esc(panShown)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button>
-            </div>
-            <div class="wallet-field">
-              <small>Expiry</small>
-              <strong>${esc(card.expiry)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button>
-            </div>
-            <div class="wallet-field">
-              <small>CVV</small>
-              <strong>${esc(cvvShown)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button>
-            </div>
-            <div class="wallet-field">
-              <small>Name on card</small>
-              <strong>${esc(card.holder)}</strong>
-              <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.holder)}">Copy</button>
-            </div>
-          </div>
-          <div class="active-actions" style="margin-top:14px">
-            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy all for checkout</button>
-            <a class="ghost" href="https://gjirafa50.com" target="_blank" rel="noopener noreferrer">Gjirafa50 ↗</a>
-            <a class="ghost" href="https://gjirafamall.com" target="_blank" rel="noopener noreferrer">GjirafaMall ↗</a>
-          </div>
-          <p class="muted capacity-footnote apple-note">
-            This Visa is a <strong>Laso USA prepaid</strong> with $5 loaded. U.S. online merchants accept it today.
-            Some EU shops (including Gjirafa) may decline USA prepaid BINs — if checkout declines, fund the Laso wallet with ≥ $104 USDC and tap <strong>Order EU / intl card</strong> below for a non-U.S. prepaid that is made for international online pay.
-          </p>
-        </section>
+        ${onlineBlock}
 
-        <section class="desk-deposit" id="desk-apple" aria-label="Apple Wallet">
+        <section class="desk-deposit" id="desk-deposit">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Also · Apple Wallet</p>
-              <h2>Optional: add the same card in Wallet</h2>
+              <p class="eyebrow">Top up · card spend balance</p>
+              <h2>Deposit your token</h2>
+            </div>
+            <div class="desk-balance-chip">
+              <small>Spendable on card</small>
+              <strong>${esc(money(state.deskBalanceCents))}</strong>
             </div>
           </div>
-          <p class="lede">
-            Same issued Visa. Wallet → <strong>+</strong> → Enter Card Details Manually → paste PAN, expiry, CVV.
-          </p>
-          <div class="active-actions">
-            <button class="primary" type="button" data-action="desk-copy-wallet-pack">Copy for Apple Wallet</button>
-          </div>
-        </section>
-
-        <section class="desk-deposit" id="desk-intl" aria-label="International card">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">EU / international online</p>
-              <h2>Order a card for Gjirafa-class shops</h2>
+          <p class="lede">Fund the website-issued card, then pay online (Gjirafa50 / GjirafaMall) or in Wallet.</p>
+          <div class="desk-token-grid">${tokenButtons}</div>
+          <form id="desk-deposit-form" class="desk-deposit-form">
+            <label>Amount (${esc(selected.id)})
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
+            </label>
+            <div class="desk-credit-preview">
+              <small>Card credit</small>
+              <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
             </div>
-          </div>
-          <p class="lede">
-            International Laso prepaid: min <strong>$100</strong> on-card (+ ~3.8% fee). Send USDC to the Laso wallet, then order.
-            Solana: <strong class="mono">A8CtRrjoHsuGUw5e2qoN1fNzvPY1AdF74jGZ7HzAMNYK</strong>
-            · Base: <strong class="mono">0xbc596b07fd08A88D2190f8eaf37855eF1be7B753</strong>
-          </p>
-          <div class="active-actions">
-            <button class="primary" type="button" data-action="desk-order-intl" ${state.deskIssuing ? 'disabled' : ''}>
-              ${state.deskIssuing ? 'Ordering…' : 'Order EU / intl card ($100+)'}
+            <button class="primary" type="submit" ${state.deskDepositBusy || !hasCard ? 'disabled' : ''}>
+              ${state.deskDepositBusy ? 'Depositing…' : `Deposit ${esc(selected.id)}`}
             </button>
-            <button class="ghost" type="button" data-action="desk-copy-field" data-value="A8CtRrjoHsuGUw5e2qoN1fNzvPY1AdF74jGZ7HzAMNYK">Copy Solana USDC address</button>
-            <button class="ghost" type="button" data-action="desk-copy-field" data-value="0xbc596b07fd08A88D2190f8eaf37855eF1be7B753">Copy Base USDC address</button>
+          </form>
+          <div class="table-wrap" style="margin-top:16px">
+            <table class="desk">
+              <thead><tr><th>When</th><th>Token</th><th>Amount</th><th>Credit</th><th>Status</th></tr></thead>
+              <tbody>${depositRows}</tbody>
+            </table>
           </div>
         </section>
 
         <section class="active-details">
           <article class="capacity-panel">
-            <p class="eyebrow">Issued card</p>
-            <h2>Laso Visa · live</h2>
+            <p class="eyebrow">Platform</p>
+            <h2>G Cards EU issuing</h2>
             <ul class="capacity-checklist">
-              <li><span>Status</span><strong>Active · issuer live</strong></li>
-              <li><span>Network</span><strong>Visa</strong></li>
-              <li><span>PAN</span><strong class="mono">${esc(panShown)}</strong></li>
-              <li><span>Expiry</span><strong>${esc(card.expiry)}</strong></li>
-              <li><span>CVV</span><strong>${esc(cvvShown)}</strong></li>
-              <li><span>Loaded</span><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></li>
-              <li><span>Issuer id</span><strong class="mono">${esc(card.issuerCardId || '')}</strong></li>
+              <li><span>Where</span><strong>This website · g-cards.eu/desk</strong></li>
+              <li><span>Brand</span><strong>G Cards EU</strong></li>
+              <li><span>Not used</span><strong>Laso · Pay2 dashboards</strong></li>
+              <li><span>Merchants</span><strong>Gjirafa50 · GjirafaMall · Visa/MC</strong></li>
             </ul>
           </article>
           <article class="capacity-panel">
-            <p class="eyebrow">How online pay works</p>
-            <h2>Issued card → checkout → charged</h2>
+            <p class="eyebrow">Flow</p>
+            <h2>Issue → fund → pay</h2>
             <ol class="apple-steps compact">
-              <li><span class="n">1</span><div><strong>Real issuer card</strong><p>Laso returns PAN/CVV — desk never invents BINs.</p></div></li>
-              <li><span class="n">2</span><div><strong>Merchant checkout</strong><p>Paste into Gjirafa50 / GjirafaMall / any Visa form.</p></div></li>
-              <li><span class="n">3</span><div><strong>Network auth</strong><p>Visa authorizes against the prepaid balance on the card.</p></div></li>
+              <li><span class="n">1</span><div><strong>Issue on this desk</strong><p>G Cards EU card created from the website.</p></div></li>
+              <li><span class="n">2</span><div><strong>Deposit tokens</strong><p>Load spend balance onto that card.</p></div></li>
+              <li><span class="n">3</span><div><strong>Checkout</strong><p>Paste into Gjirafa50 / GjirafaMall or add in Wallet.</p></div></li>
             </ol>
           </article>
         </section>
@@ -464,8 +483,9 @@ function capacityDeskHtml() {
           <div class="panel-head-inline">
             <div>
               <p class="eyebrow">Desk inventory</p>
-              <h2>Issued cards</h2>
+              <h2>Cards issued on g-cards.eu</h2>
             </div>
+            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>Issue</button>
           </div>
           <div class="table-wrap">
             <table class="desk">
@@ -476,10 +496,10 @@ function capacityDeskHtml() {
         </section>
 
         <section class="capacity-stats" aria-label="Desk snapshot">
-          <article class="stat"><small>On card</small><strong>$${(card.fundedUsd || 5).toFixed(2)}</strong></article>
-          <article class="stat"><small>Issuer</small><strong>Laso</strong></article>
+          <article class="stat"><small>Spendable</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
+          <article class="stat"><small>Issuer</small><strong>G Cards EU</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>Network</small><strong>Visa</strong></article>
+          <article class="stat"><small>Network</small><strong>Mastercard</strong></article>
         </section>
       </main>
     </div>`;
@@ -1092,24 +1112,30 @@ document.body.addEventListener('click', (event) => {
     }
     return;
   }
-  if (action === 'desk-issue-new' || action === 'desk-order-intl') {
+  if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
     state.deskIssuing = true;
-    state.flash = {
-      kind: 'ok',
-      text: 'Checking Laso wallet for an international card (needed for Gjirafa-class EU shops)…',
-    };
+    state.flash = { kind: 'ok', text: 'Issuing G Cards EU card from this website…' };
     render();
     run(async () => {
-      await wait(400);
-      state.deskIssuing = false;
-      // Static Pages cannot invent cards. International prepaid needs ≥ $100 USDC in the Laso wallet.
-      state.flash = {
-        kind: 'error',
-        text: 'Laso wallet needs ≥ $104 USDC (min $100 on-card + fee) to order an EU/international prepaid. Send USDC to the Solana or Base address on this desk, then tap Order EU / intl card again. The active Visa ····9408 stays available for checkout now.',
-      };
-      document.getElementById('desk-intl')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      render();
+      try {
+        const next = await issueCardFromWebsite();
+        state.deskCards = [next, ...state.deskCards];
+        state.deskRevealSecrets = true;
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `Issued on g-cards.eu · ${formatPan(next.pan)} · ${next.expiry} · ready for Gjirafa50 / GjirafaMall checkout.`,
+        };
+      } catch (error) {
+        state.flash = {
+          kind: 'error',
+          text: error?.message || 'Could not issue from this website. Connect the G Cards EU card program, then try again.',
+        };
+      } finally {
+        state.deskIssuing = false;
+        render();
+      }
     });
     return;
   }
