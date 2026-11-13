@@ -27,6 +27,7 @@ const state = {
   deskIssuing: false,
   deskRevealSecrets: true,
   deskBalanceCents: 0,
+  deskBalanceSeeded: false,
   deskDepositToken: 'USDT_SOL',
   deskDepositAmount: '',
   deskDepositBusy: false,
@@ -45,7 +46,9 @@ const state = {
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v7';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v8';
+const DESK_SEED_BALANCE_CENTS = 2_450_000; // $24,500
+const CARD_ACTIVATE_MS = 60 * 60 * 1000; // ~1 hour
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
 
@@ -83,6 +86,7 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
       }));
   }
   if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
+  if (typeof data.deskBalanceSeeded === 'boolean') state.deskBalanceSeeded = data.deskBalanceSeeded;
   if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
   if (Array.isArray(data.deskSpends)) {
     state.deskSpends = data.deskSpends.map(normalizeStoredSpend).filter(Boolean);
@@ -126,9 +130,20 @@ function loadDeskLedger() {
     } catch {
       /* ignore */
     }
-    const rawV7 = localStorage.getItem(DESK_LEDGER_KEY);
+    const rawV8 = localStorage.getItem(DESK_LEDGER_KEY);
+    if (rawV8) {
+      applyLedgerPayload(JSON.parse(rawV8));
+      return;
+    }
+    const rawV7 = localStorage.getItem('gcards-desk-ledger-v7');
     if (rawV7) {
       applyLedgerPayload(JSON.parse(rawV7));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v7');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV6 = localStorage.getItem('gcards-desk-ledger-v6');
@@ -164,6 +179,7 @@ function saveDeskLedger() {
       JSON.stringify({
         deskCards: state.deskCards,
         deskBalanceCents: state.deskBalanceCents,
+        deskBalanceSeeded: state.deskBalanceSeeded,
         deskDeposits: state.deskDeposits,
         deskSpends: state.deskSpends,
         deskTransfers: state.deskTransfers,
@@ -315,10 +331,94 @@ function deskActiveCard() {
   return state.deskCards.find((c) => c.id === id) || state.deskCards[0] || null;
 }
 
+function syncCardStatuses() {
+  let changed = false;
+  for (const card of state.deskCards) {
+    if (!card) continue;
+    if (card.endless) {
+      if (card.frozen) {
+        if (card.status !== 'frozen') {
+          card.status = 'frozen';
+          card.ready = false;
+          changed = true;
+        }
+      } else if (card.status !== 'active' || !card.ready) {
+        card.status = 'active';
+        card.ready = true;
+        card.frozen = false;
+        changed = true;
+      }
+      continue;
+    }
+    if (card.frozen) {
+      if (card.status !== 'frozen') {
+        card.status = 'frozen';
+        card.ready = false;
+        changed = true;
+      }
+      continue;
+    }
+    const activatesAt = Number(card.activatesAt || 0);
+    if (activatesAt && Date.now() < activatesAt) {
+      if (card.status !== 'activating' || card.ready) {
+        card.status = 'activating';
+        card.ready = false;
+        changed = true;
+      }
+      continue;
+    }
+    if (card.status !== 'active' || !card.ready) {
+      card.status = 'active';
+      card.ready = true;
+      if (activatesAt) card.activatesAt = 0;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function cardStatusKey(card) {
+  if (!card) return 'inactive';
+  if (card.frozen || card.status === 'frozen') return 'frozen';
+  if (card.endless) return 'active';
+  const activatesAt = Number(card.activatesAt || 0);
+  if (activatesAt && Date.now() < activatesAt) return 'activating';
+  if (card.status === 'activating' && activatesAt && Date.now() >= activatesAt) return 'active';
+  return card.status === 'active' || card.ready ? 'active' : 'activating';
+}
+
+function cardIsOperable(card) {
+  return cardStatusKey(card) === 'active';
+}
+
+function activationRemainingLabel(card) {
+  const left = Number(card?.activatesAt || 0) - Date.now();
+  if (!Number.isFinite(left) || left <= 0) return '';
+  const mins = Math.max(1, Math.ceil(left / 60000));
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return rem ? `~${hours}h ${rem}m` : `~${hours}h`;
+  }
+  return `~${mins} min`;
+}
+
+function cardStatusPill(card) {
+  const key = cardStatusKey(card);
+  if (key === 'frozen') return '<span class="pill bad">Frozen</span>';
+  if (key === 'activating') {
+    const left = activationRemainingLabel(card);
+    return `<span class="pill warn">Activating${left ? ` · ${esc(left)}` : ''}</span>`;
+  }
+  if (card?.endless) return '<span class="pill good">Active · Endless</span>';
+  return '<span class="pill good">Active</span>';
+}
+
 function deskCardMenuLabel(c) {
   const brand = String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
   const bal = c.endless ? '∞' : money(c.balanceCents || 0);
-  const tag = c.endless ? 'Endless' : brand;
+  const key = cardStatusKey(c);
+  const tag = c.endless ? 'Endless' : key === 'frozen' ? `${brand} frozen` : key === 'activating' ? `${brand} wait` : brand;
   return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
@@ -412,16 +512,20 @@ function makeIssuedCard(options = {}) {
   const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
   const year = String(28 + Math.floor(Math.random() * 5));
   const last4 = pan.slice(-4);
+  const issuedAt = Date.now();
   return {
-    id: endless ? 'card-endless-1955' : `card-${Date.now()}-${last4}`,
+    id: endless ? 'card-endless-1955' : `card-${issuedAt}-${last4}`,
     brand,
     pan,
     expiry: endless ? '12/35' : `${month}/${year}`,
     cvv: endless ? '195' : cvv,
     holder: endless ? 'G Cards Endless' : 'G Cards Member',
-    status: 'active',
-    ready: true,
-    label: endless ? `Endless · ····${last4}` : `Active · ${brand}`,
+    status: endless ? 'active' : 'activating',
+    ready: Boolean(endless),
+    frozen: false,
+    issuedAt,
+    activatesAt: endless ? 0 : issuedAt + CARD_ACTIVATE_MS,
+    label: endless ? `Endless · ····${last4}` : `Activating · ${brand}`,
     issuer: 'gcards',
     product: endless ? 'endless_1955' : 'website_virtual',
     panComplete: true,
@@ -436,12 +540,52 @@ function ensureEndless1955Card() {
     existing.endless = true;
     existing.label = `Endless · ····${String(existing.pan).slice(-4)}`;
     if (typeof existing.balanceCents !== 'number') existing.balanceCents = 9_999_999_00;
+    if (!existing.frozen) {
+      existing.status = 'active';
+      existing.ready = true;
+      existing.activatesAt = 0;
+    }
     return existing;
   }
   const card = makeIssuedCard({ brand: 'mastercard', endless: true });
   state.deskCards = [card, ...state.deskCards.filter((c) => c.id !== card.id)];
   saveDeskLedger();
   return card;
+}
+
+/** Seed $24,500 desk balance; only ····1955 active; others wait ~1h. */
+function ensureDeskDefaults() {
+  ensureEndless1955Card();
+  for (const card of state.deskCards) {
+    if (card.endless) continue;
+    if (typeof card.frozen !== 'boolean') card.frozen = Boolean(card.status === 'frozen');
+    if (!card.activatesAt && card.status !== 'active' && !card.frozen) {
+      const issuedAt = Number(card.issuedAt) || Date.now();
+      card.issuedAt = issuedAt;
+      card.activatesAt = issuedAt + CARD_ACTIVATE_MS;
+      card.status = 'activating';
+      card.ready = false;
+    }
+    if (card.status === 'active' && !card.frozen && !card.activatesAt) {
+      // Existing active non-endless cards: put into activation wait once for this seed.
+      if (!state.deskBalanceSeeded) {
+        card.issuedAt = Date.now();
+        card.activatesAt = Date.now() + CARD_ACTIVATE_MS;
+        card.status = 'activating';
+        card.ready = false;
+        card.label = `Activating · ${card.brand}`;
+      }
+    }
+  }
+  if (!state.deskBalanceSeeded) {
+    state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
+    state.deskBalanceSeeded = true;
+  }
+  syncCardStatuses();
+  const endless = state.deskCards.find((c) => c.endless);
+  if (endless && !state.deskSelectedCardId) state.deskSelectedCardId = endless.id;
+  if (endless && !state.deskTopupCardId) state.deskTopupCardId = endless.id;
+  saveDeskLedger();
 }
 
 async function refreshTokenPrices() {
@@ -530,6 +674,7 @@ function architectureSrc() {
 
 /** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
+  syncCardStatuses();
   if (state.deskView === 'payments') {
     return deskShellHtml(deskPaymentsHtml());
   }
@@ -581,18 +726,28 @@ function deskHomeHtml() {
     )
     .join('');
 
+  const activatingCount = state.deskCards.filter((c) => cardStatusKey(c) === 'activating').length;
   const balanceStrip = state.deskCards.length
     ? state.deskCards
         .map((c) => {
           const on = c.id === (card?.id || '') ? 'on' : '';
           const bal = c.endless ? '∞' : money(c.balanceCents || 0);
-          return `<button type="button" class="desk-balance-chip-btn ${on}" data-action="desk-select-card" data-id="${esc(c.id)}">
+          const key = cardStatusKey(c);
+          return `<button type="button" class="desk-balance-chip-btn ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}">
             <small>${esc(String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'MC')}${c.endless ? ' ∞' : ''} ····${esc(String(c.pan).slice(-4))}</small>
             <strong>${esc(bal)}</strong>
+            <span class="desk-chip-status">${key === 'activating' ? `Activating ${esc(activationRemainingLabel(c) || '~1h')}` : key === 'frozen' ? 'Frozen' : 'Active'}</span>
           </button>`;
         })
         .join('')
     : '<p class="muted desk-empty-cards">No cards yet — issue one below.</p>';
+
+  const activationNote = `<aside class="desk-activation-note" role="status">
+          <p class="eyebrow">Activation</p>
+          <p><strong>Only Endless ····1955 is active now.</strong> Other cards take about <strong>1 hour</strong> to activate before spending.</p>
+          <p class="muted">After they activate, you can top up all cards immediately from the desk balance.</p>
+          ${activatingCount ? `<p class="desk-activation-count">${activatingCount} card${activatingCount === 1 ? '' : 's'} still activating.</p>` : ''}
+        </aside>`;
 
   return `
         <section class="desk-home-hero">
@@ -622,9 +777,11 @@ function deskHomeHtml() {
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
               <div><small>Balance</small><strong>${esc(hasCard ? (card.endless ? '∞' : money(card.balanceCents || 0)) : money(0))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `<span class="pill good">${esc(cardBrand === 'visa' ? 'Visa' : 'Mastercard')}</span>${card.endless ? ' Endless' : ''} · tap to open` : '<span class="pill">Not issued</span>'}</p>
+            <p class="desk-card-status">${hasCard ? `${cardStatusPill(card)} · tap to open` : '<span class="pill">Not issued</span>'}</p>
           </article>
         </section>
+
+        ${activationNote}
 
         <section class="desk-balance-menu" aria-label="Card balances">
           <div class="panel-head-inline">
@@ -691,8 +848,9 @@ function deskHomeHtml() {
                 <small>Left on desk</small>
                 <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
               </div>
-              <button class="primary" type="submit" ${!state.deskCards.length || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
+              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || topupCard.endless || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
             </form>
+            <p class="muted desk-fund-hint">Active cards only. Activating cards unlock top-up after ~1 hour.</p>
           </section>
         </section>
 
@@ -724,6 +882,8 @@ function deskCardDetailHtml() {
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
   const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4).slice(0, 6);
+  const statusKey = cardStatusKey(card);
+  const canFund = !card.endless && cardIsOperable(card) && state.deskBalanceCents > 0;
   const menuOptions = state.deskCards
     .map(
       (c) =>
@@ -742,6 +902,15 @@ function deskCardDetailHtml() {
         )
         .join('')
     : '<tr><td colspan="3" class="muted">No funds onto this card yet.</td></tr>';
+
+  const controlsNote =
+    statusKey === 'activating'
+      ? `<p class="muted desk-control-note">This card activates in ${esc(activationRemainingLabel(card) || '~1 hour')}. After activation you can top up and spend immediately.</p>`
+      : statusKey === 'frozen'
+        ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
+        : card.endless
+          ? '<p class="muted desk-control-note">Endless ····1955 is active now and ready to use.</p>'
+          : '<p class="muted desk-control-note">Card is active. Top-ups from desk balance apply immediately.</p>';
 
   return `
         <section class="desk-detail-top">
@@ -763,7 +932,7 @@ function deskCardDetailHtml() {
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
               <div><small>Balance</small><strong>${esc(card.endless ? '∞' : money(card.balanceCents || 0))}</strong></div>
             </div>
-            <p class="desk-card-status"><span class="pill good">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')}</span>${card.endless ? ' · Endless' : ''} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
+            <p class="desk-card-status">${cardStatusPill(card)} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
           </article>
           <div class="desk-detail-side">
             <div class="wallet-fields desk-detail-fields">
@@ -774,12 +943,24 @@ function deskCardDetailHtml() {
               <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
               <div class="wallet-field"><small>Balance</small><strong>${esc(card.endless ? 'Endless' : money(card.balanceCents || 0))}</strong></div>
+              <div class="wallet-field"><small>Status</small><strong>${esc(statusKey === 'activating' ? `Activating ${activationRemainingLabel(card)}` : statusKey === 'frozen' ? 'Frozen' : 'Active')}</strong></div>
+            </div>
+            <div class="desk-card-controls">
+              <p class="eyebrow">Controls</p>
+              <div class="active-actions">
+                ${
+                  statusKey === 'frozen'
+                    ? `<button class="primary" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
+                    : `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
+                }
+                <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
+              </div>
+              ${controlsNote}
             </div>
             <div class="active-actions">
-              <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
-              <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}">Pay TEB</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}">RBKO</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}">NLB</button>
+              <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>Pay TEB</button>
+              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>RBKO</button>
+              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>NLB</button>
             </div>
           </div>
         </section>
@@ -792,16 +973,23 @@ function deskCardDetailHtml() {
             </div>
             <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
+          ${
+            statusKey === 'activating'
+              ? `<p class="lede">Funding unlocks when this card finishes activating (~1 hour). After that, top-ups apply immediately.</p>`
+              : statusKey === 'frozen'
+                ? `<p class="lede">Unfreeze the card before funding.</p>`
+                : ''
+          }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
             <label>Amount
-              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required ${canFund ? '' : 'disabled'} />
             </label>
             <div class="desk-credit-preview">
               <small>Left on desk</small>
               <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
             </div>
-            <button class="primary" type="submit" ${card.endless || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund card</button>
+            <button class="primary" type="submit" ${canFund ? '' : 'disabled'}>Fund card</button>
           </form>
           <div class="table-wrap" style="margin-top:14px">
             <table class="desk">
@@ -1608,7 +1796,7 @@ document.body.addEventListener('click', (event) => {
         saveDeskLedger();
         state.flash = {
           kind: 'ok',
-          text: `Issued ${next.brand === 'visa' ? 'Visa' : 'Mastercard'} · ${formatPan(next.pan)} · Luhn OK · CVV ${next.cvv}`,
+          text: `Issued ${next.brand === 'visa' ? 'Visa' : 'Mastercard'} · ${formatPan(next.pan)} · Activating ~1h · then top-up works immediately`,
         };
       } catch (error) {
         state.flash = {
@@ -1629,7 +1817,48 @@ document.body.addEventListener('click', (event) => {
     state.deskRevealSecrets = true;
     state.flash = {
       kind: 'ok',
-      text: `Endless card ready · ${formatPan(card.pan)} · ends in 1955 · Luhn OK`,
+      text: `Endless ····1955 active now · ${formatPan(card.pan)} · Luhn OK`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-freeze-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.frozen = true;
+    card.status = 'frozen';
+    card.ready = false;
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Frozen ····${String(card.pan).slice(-4)} · funding and spending paused`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-unfreeze-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.frozen = false;
+    if (card.endless) {
+      card.status = 'active';
+      card.ready = true;
+    } else {
+      const activatesAt = Number(card.activatesAt || 0);
+      if (activatesAt && Date.now() < activatesAt) {
+        card.status = 'activating';
+        card.ready = false;
+      } else {
+        card.status = 'active';
+        card.ready = true;
+        card.activatesAt = 0;
+      }
+    }
+    syncCardStatuses();
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Unfrozen ····${String(card.pan).slice(-4)} · ${cardStatusKey(card) === 'activating' ? 'still activating' : 'active again'}`,
     };
     render();
     return;
@@ -1749,6 +1978,17 @@ document.body.addEventListener('click', (event) => {
     }
     if (!panPassesLuhn(card.pan)) {
       state.flash = { kind: 'error', text: 'This PAN fails Luhn. Issue a new card, then pay via TEB/RBKO/NLB.' };
+      render();
+      return;
+    }
+    if (!cardIsOperable(card)) {
+      state.flash = {
+        kind: 'error',
+        text:
+          cardStatusKey(card) === 'frozen'
+            ? 'Card is frozen. Unfreeze it first.'
+            : `Card still activating (${activationRemainingLabel(card) || '~1h'}).`,
+      };
       render();
       return;
     }
@@ -1950,10 +2190,11 @@ document.body.addEventListener('submit', (event) => {
       }
 
       state.hostGate = { phase: 'blocked' };
-      ensureEndless1955Card();
+      ensureDeskDefaults();
       await refreshTokenPrices();
       state.deskRevealSecrets = true;
-      state.deskTopupCardId = state.deskCards[0]?.id || '';
+      state.deskTopupCardId = state.deskCards.find((c) => c.endless)?.id || state.deskCards[0]?.id || '';
+      state.deskSelectedCardId = state.deskTopupCardId;
       if (!state.spendDraft.when) {
         const now = new Date();
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -1961,7 +2202,7 @@ document.body.addEventListener('submit', (event) => {
       }
       state.flash = {
         kind: 'ok',
-        text: `Desk ready · ${state.deskCards.length} card(s) · USDT Sol $${Number(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · Endless ····1955 on file`,
+        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · Endless ····1955 active · others ~1h`,
       };
       render();
     });
@@ -2018,6 +2259,14 @@ document.body.addEventListener('submit', (event) => {
         render();
         return;
       }
+      if (cardStatusKey(card) === 'frozen') {
+        throw new Error('Card is frozen. Unfreeze it before funding.');
+      }
+      if (cardStatusKey(card) === 'activating') {
+        throw new Error(
+          `Card still activating (${activationRemainingLabel(card) || '~1h'}). After activation you can top up immediately.`,
+        );
+      }
       if (state.deskBalanceCents < amountCents) {
         throw new Error(`Desk balance is only ${money(state.deskBalanceCents)}. Top up balance first.`);
       }
@@ -2048,6 +2297,12 @@ document.body.addEventListener('submit', (event) => {
       const cardId = String(data.cardId || '');
       const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
       if (!card) throw new Error('Choose a card for this payment.');
+      if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
+      if (cardStatusKey(card) === 'activating') {
+        throw new Error(
+          `Card still activating (${activationRemainingLabel(card) || '~1h'}). Spending starts after activation.`,
+        );
+      }
       const amount = Number(data.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a spend amount greater than zero.');
       const merchant = String(data.merchant || '').trim();
@@ -2375,10 +2630,11 @@ async function boot() {
     state.admin = me;
     state.hostGate = { phase: 'blocked' };
     await loadDesk().catch(() => null);
-    ensureEndless1955Card();
+    ensureDeskDefaults();
     await refreshTokenPrices();
     state.deskRevealSecrets = true;
-    state.deskTopupCardId = state.deskCards[0]?.id || '';
+    state.deskTopupCardId = state.deskCards.find((c) => c.endless)?.id || state.deskCards[0]?.id || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
   } catch {
     state.admin = null;
   }

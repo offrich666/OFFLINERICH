@@ -1370,3 +1370,42 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   .desk-bar-balance-block strong { font-size: 13px; }
   .desk-signout { padding: 7px 10px !important; }
 }
+
+/* Build u — activation + freeze controls */
+.pill.warn { background: #f3e6c8; color: #7a5a18; }
+.pill.bad { background: #f0d5d5; color: #8d2f2f; }
+.desk-activation-note {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow);
+}
+.desk-activation-note p { margin: 0 0 8px; }
+.desk-activation-note p:last-child { margin-bottom: 0; }
+.desk-activation-count {
+  font-weight: 650;
+  color: var(--navy);
+}
+.desk-chip-status {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.desk-balance-chip-btn.status-activating .desk-chip-status { color: #7a5a18; }
+.desk-balance-chip-btn.status-frozen .desk-chip-status { color: #8d2f2f; }
+.desk-balance-chip-btn.status-active .desk-chip-status { color: var(--good); }
+.desk-card-controls {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+.desk-control-note,
+.desk-fund-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+}
