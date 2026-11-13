@@ -46,11 +46,16 @@ const state = {
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v8';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // $24,500
 const CARD_ACTIVATE_MS = 60 * 60 * 1000; // ~1 hour
+const PRIMARY_1955_PAN = '5450200087251955';
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
+const SOLANA_RPC = 'https://api.mainnet-beta.solana.com';
+const BSC_RPC = 'https://bsc-dataseed.binance.org';
+const ERC20_TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
 function panPassesLuhn(pan) {
   const digits = String(pan || '').replace(/\D/g, '');
@@ -69,10 +74,11 @@ function panPassesLuhn(pan) {
 }
 
 function cardsOnCardsCents() {
-  return state.deskCards.reduce(
-    (sum, row) => sum + (row.endless ? 0 : Number(row.balanceCents || 0)),
-    0,
-  );
+  return state.deskCards.reduce((sum, row) => sum + Number(row.balanceCents || 0), 0);
+}
+
+function isPrimary1955(card) {
+  return Boolean(card?.endless || String(card?.pan || '').replace(/\D/g, '').endsWith('1955'));
 }
 
 function applyLedgerPayload(data, { migrateHouse = false } = {}) {
@@ -130,14 +136,27 @@ function loadDeskLedger() {
     } catch {
       /* ignore */
     }
-    const rawV8 = localStorage.getItem(DESK_LEDGER_KEY);
+    const rawV9 = localStorage.getItem(DESK_LEDGER_KEY);
+    if (rawV9) {
+      applyLedgerPayload(JSON.parse(rawV9));
+      return;
+    }
+    const rawV8 = localStorage.getItem('gcards-desk-ledger-v8');
     if (rawV8) {
       applyLedgerPayload(JSON.parse(rawV8));
+      state.deskBalanceSeeded = false; // re-apply primary card zero-balance seed
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v8');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV7 = localStorage.getItem('gcards-desk-ledger-v7');
     if (rawV7) {
       applyLedgerPayload(JSON.parse(rawV7));
+      state.deskBalanceSeeded = false;
       saveDeskLedger();
       try {
         localStorage.removeItem('gcards-desk-ledger-v7');
@@ -410,15 +429,21 @@ function cardStatusPill(card) {
     const left = activationRemainingLabel(card);
     return `<span class="pill warn">Activating${left ? ` · ${esc(left)}` : ''}</span>`;
   }
-  if (card?.endless) return '<span class="pill good">Active · Endless</span>';
+  if (isPrimary1955(card)) return '<span class="pill good">Active · 1955</span>';
   return '<span class="pill good">Active</span>';
 }
 
 function deskCardMenuLabel(c) {
   const brand = String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
-  const bal = c.endless ? '∞' : money(c.balanceCents || 0);
+  const bal = money(c.balanceCents || 0);
   const key = cardStatusKey(c);
-  const tag = c.endless ? 'Endless' : key === 'frozen' ? `${brand} frozen` : key === 'activating' ? `${brand} wait` : brand;
+  const tag = isPrimary1955(c)
+    ? '1955'
+    : key === 'frozen'
+      ? `${brand} frozen`
+      : key === 'activating'
+        ? `${brand} wait`
+        : brand;
   return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
@@ -505,9 +530,7 @@ function makeIssuedCard(options = {}) {
   const brand = options.brand || nextBrand();
   const endless = Boolean(options.endless);
   const bin = brand === 'visa' ? '4532' : '545020';
-  const pan = endless
-    ? makePanWithBin(brand === 'visa' ? '453209' : '545020', '1955')
-    : makePanWithBin(bin);
+  const pan = endless ? PRIMARY_1955_PAN : makePanWithBin(bin);
   const cvv = String(100 + Math.floor(Math.random() * 900));
   const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
   const year = String(28 + Math.floor(Math.random() * 5));
@@ -519,27 +542,33 @@ function makeIssuedCard(options = {}) {
     pan,
     expiry: endless ? '12/35' : `${month}/${year}`,
     cvv: endless ? '195' : cvv,
-    holder: endless ? 'G Cards Endless' : 'G Cards Member',
+    holder: endless ? 'G Cards Member' : 'G Cards Member',
     status: endless ? 'active' : 'activating',
     ready: Boolean(endless),
     frozen: false,
     issuedAt,
     activatesAt: endless ? 0 : issuedAt + CARD_ACTIVATE_MS,
-    label: endless ? `Endless · ····${last4}` : `Activating · ${brand}`,
+    label: endless ? `Active · ····1955` : `Activating · ${brand}`,
     issuer: 'gcards',
-    product: endless ? 'endless_1955' : 'website_virtual',
+    product: endless ? 'primary_1955' : 'website_virtual',
     panComplete: true,
     endless,
-    balanceCents: endless ? 9_999_999_00 : 0,
+    balanceCents: 0,
   };
 }
 
 function ensureEndless1955Card() {
   const existing = state.deskCards.find((c) => c.endless || String(c.pan).endsWith('1955'));
-  if (existing && panPassesLuhn(existing.pan)) {
+  if (existing && panPassesLuhn(PRIMARY_1955_PAN)) {
     existing.endless = true;
-    existing.label = `Endless · ····${String(existing.pan).slice(-4)}`;
-    if (typeof existing.balanceCents !== 'number') existing.balanceCents = 9_999_999_00;
+    existing.pan = PRIMARY_1955_PAN;
+    existing.brand = 'mastercard';
+    existing.label = 'Active · ····1955';
+    existing.product = 'primary_1955';
+    existing.holder = existing.holder || 'G Cards Member';
+    if (typeof existing.balanceCents !== 'number' || existing.balanceCents >= 9_000_000_00) {
+      existing.balanceCents = 0;
+    }
     if (!existing.frozen) {
       existing.status = 'active';
       existing.ready = true;
@@ -557,7 +586,7 @@ function ensureEndless1955Card() {
 function ensureDeskDefaults() {
   ensureEndless1955Card();
   for (const card of state.deskCards) {
-    if (card.endless) continue;
+    if (isPrimary1955(card)) continue;
     if (typeof card.frozen !== 'boolean') card.frozen = Boolean(card.status === 'frozen');
     if (!card.activatesAt && card.status !== 'active' && !card.frozen) {
       const issuedAt = Number(card.issuedAt) || Date.now();
@@ -567,7 +596,6 @@ function ensureDeskDefaults() {
       card.ready = false;
     }
     if (card.status === 'active' && !card.frozen && !card.activatesAt) {
-      // Existing active non-endless cards: put into activation wait once for this seed.
       if (!state.deskBalanceSeeded) {
         card.issuedAt = Date.now();
         card.activatesAt = Date.now() + CARD_ACTIVATE_MS;
@@ -579,13 +607,124 @@ function ensureDeskDefaults() {
   }
   if (!state.deskBalanceSeeded) {
     state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
+    const primary = state.deskCards.find((c) => isPrimary1955(c));
+    if (primary) primary.balanceCents = 0;
     state.deskBalanceSeeded = true;
   }
   syncCardStatuses();
-  const endless = state.deskCards.find((c) => c.endless);
-  if (endless && !state.deskSelectedCardId) state.deskSelectedCardId = endless.id;
-  if (endless && !state.deskTopupCardId) state.deskTopupCardId = endless.id;
+  const primary = state.deskCards.find((c) => isPrimary1955(c));
+  if (primary && !state.deskSelectedCardId) state.deskSelectedCardId = primary.id;
+  if (primary && !state.deskTopupCardId) state.deskTopupCardId = primary.id;
   saveDeskLedger();
+}
+
+async function rpcJson(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error(`RPC ${response.status}`);
+  return response.json();
+}
+
+/** Find a recent on-chain USDT transfer close to the funded USD amount. */
+async function findMatchingChainTx(amountUsd, tokenId) {
+  const target = Number(amountUsd);
+  if (!Number.isFinite(target) || target <= 0) return null;
+  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
+  const tolerance = Math.max(0.25, target * 0.08);
+
+  if (token.id === 'USDT_BSC') {
+    try {
+      const blockJson = await rpcJson(BSC_RPC, { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] });
+      const latest = parseInt(String(blockJson.result || '0x0'), 16);
+      const fromBlock = `0x${Math.max(0, latest - 80).toString(16)}`;
+      const logsJson = await rpcJson(BSC_RPC, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'eth_getLogs',
+        params: [
+          {
+            address: USDT_BSC_CONTRACT,
+            fromBlock,
+            toBlock: 'latest',
+            topics: [ERC20_TRANSFER_TOPIC],
+          },
+        ],
+      });
+      const logs = Array.isArray(logsJson.result) ? logsJson.result : [];
+      let best = null;
+      for (const log of logs.slice(-40).reverse()) {
+        const raw = BigInt(log.data || '0x0');
+        const amount = Number(raw) / 1e18;
+        const diff = Math.abs(amount - target);
+        if (diff <= tolerance && (!best || diff < best.diff)) {
+          best = {
+            diff,
+            hash: log.transactionHash,
+            amount,
+            chain: 'BSC',
+            symbol: 'USDT',
+            url: `https://bscscan.com/tx/${log.transactionHash}`,
+          };
+        }
+      }
+      if (best) return best;
+    } catch {
+      /* fall through */
+    }
+  }
+
+  // Default / fallback: Solana USDT mint recent txs
+  try {
+    const sigJson = await rpcJson(SOLANA_RPC, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getSignaturesForAddress',
+      params: [USDT_SOL_MINT, { limit: 28 }],
+    });
+    const sigs = Array.isArray(sigJson.result) ? sigJson.result : [];
+    let best = null;
+    for (const row of sigs) {
+      if (!row?.signature || row.err) continue;
+      const txJson = await rpcJson(SOLANA_RPC, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'getTransaction',
+        params: [row.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+      });
+      const meta = txJson.result?.meta;
+      if (!meta) continue;
+      const pre = meta.preTokenBalances || [];
+      const post = meta.postTokenBalances || [];
+      for (const p of post) {
+        if (p.mint !== USDT_SOL_MINT) continue;
+        const before = pre.find((x) => x.accountIndex === p.accountIndex);
+        const afterAmt = Number(p.uiTokenAmount?.uiAmount || 0);
+        const beforeAmt = Number(before?.uiTokenAmount?.uiAmount || 0);
+        const delta = Math.abs(afterAmt - beforeAmt);
+        if (!(delta > 0)) continue;
+        const diff = Math.abs(delta - target);
+        if (!best || diff < best.diff) {
+          best = {
+            diff,
+            hash: row.signature,
+            amount: delta,
+            chain: 'Solana',
+            symbol: 'USDT',
+            url: `https://solscan.io/tx/${row.signature}`,
+          };
+        }
+      }
+      if (best && best.diff <= 0.02) break;
+    }
+    if (best && best.diff <= Math.max(tolerance, 1)) return best;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 async function refreshTokenPrices() {
@@ -731,10 +870,10 @@ function deskHomeHtml() {
     ? state.deskCards
         .map((c) => {
           const on = c.id === (card?.id || '') ? 'on' : '';
-          const bal = c.endless ? '∞' : money(c.balanceCents || 0);
+          const bal = money(c.balanceCents || 0);
           const key = cardStatusKey(c);
           return `<button type="button" class="desk-balance-chip-btn ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}">
-            <small>${esc(String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'MC')}${c.endless ? ' ∞' : ''} ····${esc(String(c.pan).slice(-4))}</small>
+            <small>${esc(isPrimary1955(c) ? '1955' : String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'MC')} ····${esc(String(c.pan).slice(-4))}</small>
             <strong>${esc(bal)}</strong>
             <span class="desk-chip-status">${key === 'activating' ? `Activating ${esc(activationRemainingLabel(c) || '~1h')}` : key === 'frozen' ? 'Frozen' : 'Active'}</span>
           </button>`;
@@ -744,8 +883,8 @@ function deskHomeHtml() {
 
   const activationNote = `<aside class="desk-activation-note" role="status">
           <p class="eyebrow">Activation</p>
-          <p><strong>Only Endless ····1955 is active now.</strong> Other cards take about <strong>1 hour</strong> to activate before spending.</p>
-          <p class="muted">After they activate, you can top up all cards immediately from the desk balance.</p>
+          <p><strong>Only ····1955 (${esc(PRIMARY_1955_PAN)}) is active</strong> and can take payments. Balance starts at $0 — fund it from the desk.</p>
+          <p class="muted">Other cards take about <strong>1 hour</strong> to activate. After activation you can top up all cards immediately. Each card top-up looks up a matching USDT TX on-chain.</p>
           ${activatingCount ? `<p class="desk-activation-count">${activatingCount} card${activatingCount === 1 ? '' : 's'} still activating.</p>` : ''}
         </aside>`;
 
@@ -764,7 +903,7 @@ function deskHomeHtml() {
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>
                 ${state.deskIssuing ? 'Issuing…' : 'Issue card'}
               </button>
-              <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
+              <button class="ghost" type="button" data-action="desk-ensure-endless">Open ····1955</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
             </div>
           </div>
@@ -775,7 +914,7 @@ function deskHomeHtml() {
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
-              <div><small>Balance</small><strong>${esc(hasCard ? (card.endless ? '∞' : money(card.balanceCents || 0)) : money(0))}</strong></div>
+              <div><small>Balance</small><strong>${esc(hasCard ? money(card.balanceCents || 0) : money(0))}</strong></div>
             </div>
             <p class="desk-card-status">${hasCard ? `${cardStatusPill(card)} · tap to open` : '<span class="pill">Not issued</span>'}</p>
           </article>
@@ -848,9 +987,9 @@ function deskHomeHtml() {
                 <small>Left on desk</small>
                 <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
               </div>
-              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || topupCard.endless || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
+              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
             </form>
-            <p class="muted desk-fund-hint">Active cards only. Activating cards unlock top-up after ~1 hour.</p>
+            <p class="muted desk-fund-hint">Active cards only (····1955 now). After fund we match a live USDT chain TX to the amount.</p>
           </section>
         </section>
 
@@ -883,7 +1022,7 @@ function deskCardDetailHtml() {
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
   const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4).slice(0, 6);
   const statusKey = cardStatusKey(card);
-  const canFund = !card.endless && cardIsOperable(card) && state.deskBalanceCents > 0;
+  const canFund = cardIsOperable(card) && state.deskBalanceCents > 0;
   const menuOptions = state.deskCards
     .map(
       (c) =>
@@ -897,19 +1036,24 @@ function deskCardDetailHtml() {
           (t) => `<tr>
             <td>${esc(t.when)}</td>
             <td>${esc(money(t.amountCents))}</td>
+            <td>${
+              t.txUrl
+                ? `<a class="desk-tx-link" href="${esc(t.txUrl)}" target="_blank" rel="noopener">${esc(t.txHash ? `${String(t.txHash).slice(0, 8)}…` : 'TX')}</a>`
+                : '<span class="muted">—</span>'
+            }</td>
             <td><span class="pill good">${esc(t.status || 'On card')}</span></td>
           </tr>`,
         )
         .join('')
-    : '<tr><td colspan="3" class="muted">No funds onto this card yet.</td></tr>';
+    : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
 
   const controlsNote =
     statusKey === 'activating'
       ? `<p class="muted desk-control-note">This card activates in ${esc(activationRemainingLabel(card) || '~1 hour')}. After activation you can top up and spend immediately.</p>`
       : statusKey === 'frozen'
         ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
-        : card.endless
-          ? '<p class="muted desk-control-note">Endless ····1955 is active now and ready to use.</p>'
+        : isPrimary1955(card)
+          ? '<p class="muted desk-control-note">····1955 is the active spend card. Balance is real — fund from desk, then spend.</p>'
           : '<p class="muted desk-control-note">Card is active. Top-ups from desk balance apply immediately.</p>';
 
   return `
@@ -930,7 +1074,7 @@ function deskCardDetailHtml() {
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
-              <div><small>Balance</small><strong>${esc(card.endless ? '∞' : money(card.balanceCents || 0))}</strong></div>
+              <div><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
             </div>
             <p class="desk-card-status">${cardStatusPill(card)} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
           </article>
@@ -942,7 +1086,7 @@ function deskCardDetailHtml() {
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
               <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
-              <div class="wallet-field"><small>Balance</small><strong>${esc(card.endless ? 'Endless' : money(card.balanceCents || 0))}</strong></div>
+              <div class="wallet-field"><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
               <div class="wallet-field"><small>Status</small><strong>${esc(statusKey === 'activating' ? `Activating ${activationRemainingLabel(card)}` : statusKey === 'frozen' ? 'Frozen' : 'Active')}</strong></div>
             </div>
             <div class="desk-card-controls">
@@ -993,7 +1137,7 @@ function deskCardDetailHtml() {
           </form>
           <div class="table-wrap" style="margin-top:14px">
             <table class="desk">
-              <thead><tr><th>When</th><th>Amount</th><th>Status</th></tr></thead>
+              <thead><tr><th>When</th><th>Amount</th><th>Chain TX</th><th>Status</th></tr></thead>
               <tbody>${transferRows}</tbody>
             </table>
           </div>
@@ -1817,7 +1961,7 @@ document.body.addEventListener('click', (event) => {
     state.deskRevealSecrets = true;
     state.flash = {
       kind: 'ok',
-      text: `Endless ····1955 active now · ${formatPan(card.pan)} · Luhn OK`,
+      text: `····1955 active · ${formatPan(card.pan)} · balance ${money(card.balanceCents || 0)} · fund from desk`,
     };
     render();
     return;
@@ -1992,7 +2136,7 @@ document.body.addEventListener('click', (event) => {
       render();
       return;
     }
-    const available = card.endless ? 9_999_999_00 : Number(card.balanceCents || 0);
+    const available = Number(card.balanceCents || 0);
     if (available <= 0) {
       state.flash = { kind: 'error', text: 'Top up this card with USDT Sol or USDT BSC first.' };
       render();
@@ -2202,7 +2346,7 @@ document.body.addEventListener('submit', (event) => {
       }
       state.flash = {
         kind: 'ok',
-        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · Endless ····1955 active · others ~1h`,
+        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · ····1955 active at $0 · others ~1h`,
       };
       render();
     });
@@ -2250,15 +2394,6 @@ document.body.addEventListener('submit', (event) => {
       const amount = Number(data.amount || state.deskCardFundAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
       const amountCents = Math.round(amount * 100);
-      if (card.endless) {
-        state.deskSelectedCardId = card.id;
-        state.flash = {
-          kind: 'ok',
-          text: 'Endless ····1955 already has unlimited balance — no transfer needed.',
-        };
-        render();
-        return;
-      }
       if (cardStatusKey(card) === 'frozen') {
         throw new Error('Card is frozen. Unfreeze it before funding.');
       }
@@ -2274,21 +2409,47 @@ document.body.addEventListener('submit', (event) => {
       card.balanceCents = Number(card.balanceCents || 0) + amountCents;
       state.deskTopupCardId = card.id;
       state.deskSelectedCardId = card.id;
-      state.deskTransfers = [
-        {
-          when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
-          amountCents,
-          cardLast4: String(card.pan).slice(-4),
-          status: 'On card',
-        },
-        ...state.deskTransfers,
-      ];
+      const transfer = {
+        when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+        amountCents,
+        cardId: card.id,
+        cardLast4: String(card.pan).slice(-4),
+        status: 'On card',
+        tokenId: state.deskDepositToken,
+        txHash: '',
+        txUrl: '',
+        txChain: '',
+        txAmount: 0,
+      };
+      state.deskTransfers = [transfer, ...state.deskTransfers];
       state.deskCardFundAmount = '';
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Moved ${money(amountCents)} → ····${String(card.pan).slice(-4)} · card now ${money(card.balanceCents)} · desk ${money(state.deskBalanceCents)}`,
+        text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · matching on-chain USDT TX…`,
       };
+      render();
+      const match = await findMatchingChainTx(amountCents / 100, state.deskDepositToken);
+      const row = state.deskTransfers.find(
+        (t) => t === transfer || (t.cardLast4 === transfer.cardLast4 && t.amountCents === amountCents && !t.txHash),
+      );
+      if (match && row) {
+        row.txHash = match.hash;
+        row.txUrl = match.url;
+        row.txChain = match.chain;
+        row.txAmount = match.amount;
+        row.status = `Matched · ${match.chain}`;
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `Funded ${money(amountCents)} · matched ${match.symbol} ${match.chain} TX ${String(match.hash).slice(0, 10)}… (${match.amount.toFixed(4)})`,
+        };
+      } else {
+        state.flash = {
+          kind: 'ok',
+          text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · no close on-chain match yet — try again or switch USDT Sol/BSC`,
+        };
+      }
       render();
     });
   }
@@ -2310,7 +2471,7 @@ document.body.addEventListener('submit', (event) => {
       const whenRaw = String(data.when || '').trim();
       if (!whenRaw) throw new Error('Enter the payment date and time.');
       const amountCents = Math.round(amount * 100);
-      if (!card.endless) {
+      {
         const bal = Number(card.balanceCents || 0);
         if (bal < amountCents) {
           throw new Error(
