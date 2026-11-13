@@ -1,6 +1,6 @@
 /** G Cards EU bank-style gateway — TEB / RBKO / NLB completion for website-issued cards. */
 (function () {
-  const LEDGER_KEY = 'gcards-desk-ledger-v7';
+  const LEDGER_KEY = 'gcards-desk-ledger-v8';
   const PAY_KEY = 'gcards-pay-intent-v1';
 
   const BANKS = [
