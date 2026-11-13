@@ -647,21 +647,24 @@ function ensureEndless1955Card() {
       existing.ready = true;
       existing.activatesAt = 0;
     }
-    // Delete every other card — only 1955 remains.
-    state.deskCards = [existing];
+    // Keep primary + any other issued cards.
+    const others = state.deskCards.filter((c) => c !== existing && c.id !== existing.id);
+    state.deskCards = [existing, ...others];
     saveDeskLedger();
     return existing;
   }
   const card = makeIssuedCard({ brand: 'mastercard', endless: true });
-  state.deskCards = [card];
+  state.deskCards = [card, ...state.deskCards.filter((c) => c.id !== card.id)];
   saveDeskLedger();
   return card;
 }
 
-/** Seed €24,500 desk balance; keep only ····1955 on the desk. */
+/** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
 function ensureDeskDefaults() {
   const primary = ensureEndless1955Card();
-  state.deskCards = [primary];
+  if (!state.deskCards.some((c) => c.id === primary.id)) {
+    state.deskCards = [primary, ...state.deskCards];
+  }
   if (!state.deskBalanceSeeded) {
     state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
     primary.balanceCents = 0;
@@ -669,10 +672,16 @@ function ensureDeskDefaults() {
   }
   ensureExampleSpend(primary);
   syncCardStatuses();
-  state.deskSelectedCardId = primary.id;
-  state.deskTopupCardId = primary.id;
-  state.deskDetailCardId = state.deskDetailCardId === primary.id ? primary.id : '';
-  state.spendDraft.cardId = primary.id;
+  if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
+    state.deskSelectedCardId = primary.id;
+  }
+  if (!state.deskCards.some((c) => c.id === state.deskTopupCardId)) {
+    state.deskTopupCardId = state.deskSelectedCardId || primary.id;
+  }
+  if (state.deskDetailCardId && !state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+    state.deskDetailCardId = '';
+  }
+  state.spendDraft.cardId = state.deskSelectedCardId || primary.id;
   if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
   saveDeskLedger();
 }
@@ -1032,34 +1041,39 @@ function deskHomeHtml() {
           const on = c.id === (card?.id || '') ? 'on' : '';
           const bal = money(c.balanceCents || 0);
           const key = cardStatusKey(c);
+          const brandTag = c.endless ? '1955' : (c.brand === 'visa' ? 'Visa' : 'MC');
+          const statusLabel =
+            key === 'frozen' ? 'Frozen' : key === 'activating' ? 'Activating' : 'Active';
           return `<button type="button" class="desk-balance-chip-btn ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}">
-            <small>1955 ····${esc(String(c.pan).slice(-4))}</small>
+            <small>${esc(brandTag)} ····${esc(String(c.pan).slice(-4))}</small>
             <strong>${esc(bal)}</strong>
-            <span class="desk-chip-status">${key === 'frozen' ? 'Frozen' : 'Active'}</span>
+            <span class="desk-chip-status">${esc(statusLabel)}</span>
           </button>`;
         })
         .join('')
     : '<p class="muted desk-empty-cards">No card on desk.</p>';
 
   const activationNote = `<aside class="desk-activation-note" role="status">
-          <p class="eyebrow">Single card</p>
-          <p><strong>Only ····1955</strong> · <span class="mono">${esc(PRIMARY_1955_PAN)}</span></p>
-          <p class="muted">All other cards are removed. Balance starts at €0 — fund from desk. Each top-up matches a live USDT chain TX.</p>
+          <p class="eyebrow">Cards</p>
+          <p><strong>Primary ····1955</strong> · <span class="mono">${esc(PRIMARY_1955_PAN)}</span></p>
+          <p class="muted">Create Visa or Mastercard anytime. New cards activate in ~1 hour, start at €0, then fund from desk.</p>
         </aside>`;
 
   return `
         <section class="desk-home-hero">
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
-            <h1>Card ····1955</h1>
-            <p class="lede desk-home-lede">One card on this desk. Fund from balance, then spend. Use Pay / History in the header.</p>
+            <h1>Cards</h1>
+            <p class="lede desk-home-lede">Keep ····1955 plus any cards you create. Fund from desk balance, then spend via Pay / History.</p>
             <label class="desk-card-menu-label">Card
               <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
                 ${menuOptions || '<option value="">No card</option>'}
               </select>
             </label>
             <div class="active-actions desk-home-actions">
-              <button class="primary" type="button" data-action="desk-ensure-endless">····1955</button>
+              <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${state.deskIssuing ? 'Creating…' : 'Create card'}</button>
+              <button class="ghost" type="button" data-action="desk-issue-new" data-brand="visa" ${state.deskIssuing ? 'disabled' : ''}>Visa</button>
+              <button class="ghost" type="button" data-action="desk-issue-new" data-brand="mastercard" ${state.deskIssuing ? 'disabled' : ''}>Mastercard</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
             </div>
           </div>
@@ -2123,16 +2137,38 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-issue-new') {
-    const card = ensureEndless1955Card();
-    ensureDeskDefaults();
-    state.deskTopupCardId = card.id;
-    state.deskSelectedCardId = card.id;
-    state.deskRevealSecrets = true;
-    state.flash = {
-      kind: 'ok',
-      text: `Only ····1955 is kept · ${formatPan(PRIMARY_1955_PAN)} · other cards deleted`,
-    };
-    render();
+    if (state.deskIssuing) return;
+    const brandHint = String(button.dataset.brand || '').toLowerCase();
+    run(async () => {
+      state.deskIssuing = true;
+      state.flash = { kind: 'ok', text: 'Creating card…' };
+      render();
+      ensureEndless1955Card();
+      await wait(280);
+      const card = makeIssuedCard(
+        brandHint === 'visa' || brandHint === 'mastercard' ? { brand: brandHint } : {},
+      );
+      const primary = state.deskCards.find((c) => c.endless) || ensureEndless1955Card();
+      state.deskCards = [
+        primary,
+        card,
+        ...state.deskCards.filter((c) => c.id !== primary.id && c.id !== card.id),
+      ];
+      state.deskIssuing = false;
+      state.deskTopupCardId = card.id;
+      state.deskSelectedCardId = card.id;
+      state.deskDetailCardId = card.id;
+      state.deskView = 'card';
+      state.deskRevealSecrets = true;
+      state.spendDraft.cardId = card.id;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Created ${card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)} · activating ~1h · balance €0 · fund after activation`,
+      };
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
     return;
   }
   if (action === 'desk-ensure-endless') {
@@ -2547,7 +2583,7 @@ document.body.addEventListener('submit', (event) => {
       }
       state.flash = {
         kind: 'ok',
-        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · only ····1955 · other cards deleted`,
+        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · ····1955 ready · Create card for Visa/MC`,
       };
       render();
     });
