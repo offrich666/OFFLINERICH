@@ -52,8 +52,15 @@ const CARD_ACTIVATE_MS = 60 * 60 * 1000; // ~1 hour
 const PRIMARY_1955_PAN = '5450200087251955';
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
-const SOLANA_RPC = 'https://api.mainnet-beta.solana.com';
-const BSC_RPC = 'https://bsc-dataseed.binance.org';
+const SOLANA_RPCS = [
+  'https://solana-rpc.publicnode.com',
+];
+const BSC_RPCS = [
+  'https://bsc-rpc.publicnode.com',
+  'https://1rpc.io/bnb',
+  'https://bsc-dataseed.binance.org',
+];
+const MIN_CHAIN_MATCH_AMOUNT = 0.01;
 const ERC20_TRANSFER_TOPIC =
   '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
 
@@ -603,49 +610,138 @@ function ensureDeskDefaults() {
   saveDeskLedger();
 }
 
-async function rpcJson(url, body) {
+async function rpcJson(url, body, timeoutMs = 12000) {
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!response.ok) throw new Error(`RPC ${response.status}`);
-  return response.json();
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json?.error) {
+    const msg = json?.error?.message || `RPC ${response.status}`;
+    throw new Error(msg);
+  }
+  return json;
 }
 
-/** Find a recent on-chain USDT transfer close to the funded USD amount. */
-async function findMatchingChainTx(amountUsd, tokenId) {
-  const target = Number(amountUsd);
-  if (!Number.isFinite(target) || target <= 0) return null;
-  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
-  const tolerance = Math.max(0.25, target * 0.08);
-
-  if (token.id === 'USDT_BSC') {
+async function rpcJsonFirst(urls, body, timeoutMs = 12000) {
+  let lastError = null;
+  for (const url of urls) {
     try {
-      const blockJson = await rpcJson(BSC_RPC, { jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] });
-      const latest = parseInt(String(blockJson.result || '0x0'), 16);
-      const fromBlock = `0x${Math.max(0, latest - 80).toString(16)}`;
-      const logsJson = await rpcJson(BSC_RPC, {
+      return await rpcJson(url, body, timeoutMs);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('All RPCs failed');
+}
+
+function acceptChainMatch(best, target, tolerance) {
+  if (!best) return null;
+  const maxDiff = Math.max(tolerance, Math.min(25, Math.max(2, target * 0.35)));
+  return best.diff <= maxDiff ? best : null;
+}
+
+async function findSolanaUsdtMatch(target, tolerance) {
+  const sigJson = await rpcJsonFirst(SOLANA_RPCS, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'getSignaturesForAddress',
+    params: [USDT_SOL_MINT, { limit: 40 }],
+  });
+  const sigs = (Array.isArray(sigJson.result) ? sigJson.result : [])
+    .filter((row) => row?.signature && !row.err)
+    .slice(0, 40);
+  let best = null;
+  for (let i = 0; i < sigs.length; i += 5) {
+    const batch = sigs.slice(i, i + 5);
+    const txs = await Promise.all(
+      batch.map((row) =>
+        rpcJsonFirst(SOLANA_RPCS, {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'getTransaction',
+          params: [row.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+        })
+          .then((txJson) => ({ row, txJson }))
+          .catch(() => null),
+      ),
+    );
+    for (const item of txs) {
+      if (!item) continue;
+      const meta = item.txJson.result?.meta;
+      if (!meta) continue;
+      const pre = meta.preTokenBalances || [];
+      const post = meta.postTokenBalances || [];
+      const seen = new Set();
+      for (const p of post) {
+        if (p.mint !== USDT_SOL_MINT) continue;
+        const before = pre.find((x) => x.accountIndex === p.accountIndex);
+        const afterAmt = Number(p.uiTokenAmount?.uiAmount || 0);
+        const beforeAmt = Number(before?.uiTokenAmount?.uiAmount || 0);
+        const delta = Math.abs(afterAmt - beforeAmt);
+        if (!(delta >= MIN_CHAIN_MATCH_AMOUNT)) continue;
+        const key = `${item.row.signature}:${delta.toFixed(6)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const diff = Math.abs(delta - target);
+        if (!best || diff < best.diff) {
+          best = {
+            diff,
+            hash: item.row.signature,
+            amount: delta,
+            chain: 'Solana',
+            symbol: 'USDT',
+            url: `https://solscan.io/tx/${item.row.signature}`,
+          };
+        }
+      }
+    }
+    if (best && best.diff <= 0.05) break;
+  }
+  return acceptChainMatch(best, target, tolerance);
+}
+
+async function findBscUsdtMatch(target, tolerance) {
+  const blockJson = await rpcJsonFirst(BSC_RPCS, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'eth_blockNumber',
+    params: [],
+  });
+  const latest = parseInt(String(blockJson.result || '0x0'), 16);
+  if (!Number.isFinite(latest) || latest <= 0) throw new Error('BSC block height unavailable');
+  let best = null;
+  // USDT on BSC is too busy for wide getLogs — scan recent blocks one at a time.
+  for (let block = latest; block >= latest - 24; block -= 1) {
+    const hex = `0x${block.toString(16)}`;
+    let logs = [];
+    try {
+      const logsJson = await rpcJsonFirst(BSC_RPCS, {
         jsonrpc: '2.0',
         id: 2,
         method: 'eth_getLogs',
         params: [
           {
             address: USDT_BSC_CONTRACT,
-            fromBlock,
-            toBlock: 'latest',
+            fromBlock: hex,
+            toBlock: hex,
             topics: [ERC20_TRANSFER_TOPIC],
           },
         ],
       });
-      const logs = Array.isArray(logsJson.result) ? logsJson.result : [];
-      let best = null;
-      for (const log of logs.slice(-40).reverse()) {
+      logs = Array.isArray(logsJson.result) ? logsJson.result : [];
+    } catch {
+      continue;
+    }
+    for (const log of logs) {
+      try {
         const raw = BigInt(log.data || '0x0');
         const amount = Number(raw) / 1e18;
+        if (!(amount >= MIN_CHAIN_MATCH_AMOUNT) || !Number.isFinite(amount)) continue;
         const diff = Math.abs(amount - target);
-        if (diff <= tolerance && (!best || diff < best.diff)) {
+        if (!best || diff < best.diff) {
           best = {
             diff,
             hash: log.transactionHash,
@@ -655,61 +751,57 @@ async function findMatchingChainTx(amountUsd, tokenId) {
             url: `https://bscscan.com/tx/${log.transactionHash}`,
           };
         }
+      } catch {
+        /* skip bad log */
       }
-      if (best) return best;
-    } catch {
-      /* fall through */
+    }
+    if (best && best.diff <= 0.05) break;
+  }
+  return acceptChainMatch(best, target, tolerance);
+}
+
+/** Find a recent on-chain USDT transfer close to the funded USD amount. */
+async function findMatchingChainTx(amountUsd, tokenId) {
+  const target = Number(amountUsd);
+  if (!Number.isFinite(target) || target <= 0) {
+    return { ok: false, reason: 'Invalid top-up amount.' };
+  }
+  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
+  const tolerance = Math.max(0.5, target * 0.12);
+  const errors = [];
+
+  if (token.id === 'USDT_BSC') {
+    try {
+      const match = await findBscUsdtMatch(target, tolerance);
+      if (match) return { ok: true, ...match };
+      errors.push('No close USDT transfer in the last ~12 BSC blocks.');
+    } catch (error) {
+      errors.push(`BSC RPC: ${error?.message || error}`);
     }
   }
 
-  // Default / fallback: Solana USDT mint recent txs
   try {
-    const sigJson = await rpcJson(SOLANA_RPC, {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getSignaturesForAddress',
-      params: [USDT_SOL_MINT, { limit: 28 }],
-    });
-    const sigs = Array.isArray(sigJson.result) ? sigJson.result : [];
-    let best = null;
-    for (const row of sigs) {
-      if (!row?.signature || row.err) continue;
-      const txJson = await rpcJson(SOLANA_RPC, {
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'getTransaction',
-        params: [row.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
-      });
-      const meta = txJson.result?.meta;
-      if (!meta) continue;
-      const pre = meta.preTokenBalances || [];
-      const post = meta.postTokenBalances || [];
-      for (const p of post) {
-        if (p.mint !== USDT_SOL_MINT) continue;
-        const before = pre.find((x) => x.accountIndex === p.accountIndex);
-        const afterAmt = Number(p.uiTokenAmount?.uiAmount || 0);
-        const beforeAmt = Number(before?.uiTokenAmount?.uiAmount || 0);
-        const delta = Math.abs(afterAmt - beforeAmt);
-        if (!(delta > 0)) continue;
-        const diff = Math.abs(delta - target);
-        if (!best || diff < best.diff) {
-          best = {
-            diff,
-            hash: row.signature,
-            amount: delta,
-            chain: 'Solana',
-            symbol: 'USDT',
-            url: `https://solscan.io/tx/${row.signature}`,
-          };
-        }
-      }
-      if (best && best.diff <= 0.02) break;
-    }
-    if (best && best.diff <= Math.max(tolerance, 1)) return best;
-  } catch {
-    /* ignore */
+    const match = await findSolanaUsdtMatch(target, tolerance);
+    if (match) return { ok: true, ...match };
+    errors.push('No close USDT transfer in recent Solana mint activity.');
+  } catch (error) {
+    errors.push(`Solana RPC: ${error?.message || error}`);
   }
-  return null;
+
+  // If preferred chain failed, try the other once.
+  if (token.id !== 'USDT_BSC') {
+    try {
+      const match = await findBscUsdtMatch(target, tolerance);
+      if (match) return { ok: true, ...match };
+    } catch (error) {
+      errors.push(`BSC RPC: ${error?.message || error}`);
+    }
+  }
+
+  return {
+    ok: false,
+    reason: errors.filter(Boolean).slice(0, 2).join(' · ') || 'No matching on-chain USDT transfer found.',
+  };
 }
 
 async function refreshTokenPrices() {
@@ -2397,7 +2489,7 @@ document.body.addEventListener('submit', (event) => {
       const row = state.deskTransfers.find(
         (t) => t === transfer || (t.cardLast4 === transfer.cardLast4 && t.amountCents === amountCents && !t.txHash),
       );
-      if (match && row) {
+      if (match?.ok && row) {
         row.txHash = match.hash;
         row.txUrl = match.url;
         row.txChain = match.chain;
@@ -2410,8 +2502,8 @@ document.body.addEventListener('submit', (event) => {
         };
       } else {
         state.flash = {
-          kind: 'ok',
-          text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · no close on-chain match yet — try again or switch USDT Sol/BSC`,
+          kind: 'error',
+          text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · no TX match: ${match?.reason || 'RPC unavailable'}`,
         };
       }
       render();
