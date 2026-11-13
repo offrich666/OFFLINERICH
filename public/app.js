@@ -58,7 +58,7 @@ const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
-const CARD_ACTIVATE_MS = 60 * 60 * 1000; // ~1 hour
+const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
@@ -449,19 +449,14 @@ function syncCardStatuses() {
       }
       continue;
     }
-    const activatesAt = Number(card.activatesAt || 0);
-    if (activatesAt && Date.now() < activatesAt) {
-      if (card.status !== 'activating' || card.ready) {
-        card.status = 'activating';
-        card.ready = false;
-        changed = true;
-      }
-      continue;
-    }
-    if (card.status !== 'active' || !card.ready) {
+    if (card.status !== 'active' || !card.ready || Number(card.activatesAt || 0) !== 0) {
       card.status = 'active';
       card.ready = true;
-      if (activatesAt) card.activatesAt = 0;
+      card.activatesAt = 0;
+      if (card.label && String(card.label).toLowerCase().includes('activating')) {
+        const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
+        card.label = card.endless ? 'Active · ····1955' : `Active · ${brand}`;
+      }
       changed = true;
     }
   }
@@ -471,11 +466,7 @@ function syncCardStatuses() {
 function cardStatusKey(card) {
   if (!card) return 'inactive';
   if (card.frozen || card.status === 'frozen') return 'frozen';
-  if (card.endless) return 'active';
-  const activatesAt = Number(card.activatesAt || 0);
-  if (activatesAt && Date.now() < activatesAt) return 'activating';
-  if (card.status === 'activating' && activatesAt && Date.now() >= activatesAt) return 'active';
-  return card.status === 'active' || card.ready ? 'active' : 'activating';
+  return 'active';
 }
 
 function cardIsOperable(card) {
@@ -513,9 +504,7 @@ function deskCardMenuLabel(c) {
     ? '1955'
     : key === 'frozen'
       ? `${brand} frozen`
-      : key === 'activating'
-        ? `${brand} wait`
-        : brand;
+      : brand;
   return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
@@ -615,12 +604,12 @@ function makeIssuedCard(options = {}) {
     expiry: endless ? '12/35' : `${month}/${year}`,
     cvv: endless ? '195' : cvv,
     holder: endless ? 'G Cards Member' : 'G Cards Member',
-    status: endless ? 'active' : 'activating',
-    ready: Boolean(endless),
+    status: 'active',
+    ready: true,
     frozen: false,
     issuedAt,
-    activatesAt: endless ? 0 : issuedAt + CARD_ACTIVATE_MS,
-    label: endless ? `Active · ····1955` : `Activating · ${brand}`,
+    activatesAt: 0,
+    label: endless ? `Active · ····1955` : `Active · ${brand === 'visa' ? 'Visa' : 'Mastercard'}`,
     issuer: 'gcards',
     product: endless ? 'primary_1955' : 'website_virtual',
     panComplete: true,
@@ -1056,7 +1045,7 @@ function deskHomeHtml() {
   const activationNote = `<aside class="desk-activation-note" role="status">
           <p class="eyebrow">Cards</p>
           <p><strong>Primary ····1955</strong> · <span class="mono">${esc(PRIMARY_1955_PAN)}</span></p>
-          <p class="muted">Create Visa or Mastercard anytime. New cards activate in ~1 hour, start at €0, then fund from desk.</p>
+          <p class="muted">Create Visa or Mastercard anytime — both are active immediately at €0. Fund from desk, then spend.</p>
         </aside>`;
 
   return `
@@ -1218,13 +1207,11 @@ function deskCardDetailHtml() {
     : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
 
   const controlsNote =
-    statusKey === 'activating'
-      ? `<p class="muted desk-control-note">This card activates in ${esc(activationRemainingLabel(card) || '~1 hour')}. After activation you can top up and spend immediately.</p>`
-      : statusKey === 'frozen'
-        ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
-        : isPrimary1955(card)
-          ? '<p class="muted desk-control-note">····1955 is the active spend card. Balance is real — fund from desk, then spend.</p>'
-          : '<p class="muted desk-control-note">Card is active. Top-ups from desk balance apply immediately.</p>';
+    statusKey === 'frozen'
+      ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
+      : isPrimary1955(card)
+        ? '<p class="muted desk-control-note">····1955 is active. Balance is real — fund from desk, then spend.</p>'
+        : `<p class="muted desk-control-note">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} is active now. Top-ups from desk balance apply immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
@@ -1257,7 +1244,7 @@ function deskCardDetailHtml() {
               <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
               <div class="wallet-field"><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
-              <div class="wallet-field"><small>Status</small><strong>${esc(statusKey === 'activating' ? `Activating ${activationRemainingLabel(card)}` : statusKey === 'frozen' ? 'Frozen' : 'Active')}</strong></div>
+              <div class="wallet-field"><small>Status</small><strong>${esc(statusKey === 'frozen' ? 'Frozen' : 'Active')}</strong></div>
             </div>
             <div class="desk-card-controls">
               <p class="eyebrow">Controls</p>
@@ -1288,11 +1275,9 @@ function deskCardDetailHtml() {
             <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
           ${
-            statusKey === 'activating'
-              ? `<p class="lede">Funding unlocks when this card finishes activating (~1 hour). After that, top-ups apply immediately.</p>`
-              : statusKey === 'frozen'
-                ? `<p class="lede">Unfreeze the card before funding.</p>`
-                : ''
+            statusKey === 'frozen'
+              ? `<p class="lede">Unfreeze the card before funding.</p>`
+              : ''
           }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
@@ -2164,7 +2149,7 @@ document.body.addEventListener('click', (event) => {
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Created ${card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)} · activating ~1h · balance €0 · fund after activation`,
+        text: `Created ${card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)} · active now · balance €0 · fund from desk`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2201,25 +2186,14 @@ document.body.addEventListener('click', (event) => {
     const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
     if (!card) return;
     card.frozen = false;
-    if (card.endless) {
-      card.status = 'active';
-      card.ready = true;
-    } else {
-      const activatesAt = Number(card.activatesAt || 0);
-      if (activatesAt && Date.now() < activatesAt) {
-        card.status = 'activating';
-        card.ready = false;
-      } else {
-        card.status = 'active';
-        card.ready = true;
-        card.activatesAt = 0;
-      }
-    }
+    card.status = 'active';
+    card.ready = true;
+    card.activatesAt = 0;
     syncCardStatuses();
     saveDeskLedger();
     state.flash = {
       kind: 'ok',
-      text: `Unfrozen ····${String(card.pan).slice(-4)} · ${cardStatusKey(card) === 'activating' ? 'still activating' : 'active again'}`,
+      text: `Unfrozen ····${String(card.pan).slice(-4)} · active again`,
     };
     render();
     return;
@@ -2365,10 +2339,7 @@ document.body.addEventListener('click', (event) => {
     if (!cardIsOperable(card)) {
       state.flash = {
         kind: 'error',
-        text:
-          cardStatusKey(card) === 'frozen'
-            ? 'Card is frozen. Unfreeze it first.'
-            : `Card still activating (${activationRemainingLabel(card) || '~1h'}).`,
+        text: 'Card is frozen. Unfreeze it first.',
       };
       render();
       return;
@@ -2634,11 +2605,6 @@ document.body.addEventListener('submit', (event) => {
       if (cardStatusKey(card) === 'frozen') {
         throw new Error('Card is frozen. Unfreeze it before funding.');
       }
-      if (cardStatusKey(card) === 'activating') {
-        throw new Error(
-          `Card still activating (${activationRemainingLabel(card) || '~1h'}). After activation you can top up immediately.`,
-        );
-      }
       if (state.deskBalanceCents < amountCents) {
         throw new Error(`Desk balance is only ${money(state.deskBalanceCents)}. Top up balance first.`);
       }
@@ -2696,11 +2662,6 @@ document.body.addEventListener('submit', (event) => {
       const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
       if (!card) throw new Error('Choose a card for this payment.');
       if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
-      if (cardStatusKey(card) === 'activating') {
-        throw new Error(
-          `Card still activating (${activationRemainingLabel(card) || '~1h'}). Spending starts after activation.`,
-        );
-      }
       const amount = Number(data.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a spend amount greater than zero.');
       const merchant = String(data.merchant || '').trim();
