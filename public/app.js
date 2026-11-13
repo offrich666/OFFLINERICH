@@ -43,11 +43,13 @@ const state = {
   spendFilterCardId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
+  /** USD→EUR FX used to credit desk balance from USDT deposits. */
+  usdToEur: 0.92,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
 };
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
-const DESK_SEED_BALANCE_CENTS = 2_450_000; // $24,500
+const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 60 * 60 * 1000; // ~1 hour
 const PRIMARY_1955_PAN = '5450200087251955';
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
@@ -278,7 +280,26 @@ function esc(value) {
 }
 
 function money(cents) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((cents || 0) / 100);
+  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format((cents || 0) / 100);
+}
+
+function usdToEurRate() {
+  const rate = Number(state.usdToEur);
+  return Number.isFinite(rate) && rate > 0 ? rate : 0.92;
+}
+
+function tokenPriceEur(tokenOrUsd) {
+  const usd = typeof tokenOrUsd === 'number' ? tokenOrUsd : Number(tokenOrUsd?.usd ?? 1);
+  return (Number.isFinite(usd) && usd > 0 ? usd : 1) * usdToEurRate();
+}
+
+/** Convert a desk EUR amount into approximate USDT for on-chain TX matching. */
+function eurToUsdtAmount(amountEur, tokenId) {
+  const eur = Number(amountEur);
+  if (!Number.isFinite(eur) || eur <= 0) return 0;
+  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
+  const eurPerToken = tokenPriceEur(token);
+  return eurPerToken > 0 ? eur / eurPerToken : eur;
 }
 
 async function api(path, options = {}) {
@@ -593,7 +614,7 @@ function ensureEndless1955Card() {
   return card;
 }
 
-/** Seed $24,500 desk balance; keep only ····1955 on the desk. */
+/** Seed €24,500 desk balance; keep only ····1955 on the desk. */
 function ensureDeskDefaults() {
   const primary = ensureEndless1955Card();
   state.deskCards = [primary];
@@ -760,9 +781,9 @@ async function findBscUsdtMatch(target, tolerance) {
   return acceptChainMatch(best, target, tolerance);
 }
 
-/** Find a recent on-chain USDT transfer close to the funded USD amount. */
-async function findMatchingChainTx(amountUsd, tokenId) {
-  const target = Number(amountUsd);
+/** Find a recent on-chain USDT transfer close to the funded EUR amount (converted to USDT). */
+async function findMatchingChainTx(amountEur, tokenId) {
+  const target = eurToUsdtAmount(amountEur, tokenId);
   if (!Number.isFinite(target) || target <= 0) {
     return { ok: false, reason: 'Invalid top-up amount.' };
   }
@@ -804,13 +825,29 @@ async function findMatchingChainTx(amountUsd, tokenId) {
   };
 }
 
-async function refreshTokenPrices() {
-  const ids = DESK_DEPOSIT_TOKENS.map((t) => t.llama).join(',');
+async function refreshFxRate() {
   try {
-    const response = await fetch(`https://coins.llama.fi/prices/current/${ids}`, {
+    const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR', {
       signal: AbortSignal.timeout(8000),
     });
     const json = await response.json();
+    const rate = Number(json?.rates?.EUR);
+    if (Number.isFinite(rate) && rate > 0) state.usdToEur = rate;
+  } catch {
+    /* keep last known usdToEur */
+  }
+}
+
+async function refreshTokenPrices() {
+  const ids = DESK_DEPOSIT_TOKENS.map((t) => t.llama).join(',');
+  try {
+    const [priceRes] = await Promise.all([
+      fetch(`https://coins.llama.fi/prices/current/${ids}`, {
+        signal: AbortSignal.timeout(8000),
+      }),
+      refreshFxRate(),
+    ]);
+    const json = await priceRes.json();
     const coins = json?.coins || {};
     for (const token of DESK_DEPOSIT_TOKENS) {
       const price = Number(coins[token.llama]?.price);
@@ -822,6 +859,7 @@ async function refreshTokenPrices() {
     for (const token of DESK_DEPOSIT_TOKENS) {
       token.usd = state.tokenPrices[token.id] || 1;
     }
+    await refreshFxRate().catch(() => {});
   }
 }
 
@@ -920,8 +958,8 @@ function deskHomeHtml() {
   const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
   const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
   const amountNum = Number(state.deskDepositAmount);
-  const priceUsd = Number(selected.usd) || 1;
-  const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * priceUsd : 0;
+  const priceEur = tokenPriceEur(selected);
+  const creditEur = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * priceEur : 0;
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
@@ -931,7 +969,7 @@ function deskHomeHtml() {
   const tokenButtons = DESK_DEPOSIT_TOKENS.map(
     (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
         <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.chain)}</span></span>
-        <span>$${Number(t.usd || 1).toFixed(4)}</span>
+        <span>€${tokenPriceEur(t).toFixed(4)}</span>
       </button>`,
   ).join('');
 
@@ -960,7 +998,7 @@ function deskHomeHtml() {
   const activationNote = `<aside class="desk-activation-note" role="status">
           <p class="eyebrow">Single card</p>
           <p><strong>Only ····1955</strong> · <span class="mono">${esc(PRIMARY_1955_PAN)}</span></p>
-          <p class="muted">All other cards are removed. Balance starts at $0 — fund from desk. Each top-up matches a live USDT chain TX.</p>
+          <p class="muted">All other cards are removed. Balance starts at €0 — fund from desk. Each top-up matches a live USDT chain TX.</p>
         </aside>`;
 
   return `
@@ -1014,17 +1052,17 @@ function deskHomeHtml() {
               </div>
               <div class="desk-balance-chip">
                 <small>USDT · ${esc(selected.chain)}</small>
-                <strong>$${priceUsd.toFixed(4)}</strong>
+                <strong>€${priceEur.toFixed(4)}</strong>
               </div>
             </div>
             <div class="desk-token-grid desk-token-grid-2">${tokenButtons}</div>
             <form id="desk-deposit-form" class="desk-deposit-form desk-fund-form">
-              <label>Amount
+              <label>Amount (USDT)
                 <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
               </label>
               <div class="desk-credit-preview">
-                <small>To desk</small>
-                <strong>${esc(money(Math.round(creditUsd * 100)))}</strong>
+                <small>To desk (EUR)</small>
+                <strong>${esc(money(Math.round(creditEur * 100)))}</strong>
               </div>
               <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>${state.deskDepositBusy ? '…' : 'Top up'}</button>
             </form>
@@ -1052,7 +1090,7 @@ function deskHomeHtml() {
                     .join('') || '<option value="">Issue first</option>'
                 }</select>
               </label>
-              <label>Amount
+              <label>Amount (EUR)
                 <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
               </label>
               <div class="desk-credit-preview">
@@ -1061,7 +1099,7 @@ function deskHomeHtml() {
               </div>
               <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
             </form>
-            <p class="muted desk-fund-hint">Fund ····1955 from desk. After fund we match a live USDT chain TX to the amount.</p>
+            <p class="muted desk-fund-hint">Fund ····1955 from desk (EUR). After fund we match a live USDT chain TX to the EUR amount.</p>
           </section>
         </section>
 
@@ -1069,7 +1107,7 @@ function deskHomeHtml() {
           <article class="stat"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
           <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>USDT</small><strong>$${Number(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
+          <article class="stat"><small>USDT</small><strong>€${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
         </section>`;
 }
 
@@ -1198,7 +1236,7 @@ function deskCardDetailHtml() {
           }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
-            <label>Amount
+            <label>Amount (EUR)
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required ${canFund ? '' : 'disabled'} />
             </label>
             <div class="desk-credit-preview">
@@ -1252,7 +1290,7 @@ function deskPaymentsHtml() {
             <label>Merchant / place
               <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
             </label>
-            <label>Amount (USD)
+            <label>Amount (EUR)
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
             </label>
             <label>Date &amp; time
@@ -2142,7 +2180,7 @@ document.body.addEventListener('click', (event) => {
       await refreshTokenPrices();
       state.flash = {
         kind: 'ok',
-        text: `Prices · USDT Sol $${Number(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · USDT BSC $${Number(state.tokenPrices.USDT_BSC || 1).toFixed(4)}`,
+        text: `Prices · USDT Sol €${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · USDT BSC €${tokenPriceEur(state.tokenPrices.USDT_BSC || 1).toFixed(4)} · FX ${usdToEurRate().toFixed(4)}`,
       };
       render();
     });
@@ -2416,18 +2454,18 @@ document.body.addEventListener('submit', (event) => {
       state.deskDepositAmount = String(amount);
       render();
       await refreshTokenPrices();
-      const price = Number(token.usd) || 1;
-      const creditCents = Math.round(amount * price * 100);
+      const priceEur = tokenPriceEur(token);
+      const creditCents = Math.round(amount * priceEur * 100);
       state.deskBalanceCents = Number(state.deskBalanceCents || 0) + creditCents;
       const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
       state.deskDeposits = [
         {
           when,
           token: `${token.symbol} · ${token.chain}`,
-          amount: `${amount} @ $${price.toFixed(4)}`,
+          amount: `${amount} @ €${priceEur.toFixed(4)}`,
           creditCents,
           status: 'To balance',
-          price,
+          price: priceEur,
         },
         ...state.deskDeposits,
       ];
@@ -2436,7 +2474,7 @@ document.body.addEventListener('submit', (event) => {
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Desk balance +${money(creditCents)} · ${token.symbol} ${token.chain} @ $${price.toFixed(4)} · now ${money(state.deskBalanceCents)}`,
+        text: `Desk balance +${money(creditCents)} · ${token.symbol} ${token.chain} @ €${priceEur.toFixed(4)} · now ${money(state.deskBalanceCents)}`,
       };
       render();
       document.getElementById('desk-card-fund')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
