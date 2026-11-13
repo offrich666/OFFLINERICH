@@ -37,6 +37,8 @@ const state = {
   deskCardFundAmount: '',
   deskDetailCardId: '',
   deskSelectedCardId: '',
+  /** @type {'home' | 'card' | 'payments'} */
+  deskView: 'home',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
@@ -264,6 +266,7 @@ function deskShellHtml(mainHtml) {
   const flash = state.flash
     ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
+  const view = state.deskView || 'home';
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar desk-bar-fit">
         <div class="wrap bar-in desk-bar-in">
@@ -271,9 +274,12 @@ function deskShellHtml(mainHtml) {
             <div class="mark light">G Cards <span>EU</span></div>
             <span class="desk-bar-balance" title="Desk balance">${esc(money(state.deskBalanceCents))}</span>
           </div>
+          <nav class="desk-bar-nav" aria-label="Desk">
+            <button type="button" class="desk-nav-btn ${view === 'home' || view === 'card' ? 'on' : ''}" data-action="desk-view-home">Cards</button>
+            <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
+          </nav>
           <div class="desk-bar-actions">
-            <span class="desk-bar-meta" title="On cards">${esc(money(cardsOnCardsCents()))} on cards</span>
-            <span class="pill desk-build-pill" title="Build">p</span>
+            <span class="pill desk-build-pill" title="Build">q</span>
             <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Out</button>
           </div>
         </div>
@@ -460,9 +466,17 @@ function architectureSrc() {
 
 /** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
-  if (state.deskDetailCardId && state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+  if (state.deskView === 'payments') {
+    return deskShellHtml(deskPaymentsHtml());
+  }
+  if (
+    state.deskView === 'card'
+    && state.deskDetailCardId
+    && state.deskCards.some((c) => c.id === state.deskDetailCardId)
+  ) {
     return deskShellHtml(deskCardDetailHtml());
   }
+  state.deskView = 'home';
   return deskShellHtml(deskHomeHtml());
 }
 
@@ -518,7 +532,7 @@ function deskHomeHtml() {
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
             <h1>Cards &amp; balances</h1>
-            <p class="lede desk-home-lede">Select a card to check its balance. Open it for details, payments, and transactions.</p>
+            <p class="lede desk-home-lede">Select a card to check its balance. Open for card details — use <strong>Pay</strong> in the header to log spends.</p>
             <label class="desk-card-menu-label">Card
               <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
                 ${menuOptions || '<option value="">Issue a card first</option>'}
@@ -530,6 +544,7 @@ function deskHomeHtml() {
               </button>
               <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
+              <button class="ghost" type="button" data-action="desk-view-payments">Add payment</button>
             </div>
           </div>
           <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
@@ -627,11 +642,12 @@ function deskCardDetailHtml() {
   const card = state.deskCards.find((c) => c.id === state.deskDetailCardId) || deskActiveCard();
   if (!card) {
     state.deskDetailCardId = '';
+    state.deskView = 'home';
     return deskHomeHtml();
   }
+  state.deskView = 'card';
   state.deskSelectedCardId = card.id;
   state.deskTopupCardId = card.id;
-  state.spendDraft.cardId = card.id;
   const brand = String(card.brand || 'mastercard').toLowerCase();
   const panShown = state.deskRevealSecrets
     ? formatPan(card.pan)
@@ -641,31 +657,13 @@ function deskCardDetailHtml() {
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
-  if (!state.spendDraft.when) {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    state.spendDraft.when = now.toISOString().slice(0, 16);
-  }
-  const detailSpends = state.deskSpends.filter((s) => s.cardLast4 === last4);
-  const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4);
+  const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4).slice(0, 6);
   const menuOptions = state.deskCards
     .map(
       (c) =>
         `<option value="${esc(c.id)}" ${c.id === card.id ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
     )
     .join('');
-
-  const spendRows = detailSpends.length
-    ? detailSpends
-        .map(
-          (s) => `<tr>
-            <td>${esc(s.when)}</td>
-            <td>${esc(s.merchant)}</td>
-            <td>${esc(money(s.amountCents))}</td>
-          </tr>`,
-        )
-        .join('')
-    : '<tr><td colspan="3" class="muted">No payments on this card yet.</td></tr>';
 
   const transferRows = detailTransfers.length
     ? detailTransfers
@@ -677,7 +675,7 @@ function deskCardDetailHtml() {
           </tr>`,
         )
         .join('')
-    : '<tr><td colspan="3" class="muted">No funds moved onto this card yet.</td></tr>';
+    : '<tr><td colspan="3" class="muted">No funds onto this card yet.</td></tr>';
 
   return `
         <section class="desk-detail-top">
@@ -713,6 +711,7 @@ function deskCardDetailHtml() {
             </div>
             <div class="active-actions">
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
+              <button class="ghost" type="button" data-action="desk-view-payments">Log a payment</button>
               <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}">Pay TEB</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}">RBKO</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}">NLB</button>
@@ -745,31 +744,87 @@ function deskCardDetailHtml() {
               <tbody>${transferRows}</tbody>
             </table>
           </div>
+        </section>`;
+}
+
+function deskPaymentsHtml() {
+  const card =
+    state.deskCards.find((c) => c.id === (state.spendDraft.cardId || state.deskSelectedCardId))
+    || deskActiveCard();
+  if (card && !state.spendDraft.cardId) state.spendDraft.cardId = card.id;
+  if (!state.spendDraft.when) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    state.spendDraft.when = now.toISOString().slice(0, 16);
+  }
+  const cardOptions = state.deskCards
+    .map(
+      (c) =>
+        `<option value="${esc(c.id)}" ${c.id === (state.spendDraft.cardId || '') ? 'selected' : ''}>${esc(
+          deskCardMenuLabel(c),
+        )}</option>`,
+    )
+    .join('');
+  const spendRows = state.deskSpends.length
+    ? state.deskSpends
+        .map(
+          (s) => `<tr>
+            <td>${esc(s.when)}</td>
+            <td>${esc(s.merchant)}</td>
+            <td>${esc(money(s.amountCents))}</td>
+            <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
+            <td><span class="pill">${esc(s.network || 'card')}</span></td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="5" class="muted">No payments logged yet.</td></tr>';
+
+  return `
+        <section class="desk-payments-hero">
+          <div class="desk-home-copy">
+            <p class="kicker launch-kicker">Ledger</p>
+            <h1>Add payment</h1>
+            <p class="lede desk-home-lede">Log where and when you spent — separate from card details. Choose a card, merchant, amount, and time.</p>
+          </div>
         </section>
 
         <section class="desk-deposit" id="desk-spend">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">This card</p>
-              <h2>Add payment</h2>
+              <p class="eyebrow">New entry</p>
+              <h2>Payment</h2>
             </div>
+            <button class="ghost" type="button" data-action="desk-view-home">← Cards</button>
           </div>
           <form id="desk-spend-form" class="desk-deposit-form desk-spend-form">
-            <input type="hidden" name="cardId" value="${esc(card.id)}" />
-            <label>Merchant
-              <input name="merchant" placeholder="Gjirafa50, fuel…" value="${esc(state.spendDraft.merchant)}" required />
+            <label>Card
+              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
+                ${cardOptions || '<option value="">Issue a card first</option>'}
+              </select>
             </label>
-            <label>Amount
+            <label>Merchant / place
+              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
+            </label>
+            <label>Amount (USD)
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
             </label>
             <label>Date &amp; time
               <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
             </label>
-            <button class="primary" type="submit">Add</button>
+            <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save payment</button>
           </form>
-          <div class="table-wrap" style="margin-top:14px">
+        </section>
+
+        <section class="desk-deposit desk-compact">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">History</p>
+              <h2>All payments</h2>
+            </div>
+          </div>
+          <div class="table-wrap">
             <table class="desk">
-              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th></tr></thead>
+              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
               <tbody>${spendRows}</tbody>
             </table>
           </div>
@@ -1469,18 +1524,41 @@ document.body.addEventListener('click', (event) => {
     render();
     return;
   }
+  if (action === 'desk-view-home') {
+    state.deskView = 'home';
+    state.deskDetailCardId = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-view-payments') {
+    state.deskView = 'payments';
+    state.deskDetailCardId = '';
+    if (!state.spendDraft.cardId && state.deskSelectedCardId) {
+      state.spendDraft.cardId = state.deskSelectedCardId;
+    }
+    if (!state.spendDraft.when) {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      state.spendDraft.when = now.toISOString().slice(0, 16);
+    }
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   if (action === 'desk-select-card') {
     const id = button.dataset.id || '';
     state.deskSelectedCardId = id;
     state.deskTopupCardId = id;
     state.spendDraft.cardId = id;
-    if (state.deskDetailCardId) state.deskDetailCardId = id;
+    if (state.deskView === 'card') state.deskDetailCardId = id;
     render();
     return;
   }
   if (action === 'desk-open-detail') {
     const id = button.dataset.id || state.deskSelectedCardId || '';
     state.deskDetailCardId = id;
+    state.deskView = 'card';
     if (id) {
       state.deskSelectedCardId = id;
       state.deskTopupCardId = id;
@@ -1492,6 +1570,7 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'desk-close-detail') {
     state.deskDetailCardId = '';
+    state.deskView = 'home';
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -1880,6 +1959,7 @@ document.body.addEventListener('submit', (event) => {
       ];
       state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: state.spendDraft.when || '' };
       state.deskSelectedCardId = card.id;
+      state.deskView = 'payments';
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
