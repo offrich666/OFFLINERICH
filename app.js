@@ -327,21 +327,24 @@ function deskShellHtml(mainHtml) {
     ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
   const view = state.deskView || 'home';
+  const navHome = view === 'home' || view === 'card' ? 'on' : '';
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar desk-bar-fit">
-        <div class="wrap bar-in desk-bar-in">
+        <div class="wrap desk-bar-shell">
           <div class="desk-bar-brand">
             <div class="mark light">G Cards <span>EU</span></div>
-            <span class="desk-bar-balance" title="Desk balance">${esc(money(state.deskBalanceCents))}</span>
+            <div class="desk-bar-balance-block" title="Desk balance">
+              <small>Balance</small>
+              <strong>${esc(money(state.deskBalanceCents))}</strong>
+            </div>
           </div>
           <nav class="desk-bar-nav" aria-label="Desk">
-            <button type="button" class="desk-nav-btn ${view === 'home' || view === 'card' ? 'on' : ''}" data-action="desk-view-home">Cards</button>
+            <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
             <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
             <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
           </nav>
           <div class="desk-bar-actions">
-            <span class="pill desk-build-pill" title="Build">s</span>
-            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Out</button>
+            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
           </div>
         </div>
       </header>
@@ -596,7 +599,7 @@ function deskHomeHtml() {
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
             <h1>Cards &amp; balances</h1>
-            <p class="lede desk-home-lede">Select a card to check its balance. <strong>Pay</strong> to add a payment · <strong>History</strong> to review stored ones.</p>
+            <p class="lede desk-home-lede">Select a card to check its balance. Use the header to open Pay or History.</p>
             <label class="desk-card-menu-label">Card
               <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
                 ${menuOptions || '<option value="">Issue a card first</option>'}
@@ -608,8 +611,6 @@ function deskHomeHtml() {
               </button>
               <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
-              <button class="ghost" type="button" data-action="desk-view-payments">Pay</button>
-              <button class="ghost" type="button" data-action="desk-view-history">History</button>
             </div>
           </div>
           <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
@@ -776,8 +777,6 @@ function deskCardDetailHtml() {
             </div>
             <div class="active-actions">
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
-              <button class="ghost" type="button" data-action="desk-view-payments">Pay</button>
-              <button class="ghost" type="button" data-action="desk-view-history">History</button>
               <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}">Pay TEB</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}">RBKO</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}">NLB</button>
@@ -834,9 +833,9 @@ function deskPaymentsHtml() {
 
   return `
         <section class="desk-page-hero">
-          <p class="kicker launch-kicker">New entry</p>
-          <h1>Add payment</h1>
-          <p class="lede desk-home-lede">One page · one job. Save a payment here. Review everything later under <strong>History</strong>.</p>
+          <p class="kicker launch-kicker">Pay</p>
+          <h1>Record a payment</h1>
+          <p class="lede desk-home-lede">Enter the card, merchant, amount, and time. Saved entries appear under History.</p>
         </section>
 
         <section class="desk-deposit desk-page-panel" id="desk-spend">
@@ -856,8 +855,7 @@ function deskPaymentsHtml() {
               <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
             </label>
             <div class="desk-pay-actions">
-              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save payment</button>
-              <button class="ghost" type="button" data-action="desk-view-history">Open History</button>
+              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save</button>
             </div>
           </form>
         </section>`;
@@ -899,40 +897,33 @@ function deskHistoryHtml() {
         )
         .join('')
     : `<tr><td colspan="5" class="muted">${
-        filterId
-          ? 'No stored payments for this card.'
-          : 'No payments stored yet. Use Pay to add one — it will show up here.'
+        filterId ? 'No transactions for this card.' : 'No transactions yet.'
       }</td></tr>`;
 
   return `
         <section class="desk-page-hero">
-          <p class="kicker launch-kicker">Stored ledger</p>
+          <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">All saved payments on this device. Filter by card whenever you want to check.</p>
+          <p class="lede desk-home-lede">Stored payments on this device. Filter by card to review activity.</p>
         </section>
 
-        <section class="desk-deposit desk-page-panel" id="desk-stored-payments">
-          <div class="panel-head-inline">
+        <section class="desk-deposit desk-page-panel desk-history-panel" id="desk-stored-payments">
+          <div class="panel-head-inline desk-history-head">
             <div>
-              <p class="eyebrow">${storedSpends.length} shown</p>
+              <p class="eyebrow">${storedSpends.length} ${storedSpends.length === 1 ? 'entry' : 'entries'}</p>
               <h2>Transactions</h2>
             </div>
             <div class="desk-balance-chip">
-              <small>${filterId ? 'Filtered' : 'Total stored'}</small>
+              <small>${filterId ? 'Filtered total' : 'Total'}</small>
               <strong>${esc(money(storedTotal))}</strong>
             </div>
           </div>
-          <label class="desk-card-menu-label">Card filter
+          <label class="desk-card-menu-label desk-history-filter">Filter by card
             <select id="desk-spend-filter">
               ${filterOptions}
             </select>
           </label>
-          <div class="desk-pay-actions desk-history-actions">
-            <button class="primary" type="button" data-action="desk-view-payments">Add payment</button>
-            <button class="ghost" type="button" data-action="desk-view-home">← Cards</button>
-          </div>
-          <p class="muted desk-store-note">Saved in your browser · survives refresh · History is the only place to review them.</p>
-          <div class="table-wrap">
+          <div class="table-wrap desk-history-table">
             <table class="desk">
               <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
               <tbody>${spendRows}</tbody>
