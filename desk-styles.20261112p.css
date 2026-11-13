@@ -1179,3 +1179,35 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   .desk-main-fit { padding-top: 12px; }
   .capacity-stats { grid-template-columns: 1fr 1fr; }
 }
+
+/* Build q — Payments separate from card detail */
+.desk-bar-nav {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.desk-nav-btn {
+  border: 1px solid rgba(246, 241, 230, 0.28);
+  background: transparent;
+  color: rgba(246, 241, 230, 0.78);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.desk-nav-btn.on,
+.desk-nav-btn:hover {
+  background: rgba(231, 211, 164, 0.2);
+  color: #f6f1e6;
+  border-color: rgba(231, 211, 164, 0.45);
+}
+.desk-payments-hero { margin-bottom: 2px; }
+.desk-payments-hero .desk-home-copy { max-width: 640px; }
+@media (max-width: 860px) {
+  .desk-bar-in { gap: 8px; }
+  .desk-nav-btn { padding: 6px 10px; }
+  .desk-bar-meta { display: none; }
+}
