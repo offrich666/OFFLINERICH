@@ -1211,3 +1211,8 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   .desk-nav-btn { padding: 6px 10px; }
   .desk-bar-meta { display: none; }
 }
+
+.desk-store-note {
+  margin: 8px 0 12px;
+  font-size: 12px;
+}

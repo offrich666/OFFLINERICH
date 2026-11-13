@@ -39,12 +39,13 @@ const state = {
   deskSelectedCardId: '',
   /** @type {'home' | 'card' | 'payments'} */
   deskView: 'home',
+  spendFilterCardId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
 };
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v6';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v7';
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
 
@@ -83,7 +84,9 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   }
   if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
   if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
-  if (Array.isArray(data.deskSpends)) state.deskSpends = data.deskSpends;
+  if (Array.isArray(data.deskSpends)) {
+    state.deskSpends = data.deskSpends.map(normalizeStoredSpend).filter(Boolean);
+  }
   if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
   if (migrateHouse) {
     const onCards = cardsOnCardsCents();
@@ -94,6 +97,27 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   }
 }
 
+function normalizeStoredSpend(row) {
+  if (!row || typeof row !== 'object') return null;
+  const amountCents = Number(row.amountCents);
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return null;
+  const merchant = String(row.merchant || '').trim();
+  if (!merchant) return null;
+  const cardLast4 = String(row.cardLast4 || '').replace(/\D/g, '').slice(-4);
+  const whenIso = row.whenIso || row.createdAt || '';
+  return {
+    id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
+    when: String(row.when || ''),
+    whenIso: whenIso ? String(whenIso) : '',
+    merchant,
+    amountCents,
+    cardId: String(row.cardId || ''),
+    cardLast4,
+    network: String(row.network || 'card'),
+    createdAt: Number(row.createdAt) || Date.now(),
+  };
+}
+
 function loadDeskLedger() {
   try {
     try {
@@ -102,9 +126,20 @@ function loadDeskLedger() {
     } catch {
       /* ignore */
     }
-    const rawV6 = localStorage.getItem(DESK_LEDGER_KEY);
+    const rawV7 = localStorage.getItem(DESK_LEDGER_KEY);
+    if (rawV7) {
+      applyLedgerPayload(JSON.parse(rawV7));
+      return;
+    }
+    const rawV6 = localStorage.getItem('gcards-desk-ledger-v6');
     if (rawV6) {
       applyLedgerPayload(JSON.parse(rawV6));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v6');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV5 = localStorage.getItem('gcards-desk-ledger-v5');
@@ -134,6 +169,31 @@ function saveDeskLedger() {
         deskTransfers: state.deskTransfers,
       }),
     );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Re-read ledger from storage so Pay always shows the latest saved rows. */
+function reloadStoredSpends() {
+  try {
+    const raw = localStorage.getItem(DESK_LEDGER_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.deskSpends)) {
+      state.deskSpends = data.deskSpends.map(normalizeStoredSpend).filter(Boolean);
+    }
+    if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
+    if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
+    if (Array.isArray(data.deskCards) && data.deskCards.length) {
+      state.deskCards = data.deskCards
+        .filter((card) => panPassesLuhn(card?.pan))
+        .map((card) => ({
+          ...card,
+          balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
+          endless: Boolean(card.endless),
+        }));
+    }
   } catch {
     /* ignore */
   }
@@ -279,7 +339,7 @@ function deskShellHtml(mainHtml) {
             <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
           </nav>
           <div class="desk-bar-actions">
-            <span class="pill desk-build-pill" title="Build">q</span>
+            <span class="pill desk-build-pill" title="Build">r</span>
             <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Out</button>
           </div>
         </div>
@@ -748,6 +808,7 @@ function deskCardDetailHtml() {
 }
 
 function deskPaymentsHtml() {
+  reloadStoredSpends();
   const card =
     state.deskCards.find((c) => c.id === (state.spendDraft.cardId || state.deskSelectedCardId))
     || deskActiveCard();
@@ -765,26 +826,51 @@ function deskPaymentsHtml() {
         )}</option>`,
     )
     .join('');
-  const spendRows = state.deskSpends.length
-    ? state.deskSpends
+  const filterId = state.spendFilterCardId || '';
+  const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
+  const filterLast4 = filterCard ? String(filterCard.pan).slice(-4) : '';
+  const storedSpends = state.deskSpends.filter((s) => {
+    if (!filterId) return true;
+    if (s.cardId && s.cardId === filterId) return true;
+    return filterLast4 && s.cardLast4 === filterLast4;
+  });
+  const storedTotal = storedSpends.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const filterOptions = [
+    `<option value="" ${!filterId ? 'selected' : ''}>All cards · ${state.deskSpends.length} stored</option>`,
+    ...state.deskCards.map((c) => {
+      const last4 = String(c.pan).slice(-4);
+      const count = state.deskSpends.filter(
+        (s) => s.cardId === c.id || s.cardLast4 === last4,
+      ).length;
+      return `<option value="${esc(c.id)}" ${c.id === filterId ? 'selected' : ''}>${esc(
+        `${deskCardMenuLabel(c)} · ${count}`,
+      )}</option>`;
+    }),
+  ].join('');
+  const spendRows = storedSpends.length
+    ? storedSpends
         .map(
           (s) => `<tr>
             <td>${esc(s.when)}</td>
             <td>${esc(s.merchant)}</td>
-            <td>${esc(money(s.amountCents))}</td>
+            <td><strong>${esc(money(s.amountCents))}</strong></td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
             <td><span class="pill">${esc(s.network || 'card')}</span></td>
           </tr>`,
         )
         .join('')
-    : '<tr><td colspan="5" class="muted">No payments logged yet.</td></tr>';
+    : `<tr><td colspan="5" class="muted">${
+        filterId
+          ? 'No stored payments for this card yet. Save one above — it stays here.'
+          : 'No payments stored yet. Save one above — open Pay anytime to check them.'
+      }</td></tr>`;
 
   return `
         <section class="desk-payments-hero">
           <div class="desk-home-copy">
-            <p class="kicker launch-kicker">Ledger</p>
-            <h1>Add payment</h1>
-            <p class="lede desk-home-lede">Log where and when you spent — separate from card details. Choose a card, merchant, amount, and time.</p>
+            <p class="kicker launch-kicker">Stored ledger</p>
+            <h1>Payments</h1>
+            <p class="lede desk-home-lede">Every payment you save is kept on this device. Open <strong>Pay</strong> anytime to review or filter by card.</p>
           </div>
         </section>
 
@@ -792,7 +878,7 @@ function deskPaymentsHtml() {
           <div class="panel-head-inline">
             <div>
               <p class="eyebrow">New entry</p>
-              <h2>Payment</h2>
+              <h2>Add payment</h2>
             </div>
             <button class="ghost" type="button" data-action="desk-view-home">← Cards</button>
           </div>
@@ -815,13 +901,23 @@ function deskPaymentsHtml() {
           </form>
         </section>
 
-        <section class="desk-deposit desk-compact">
+        <section class="desk-deposit desk-compact" id="desk-stored-payments">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">History</p>
-              <h2>All payments</h2>
+              <p class="eyebrow">Stored · ${storedSpends.length} shown</p>
+              <h2>Check anytime</h2>
+            </div>
+            <div class="desk-balance-chip">
+              <small>${filterId ? 'Filtered total' : 'All stored'}</small>
+              <strong>${esc(money(storedTotal))}</strong>
             </div>
           </div>
+          <label class="desk-card-menu-label">Show card
+            <select id="desk-spend-filter">
+              ${filterOptions}
+            </select>
+          </label>
+          <p class="muted desk-store-note">Saved in your browser ledger · survives refresh · open Pay to check again.</p>
           <div class="table-wrap">
             <table class="desk">
               <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
@@ -1401,9 +1497,18 @@ document.body.addEventListener('change', (event) => {
     }
     render();
   }
+  if (target.id === 'desk-spend-filter') {
+    state.spendFilterCardId = target.value || '';
+    render();
+    document.getElementById('desk-stored-payments')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
   if (target.closest?.('#desk-card-fund-form') && target.name === 'cardId') {
     state.deskTopupCardId = target.value || '';
     state.deskSelectedCardId = state.deskTopupCardId;
+  }
+  if (target.closest?.('#desk-spend-form') && target.name === 'cardId') {
+    state.spendDraft.cardId = target.value || '';
+    state.deskSelectedCardId = state.spendDraft.cardId;
   }
 });
 
@@ -1534,6 +1639,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-view-payments') {
     state.deskView = 'payments';
     state.deskDetailCardId = '';
+    reloadStoredSpends();
     if (!state.spendDraft.cardId && state.deskSelectedCardId) {
       state.spendDraft.cardId = state.deskSelectedCardId;
     }
@@ -1946,26 +2052,33 @@ document.body.addEventListener('submit', (event) => {
         }
         card.balanceCents = bal - amountCents;
       }
-      const when = new Date(whenRaw).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
-      state.deskSpends = [
-        {
-          when,
-          merchant,
-          amountCents,
-          cardLast4: String(card.pan).slice(-4),
-          network: String(card.brand || 'card'),
-        },
-        ...state.deskSpends,
-      ];
+      const whenDate = new Date(whenRaw);
+      const when = whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      const whenIso = Number.isNaN(whenDate.getTime()) ? new Date().toISOString() : whenDate.toISOString();
+      const entry = {
+        id: `spend-${Date.now()}-${String(card.pan).slice(-4)}-${amountCents}`,
+        when,
+        whenIso,
+        merchant,
+        amountCents,
+        cardId: card.id,
+        cardLast4: String(card.pan).slice(-4),
+        network: String(card.brand || 'card'),
+        createdAt: Date.now(),
+      };
+      state.deskSpends = [entry, ...state.deskSpends];
       state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: state.spendDraft.when || '' };
       state.deskSelectedCardId = card.id;
+      state.spendFilterCardId = '';
       state.deskView = 'payments';
       saveDeskLedger();
+      reloadStoredSpends();
       state.flash = {
         kind: 'ok',
-        text: `Logged ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)}`,
+        text: `Stored ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)} · open Pay anytime to check`,
       };
       render();
+      document.getElementById('desk-stored-payments')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'client-form') {
