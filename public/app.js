@@ -41,6 +41,10 @@ const state = {
   /** @type {'home' | 'card' | 'payments' | 'history'} */
   deskView: 'home',
   spendFilterCardId: '',
+  spendFilterQuery: '',
+  spendFilterGateway: '',
+  spendFilterStatus: '',
+  spendFilterRange: 'all',
   spendDetailId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
@@ -139,6 +143,7 @@ function normalizeStoredSpend(row) {
   const gateway = String(row.gateway || PAYMENT_GATEWAYS[0]).trim() || PAYMENT_GATEWAYS[0];
   const status = String(row.status || 'Completed').trim() || 'Completed';
   const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
+  const threeDs = String(row.threeDs || 'not_required').trim() || 'not_required';
   return {
     id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
     when: String(row.when || ''),
@@ -151,8 +156,64 @@ function normalizeStoredSpend(row) {
     status,
     gateway,
     authNr,
+    threeDs,
     createdAt: Number(row.createdAt) || Date.now(),
   };
+}
+
+function threeDsLabel(value) {
+  const key = String(value || 'not_required').toLowerCase();
+  if (key === 'not_required' || key === 'frictionless' || key === 'skipped') {
+    return 'Not required';
+  }
+  return String(value || 'Not required');
+}
+
+function filteredDeskSpends() {
+  const filterId = state.spendFilterCardId || '';
+  const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
+  const filterLast4 = filterCard ? String(filterCard.pan).slice(-4) : '';
+  const query = String(state.spendFilterQuery || '').trim().toLowerCase();
+  const gateway = String(state.spendFilterGateway || '').trim();
+  const status = String(state.spendFilterStatus || '').trim().toLowerCase();
+  const range = String(state.spendFilterRange || 'all');
+  const now = Date.now();
+  const rangeMs =
+    range === 'today'
+      ? 24 * 60 * 60 * 1000
+      : range === '7d'
+        ? 7 * 24 * 60 * 60 * 1000
+        : range === '30d'
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+
+  return state.deskSpends.filter((s) => {
+    if (filterId) {
+      const cardMatch = (s.cardId && s.cardId === filterId) || (filterLast4 && s.cardLast4 === filterLast4);
+      if (!cardMatch) return false;
+    }
+    if (gateway && String(s.gateway || '') !== gateway) return false;
+    if (status && String(s.status || 'Completed').toLowerCase() !== status) return false;
+    if (rangeMs) {
+      const ts = Number(s.createdAt) || Date.parse(s.whenIso || '') || 0;
+      if (!ts || now - ts > rangeMs) return false;
+    }
+    if (query) {
+      const hay = [
+        s.merchant,
+        s.gateway,
+        s.authNr,
+        s.status,
+        s.cardLast4,
+        s.when,
+        threeDsLabel(s.threeDs),
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
 }
 
 function ensureExampleSpend(primary) {
@@ -175,6 +236,7 @@ function ensureExampleSpend(primary) {
       status: 'Completed',
       gateway: 'TEB BNP PARIBAS',
       authNr: '389274',
+      threeDs: 'not_required',
       createdAt: whenDate.getTime(),
     },
     ...state.deskSpends,
@@ -1211,7 +1273,7 @@ function deskCardDetailHtml() {
       ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
       : isPrimary1955(card)
         ? '<p class="muted desk-control-note">····1955 is active. Balance is real — fund from desk, then spend.</p>'
-        : `<p class="muted desk-control-note">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} is active now. Top-ups from desk balance apply immediately.</p>`;
+        : `<p class="muted desk-control-note">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} is active now. 3-D Secure is not required. Top-ups apply immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
@@ -1376,6 +1438,7 @@ function spendDetailHtml(spend) {
             <div><dt>Payment Gateway</dt><dd>${esc(spend.gateway || PAYMENT_GATEWAYS[0])}</dd></div>
             <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
             <div><dt>Amount</dt><dd><strong>${esc(amountPlain)}</strong></dd></div>
+            <div><dt>3-D Secure</dt><dd><span class="pill good">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
             <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
             <div><dt>Card</dt><dd>${esc(spend.cardLast4 ? `····${spend.cardLast4}` : '—')}</dd></div>
           </dl>
@@ -1384,53 +1447,87 @@ function spendDetailHtml(spend) {
 
 function deskHistoryHtml() {
   reloadStoredSpends();
-  const filterId = state.spendFilterCardId || '';
-  const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
-  const filterLast4 = filterCard ? String(filterCard.pan).slice(-4) : '';
-  const storedSpends = state.deskSpends.filter((s) => {
-    if (!filterId) return true;
-    if (s.cardId && s.cardId === filterId) return true;
-    return filterLast4 && s.cardLast4 === filterLast4;
-  });
+  const storedSpends = filteredDeskSpends();
   const storedTotal = storedSpends.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
   const selected =
     storedSpends.find((s) => s.id === state.spendDetailId)
     || state.deskSpends.find((s) => s.id === state.spendDetailId)
     || null;
-  const filterOptions = [
-    `<option value="" ${!filterId ? 'selected' : ''}>All cards · ${state.deskSpends.length} stored</option>`,
+  const filtersOn = Boolean(
+    state.spendFilterCardId
+      || state.spendFilterQuery
+      || state.spendFilterGateway
+      || state.spendFilterStatus
+      || (state.spendFilterRange && state.spendFilterRange !== 'all'),
+  );
+
+  const cardChips = [
+    `<button type="button" class="desk-filter-chip ${!state.spendFilterCardId ? 'on' : ''}" data-action="desk-filter-card" data-id="">All cards</button>`,
     ...state.deskCards.map((c) => {
       const last4 = String(c.pan).slice(-4);
-      const count = state.deskSpends.filter(
-        (s) => s.cardId === c.id || s.cardLast4 === last4,
-      ).length;
-      return `<option value="${esc(c.id)}" ${c.id === filterId ? 'selected' : ''}>${esc(
-        `${deskCardMenuLabel(c)} · ${count}`,
-      )}</option>`;
+      const brand = c.endless ? '1955' : c.brand === 'visa' ? 'Visa' : 'MC';
+      const on = c.id === state.spendFilterCardId ? 'on' : '';
+      return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-card" data-id="${esc(c.id)}">${esc(brand)} ····${esc(last4)}</button>`;
     }),
   ].join('');
+
+  const gatewayChips = [
+    `<button type="button" class="desk-filter-chip ${!state.spendFilterGateway ? 'on' : ''}" data-action="desk-filter-gateway" data-value="">All gateways</button>`,
+    ...PAYMENT_GATEWAYS.map((g) => {
+      const on = g === state.spendFilterGateway ? 'on' : '';
+      const short = g.split(' ')[0];
+      return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-gateway" data-value="${esc(g)}">${esc(short)}</button>`;
+    }),
+  ].join('');
+
+  const statusChips = [
+    ['', 'All status'],
+    ['Completed', 'Completed'],
+  ]
+    .map(
+      ([value, label]) =>
+        `<button type="button" class="desk-filter-chip ${String(state.spendFilterStatus || '') === value ? 'on' : ''}" data-action="desk-filter-status" data-value="${esc(value)}">${esc(label)}</button>`,
+    )
+    .join('');
+
+  const rangeChips = [
+    ['all', 'All time'],
+    ['today', 'Today'],
+    ['7d', '7 days'],
+    ['30d', '30 days'],
+  ]
+    .map(
+      ([value, label]) =>
+        `<button type="button" class="desk-filter-chip ${(state.spendFilterRange || 'all') === value ? 'on' : ''}" data-action="desk-filter-range" data-value="${esc(value)}">${esc(label)}</button>`,
+    )
+    .join('');
+
   const spendRows = storedSpends.length
     ? storedSpends
         .map((s) => {
           const on = s.id === state.spendDetailId ? 'is-open' : '';
+          const gatewayShort = String(s.gateway || '').split(' ')[0] || '—';
           return `<tr class="desk-tx-row ${on}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
-            <td>${esc(s.when)}</td>
-            <td><strong>${esc(s.merchant)}</strong></td>
-            <td><strong>${esc(money(s.amountCents))}</strong></td>
+            <td class="desk-tx-when">${esc(s.when)}</td>
+            <td>
+              <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
+              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')} · 3DS ${esc(threeDsLabel(s.threeDs))}</small>
+            </td>
+            <td class="desk-tx-amount"><strong>${esc(money(s.amountCents))}</strong></td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill">${esc(s.status || 'Completed')}</span></td>
+            <td><span class="pill good">${esc(s.status || 'Completed')}</span></td>
           </tr>`;
         })
         .join('')
     : `<tr><td colspan="5" class="muted">${
-        filterId ? 'No transactions for this card.' : 'No transactions yet.'
+        filtersOn ? 'No transactions match these filters.' : 'No transactions yet.'
       }</td></tr>`;
 
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Tap a transaction to open payment details (status, gateway, auth nr, amount).</p>
+          <p class="lede desk-home-lede">Search and filter payments. Tap a row for full details — 3-D Secure is not required on these cards.</p>
         </section>
 
         ${selected ? spendDetailHtml(selected) : ''}
@@ -1438,21 +1535,45 @@ function deskHistoryHtml() {
         <section class="desk-deposit desk-page-panel desk-history-panel" id="desk-stored-payments">
           <div class="panel-head-inline desk-history-head">
             <div>
-              <p class="eyebrow">${storedSpends.length} ${storedSpends.length === 1 ? 'entry' : 'entries'}</p>
+              <p class="eyebrow">${storedSpends.length} of ${state.deskSpends.length} ${state.deskSpends.length === 1 ? 'entry' : 'entries'}</p>
               <h2>Transactions</h2>
             </div>
             <div class="desk-balance-chip">
-              <small>${filterId ? 'Filtered total' : 'Total'}</small>
+              <small>${filtersOn ? 'Filtered total' : 'Total'}</small>
               <strong>${esc(money(storedTotal))}</strong>
             </div>
           </div>
-          <label class="desk-card-menu-label desk-history-filter">Filter by card
-            <select id="desk-spend-filter">
-              ${filterOptions}
-            </select>
-          </label>
+
+          <div class="desk-history-filters" id="desk-history-filters">
+            <label class="desk-history-search">
+              <span>Search</span>
+              <input id="desk-spend-search" type="search" placeholder="Merchant, auth, gateway…" value="${esc(state.spendFilterQuery)}" autocomplete="off" />
+            </label>
+            <div class="desk-filter-group">
+              <small>Card</small>
+              <div class="desk-filter-chips">${cardChips}</div>
+            </div>
+            <div class="desk-filter-group">
+              <small>Gateway</small>
+              <div class="desk-filter-chips">${gatewayChips}</div>
+            </div>
+            <div class="desk-filter-group">
+              <small>Period</small>
+              <div class="desk-filter-chips">${rangeChips}</div>
+            </div>
+            <div class="desk-filter-group">
+              <small>Status</small>
+              <div class="desk-filter-chips">${statusChips}</div>
+            </div>
+            ${
+              filtersOn
+                ? '<button type="button" class="ghost desk-filter-clear" data-action="desk-clear-spend-filters">Clear filters</button>'
+                : ''
+            }
+          </div>
+
           <div class="table-wrap desk-history-table">
-            <table class="desk">
+            <table class="desk desk-tx-table">
               <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Status</th></tr></thead>
               <tbody>${spendRows}</tbody>
             </table>
@@ -1991,6 +2112,7 @@ document.body.addEventListener('pointerout', (event) => {
   card.style.removeProperty('--ry');
 });
 
+let spendSearchTimer = 0;
 document.body.addEventListener('input', (event) => {
   if (event.target.id === 'client-search') {
     state.search = event.target.value;
@@ -2000,13 +2122,28 @@ document.body.addEventListener('input', (event) => {
     list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
     return;
   }
+  if (event.target.id === 'desk-spend-search') {
+    state.spendFilterQuery = event.target.value || '';
+    window.clearTimeout(spendSearchTimer);
+    spendSearchTimer = window.setTimeout(() => {
+      const keep = document.getElementById('desk-spend-search');
+      const caret = keep instanceof HTMLInputElement ? keep.selectionStart : null;
+      render();
+      const again = document.getElementById('desk-spend-search');
+      if (again instanceof HTMLInputElement) {
+        again.focus();
+        if (caret != null) again.setSelectionRange(caret, caret);
+      }
+    }, 180);
+    return;
+  }
   if (event.target.closest?.('#desk-deposit-form') && event.target.name === 'amount') {
     state.deskDepositAmount = event.target.value;
     const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
     const amountNum = Number(state.deskDepositAmount);
-    const creditUsd = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * selected.usd : 0;
+    const creditEur = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * tokenPriceEur(selected) : 0;
     const preview = document.querySelector('#desk-deposit .desk-credit-preview strong');
-    if (preview) preview.textContent = money(Math.round(creditUsd * 100));
+    if (preview) preview.textContent = money(Math.round(creditEur * 100));
   }
   if (event.target.closest?.('#desk-card-fund-form') && event.target.name === 'amount') {
     state.deskCardFundAmount = event.target.value;
@@ -2245,6 +2382,40 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'desk-close-spend-detail') {
     state.spendDetailId = '';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-card') {
+    state.spendFilterCardId = button.dataset.id || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-gateway') {
+    state.spendFilterGateway = button.dataset.value || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-status') {
+    state.spendFilterStatus = button.dataset.value || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-range') {
+    state.spendFilterRange = button.dataset.value || 'all';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-clear-spend-filters') {
+    state.spendFilterCardId = '';
+    state.spendFilterQuery = '';
+    state.spendFilterGateway = '';
+    state.spendFilterStatus = '';
+    state.spendFilterRange = 'all';
+    state.deskView = 'history';
     render();
     return;
   }
@@ -2696,6 +2867,7 @@ document.body.addEventListener('submit', (event) => {
         status: 'Completed',
         gateway,
         authNr,
+        threeDs: 'not_required',
         createdAt: Date.now(),
       };
       state.deskSpends = [entry, ...state.deskSpends];

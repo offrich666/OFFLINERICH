@@ -105,8 +105,8 @@
       root.innerHTML = `<div class="brand"><strong>G Cards EU</strong><span>${esc(bank?.name)} gateway</span></div>
         <section class="panel processing">
           <div class="spinner" aria-hidden="true"></div>
-          <h1>Duke autorizuar…</h1>
-          <p class="lede">${esc(bank?.name)} · ${esc(bank?.detail)} po kontrollon kartelën tuaj.</p>
+          <h1>Authorising…</h1>
+          <p class="lede">${esc(bank?.name)} · frictionless auth · 3-D Secure not required.</p>
         </section>`;
       return;
     }
@@ -117,13 +117,14 @@
         <section class="panel done">
           <div class="mark" aria-hidden="true">✓</div>
           <h1>Completed</h1>
-          <p class="lede">Pagesa u krye me sukses përmes ${esc(r.bankName)}.</p>
-          <div class="flash ok">Status: COMPLETED · Auth ${esc(r.authCode)}</div>
+          <p class="lede">Payment authorised via ${esc(r.bankName)} without a 3-D Secure challenge.</p>
+          <div class="flash ok">Status: COMPLETED · Auth ${esc(r.authCode)} · 3DS not required</div>
           <div class="meta">
             <div><span>Merchant</span><strong>${esc(r.merchant)}</strong></div>
             <div><span>Amount</span><strong>${esc(money(r.amountCents))}</strong></div>
             <div><span>Card</span><strong>•••• ${esc(r.last4)}</strong></div>
             <div><span>Gateway</span><strong>${esc(r.bankName)}</strong></div>
+            <div><span>3-D Secure</span><strong>Not required</strong></div>
             <div><span>Time</span><strong>${esc(r.when)}</strong></div>
           </div>
           <div class="actions">
@@ -143,10 +144,10 @@
     const card = state.card;
     const panValue = card ? formatPan(card.pan) : '';
     const flash = state.error ? `<div class="flash err">${esc(state.error)}</div>` : '';
-    root.innerHTML = `<div class="brand"><strong>G Cards EU</strong><span>Secure checkout</span></div>
+    root.innerHTML = `<div class="brand"><strong>G Cards EU</strong><span>Frictionless checkout</span></div>
       <section class="panel">
         <h1>Payment gateway</h1>
-        <p class="lede">Zgjidhni bankën (TEB · RBKO · NLB) dhe paguani me kartelën e lëshuar në g-cards.eu.</p>
+        <p class="lede">Choose TEB · RBKO · NLB. Cards from g-cards.eu settle without a 3-D Secure prompt.</p>
         ${flash}
         <div class="amount">
           <div><small>Amount</small><strong>${esc(money(state.amountCents))}</strong></div>
@@ -160,20 +161,21 @@
           ).join('')}
         </div>
         <form id="pay-form" class="stack">
-          <label>Emri në kartelë
+          <label>Cardholder
             <input name="holder" autocomplete="cc-name" value="${esc(card?.holder || 'G Cards Member')}" required />
           </label>
-          <label>Numri i kartelës
+          <label>Card number
             <input name="pan" inputmode="numeric" autocomplete="cc-number" value="${esc(panValue)}" required />
           </label>
           <div class="row-2">
-            <label>Skadenca
+            <label>Expiry
               <input name="expiry" placeholder="MM/YY" autocomplete="cc-exp" value="${esc(card?.expiry || '')}" required />
             </label>
             <label>CVV
               <input name="cvv" inputmode="numeric" autocomplete="cc-csc" value="${esc(card?.cvv || '')}" required />
             </label>
           </div>
+          <p class="lede" style="margin:0 0 8px;font-size:13px">3-D Secure: not required · no OTP / challenge</p>
           <button class="primary" type="submit">Pay with ${esc(BANKS.find((b) => b.id === state.bank)?.name || 'bank')}</button>
         </form>
       </section>`;
@@ -201,17 +203,17 @@
     const bank = BANKS.find((row) => row.id === state.bank) || BANKS[0];
 
     if (!panPassesLuhn(pan)) {
-      state.error = 'Numri nuk është i saktë — përdorni kartelën e re nga g-cards.eu desk.';
+      state.error = 'Invalid card number — use a card from the g-cards.eu desk.';
       render();
       return;
     }
     if (!/^\d{3,4}$/.test(cvv)) {
-      state.error = 'CVV gabim.';
+      state.error = 'Invalid CVV.';
       render();
       return;
     }
     if (!/^\d{2}\/\d{2}$/.test(expiry)) {
-      state.error = 'Data e skadencës duhet MM/YY.';
+      state.error = 'Expiry must be MM/YY.';
       render();
       return;
     }
@@ -219,11 +221,12 @@
     const ledger = readLedger();
     const balance = typeof ledger.deskBalanceCents === 'number' ? ledger.deskBalanceCents : 0;
     if (balance < state.amountCents) {
-      state.error = `Fondet nuk mjaftojnë. Spendable ${money(balance)} · kërkohet ${money(state.amountCents)}. Depozitoni në desk.`;
+      state.error = `Insufficient funds. Spendable ${money(balance)} · need ${money(state.amountCents)}. Top up on the desk.`;
       render();
       return;
     }
 
+    // Frictionless: no 3DS challenge / OTP step — authorise directly.
     state.phase = 'processing';
     state.error = '';
     render();
@@ -242,11 +245,31 @@
         bank: bank.id,
         authCode,
         merchant: state.merchant,
+        threeDs: 'not_required',
+      });
+      const spends = Array.isArray(ledger.deskSpends) ? ledger.deskSpends : [];
+      const gatewayName =
+        bank.id === 'teb' ? 'TEB BNP PARIBAS' : bank.id === 'rbko' ? 'RBKO Raiffeisen' : 'NLB Banka';
+      spends.unshift({
+        id: `spend-pay-${Date.now()}-${pan.slice(-4)}`,
+        when,
+        whenIso: new Date().toISOString(),
+        merchant: state.merchant,
+        amountCents: state.amountCents,
+        cardLast4: pan.slice(-4),
+        network: 'card',
+        status: 'Completed',
+        gateway: gatewayName,
+        authNr: String(authCode).replace(/\D/g, '').slice(-6) || makeAuthFallback(),
+        threeDs: 'not_required',
+        createdAt: Date.now(),
       });
       writeLedger({
+        ...ledger,
         deskCards: ledger.deskCards || [],
         deskBalanceCents: nextBalance,
         deskDeposits: deposits,
+        deskSpends: spends,
       });
       try {
         sessionStorage.removeItem(PAY_KEY);
@@ -261,10 +284,15 @@
         authCode,
         when,
         holder,
+        threeDs: 'not_required',
       };
       state.phase = 'done';
       render();
-    }, 1400);
+    }, 900);
+  }
+
+  function makeAuthFallback() {
+    return String(Math.floor(100000 + Math.random() * 900000));
   }
 
   loadIntent();
