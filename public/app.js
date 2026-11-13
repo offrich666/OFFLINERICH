@@ -41,12 +41,20 @@ const state = {
   /** @type {'home' | 'card' | 'payments' | 'history'} */
   deskView: 'home',
   spendFilterCardId: '',
+  spendDetailId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
   tokenPriceUpdatedAt: 0,
   /** USD→EUR FX used to credit desk balance from USDT deposits. */
   usdToEur: 0.92,
-  spendDraft: { cardId: '', merchant: '', amount: '', when: '' },
+  spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS' },
 };
+
+const PAYMENT_GATEWAYS = [
+  'TEB BNP PARIBAS',
+  'RBKO Raiffeisen',
+  'NLB Banka',
+];
+const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
@@ -116,6 +124,10 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   }
 }
 
+function makeAuthNr() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
 function normalizeStoredSpend(row) {
   if (!row || typeof row !== 'object') return null;
   const amountCents = Number(row.amountCents);
@@ -124,6 +136,9 @@ function normalizeStoredSpend(row) {
   if (!merchant) return null;
   const cardLast4 = String(row.cardLast4 || '').replace(/\D/g, '').slice(-4);
   const whenIso = row.whenIso || row.createdAt || '';
+  const gateway = String(row.gateway || PAYMENT_GATEWAYS[0]).trim() || PAYMENT_GATEWAYS[0];
+  const status = String(row.status || 'Completed').trim() || 'Completed';
+  const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
   return {
     id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
     when: String(row.when || ''),
@@ -133,8 +148,37 @@ function normalizeStoredSpend(row) {
     cardId: String(row.cardId || ''),
     cardLast4,
     network: String(row.network || 'card'),
+    status,
+    gateway,
+    authNr,
     createdAt: Number(row.createdAt) || Date.now(),
   };
+}
+
+function ensureExampleSpend(primary) {
+  if (!primary) return;
+  if (state.deskSpends.some((s) => s.id === EXAMPLE_SPEND_ID || s.merchant === 'CB INT DIGITAL JSC')) {
+    return;
+  }
+  const whenDate = new Date();
+  whenDate.setHours(whenDate.getHours() - 5);
+  state.deskSpends = [
+    {
+      id: EXAMPLE_SPEND_ID,
+      when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+      whenIso: whenDate.toISOString(),
+      merchant: 'CB INT DIGITAL JSC',
+      amountCents: 3798,
+      cardId: primary.id,
+      cardLast4: String(primary.pan).slice(-4),
+      network: String(primary.brand || 'mastercard'),
+      status: 'Completed',
+      gateway: 'TEB BNP PARIBAS',
+      authNr: '389274',
+      createdAt: whenDate.getTime(),
+    },
+    ...state.deskSpends,
+  ];
 }
 
 function loadDeskLedger() {
@@ -623,11 +667,13 @@ function ensureDeskDefaults() {
     primary.balanceCents = 0;
     state.deskBalanceSeeded = true;
   }
+  ensureExampleSpend(primary);
   syncCardStatuses();
   state.deskSelectedCardId = primary.id;
   state.deskTopupCardId = primary.id;
   state.deskDetailCardId = state.deskDetailCardId === primary.id ? primary.id : '';
   state.spendDraft.cardId = primary.id;
+  if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
   saveDeskLedger();
 }
 
@@ -1264,6 +1310,7 @@ function deskPaymentsHtml() {
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     state.spendDraft.when = now.toISOString().slice(0, 16);
   }
+  if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
   const cardOptions = state.deskCards
     .map(
       (c) =>
@@ -1272,12 +1319,16 @@ function deskPaymentsHtml() {
         )}</option>`,
     )
     .join('');
+  const gatewayOptions = PAYMENT_GATEWAYS.map(
+    (g) =>
+      `<option value="${esc(g)}" ${g === state.spendDraft.gateway ? 'selected' : ''}>${esc(g)}</option>`,
+  ).join('');
 
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Pay</p>
           <h1>Record a payment</h1>
-          <p class="lede desk-home-lede">Enter the card, merchant, amount, and time. Saved entries appear under History.</p>
+          <p class="lede desk-home-lede">Enter the card, merchant, amount, and time. Saved entries appear under History — tap a row for payment details.</p>
         </section>
 
         <section class="desk-deposit desk-page-panel" id="desk-spend">
@@ -1288,7 +1339,10 @@ function deskPaymentsHtml() {
               </select>
             </label>
             <label>Merchant / place
-              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
+              <input name="merchant" placeholder="CB INT DIGITAL JSC, Gjirafa50…" value="${esc(state.spendDraft.merchant)}" required />
+            </label>
+            <label>Payment gateway
+              <select name="gateway">${gatewayOptions}</select>
             </label>
             <label>Amount (EUR)
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
@@ -1303,6 +1357,32 @@ function deskPaymentsHtml() {
         </section>`;
 }
 
+function spendDetailHtml(spend) {
+  if (!spend) return '';
+  const amountPlain = new Intl.NumberFormat('de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format((spend.amountCents || 0) / 100);
+  return `
+        <section class="desk-deposit desk-page-panel desk-tx-detail" id="desk-tx-detail">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Payment details</p>
+              <h2>${esc(spend.merchant)}</h2>
+            </div>
+            <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
+          </div>
+          <dl class="desk-tx-detail-list">
+            <div><dt>Payment Status</dt><dd><span class="pill good">${esc(spend.status || 'Completed')}</span></dd></div>
+            <div><dt>Payment Gateway</dt><dd>${esc(spend.gateway || PAYMENT_GATEWAYS[0])}</dd></div>
+            <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
+            <div><dt>Amount</dt><dd><strong>${esc(amountPlain)}</strong></dd></div>
+            <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
+            <div><dt>Card</dt><dd>${esc(spend.cardLast4 ? `····${spend.cardLast4}` : '—')}</dd></div>
+          </dl>
+        </section>`;
+}
+
 function deskHistoryHtml() {
   reloadStoredSpends();
   const filterId = state.spendFilterCardId || '';
@@ -1314,6 +1394,10 @@ function deskHistoryHtml() {
     return filterLast4 && s.cardLast4 === filterLast4;
   });
   const storedTotal = storedSpends.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const selected =
+    storedSpends.find((s) => s.id === state.spendDetailId)
+    || state.deskSpends.find((s) => s.id === state.spendDetailId)
+    || null;
   const filterOptions = [
     `<option value="" ${!filterId ? 'selected' : ''}>All cards · ${state.deskSpends.length} stored</option>`,
     ...state.deskCards.map((c) => {
@@ -1328,15 +1412,16 @@ function deskHistoryHtml() {
   ].join('');
   const spendRows = storedSpends.length
     ? storedSpends
-        .map(
-          (s) => `<tr>
+        .map((s) => {
+          const on = s.id === state.spendDetailId ? 'is-open' : '';
+          return `<tr class="desk-tx-row ${on}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
             <td>${esc(s.when)}</td>
-            <td>${esc(s.merchant)}</td>
+            <td><strong>${esc(s.merchant)}</strong></td>
             <td><strong>${esc(money(s.amountCents))}</strong></td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill">${esc(s.network || 'card')}</span></td>
-          </tr>`,
-        )
+            <td><span class="pill">${esc(s.status || 'Completed')}</span></td>
+          </tr>`;
+        })
         .join('')
     : `<tr><td colspan="5" class="muted">${
         filterId ? 'No transactions for this card.' : 'No transactions yet.'
@@ -1346,8 +1431,10 @@ function deskHistoryHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Stored payments on this device. Filter by card to review activity.</p>
+          <p class="lede desk-home-lede">Tap a transaction to open payment details (status, gateway, auth nr, amount).</p>
         </section>
+
+        ${selected ? spendDetailHtml(selected) : ''}
 
         <section class="desk-deposit desk-page-panel desk-history-panel" id="desk-stored-payments">
           <div class="panel-head-inline desk-history-head">
@@ -1367,7 +1454,7 @@ function deskHistoryHtml() {
           </label>
           <div class="table-wrap desk-history-table">
             <table class="desk">
-              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
+              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Status</th></tr></thead>
               <tbody>${spendRows}</tbody>
             </table>
           </div>
@@ -2104,6 +2191,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-view-home') {
     state.deskView = 'home';
     state.deskDetailCardId = '';
+    state.spendDetailId = '';
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -2111,6 +2199,7 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-view-payments') {
     state.deskView = 'payments';
     state.deskDetailCardId = '';
+    state.spendDetailId = '';
     if (!state.spendDraft.cardId && state.deskSelectedCardId) {
       state.spendDraft.cardId = state.deskSelectedCardId;
     }
@@ -2127,8 +2216,26 @@ document.body.addEventListener('click', (event) => {
     state.deskView = 'history';
     state.deskDetailCardId = '';
     reloadStoredSpends();
+    ensureExampleSpend(deskActiveCard());
+    saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-open-spend-detail') {
+    const id = button.dataset.id || '';
+    state.deskView = 'history';
+    state.spendDetailId = id;
+    reloadStoredSpends();
+    render();
+    window.setTimeout(() => {
+      document.getElementById('desk-tx-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 40);
+    return;
+  }
+  if (action === 'desk-close-spend-detail') {
+    state.spendDetailId = '';
+    render();
     return;
   }
   if (action === 'desk-select-card') {
@@ -2577,6 +2684,9 @@ document.body.addEventListener('submit', (event) => {
       const whenDate = new Date(whenRaw);
       const when = whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
       const whenIso = Number.isNaN(whenDate.getTime()) ? new Date().toISOString() : whenDate.toISOString();
+      const gateway = String(data.gateway || state.spendDraft.gateway || PAYMENT_GATEWAYS[0]).trim()
+        || PAYMENT_GATEWAYS[0];
+      const authNr = makeAuthNr();
       const entry = {
         id: `spend-${Date.now()}-${String(card.pan).slice(-4)}-${amountCents}`,
         when,
@@ -2586,18 +2696,28 @@ document.body.addEventListener('submit', (event) => {
         cardId: card.id,
         cardLast4: String(card.pan).slice(-4),
         network: String(card.brand || 'card'),
+        status: 'Completed',
+        gateway,
+        authNr,
         createdAt: Date.now(),
       };
       state.deskSpends = [entry, ...state.deskSpends];
-      state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: state.spendDraft.when || '' };
+      state.spendDraft = {
+        cardId: card.id,
+        merchant: '',
+        amount: '',
+        when: state.spendDraft.when || '',
+        gateway,
+      };
       state.deskSelectedCardId = card.id;
       state.spendFilterCardId = '';
+      state.spendDetailId = entry.id;
       state.deskView = 'history';
       saveDeskLedger();
       reloadStoredSpends();
       state.flash = {
         kind: 'ok',
-        text: `Stored ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)} · see History anytime`,
+        text: `Stored ${money(amountCents)} at ${merchant} · Auth ${authNr} · ${gateway} · open details in History`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });

@@ -948,3 +948,61 @@ a.btn { display: inline-block; text-decoration: none; text-align: center; }
 
 textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius:12px; padding:11px 12px; color:var(--ink); font:inherit; min-height:120px; }
 .pay2-pan { display:grid; place-items:start; padding:8px; }
+
+/* History transaction details */
+.desk-tx-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.desk-tx-row:hover,
+.desk-tx-row:focus-visible {
+  background: #f4eee3;
+  outline: none;
+}
+.desk-tx-row.is-open {
+  background: #efe6d4;
+}
+.desk-tx-detail {
+  border-color: #c9b48a;
+  animation: rise 0.35s cubic-bezier(.2,.8,.2,1) backwards;
+}
+.desk-tx-detail-list {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.desk-tx-detail-list > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 38%) 1fr;
+  gap: 10px 16px;
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.desk-tx-detail-list > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.desk-tx-detail-list dt {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.desk-tx-detail-list dd {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+.desk-tx-detail-list dd.mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 560px) {
+  .desk-tx-detail-list > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
