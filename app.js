@@ -37,7 +37,7 @@ const state = {
   deskCardFundAmount: '',
   deskDetailCardId: '',
   deskSelectedCardId: '',
-  /** @type {'home' | 'card' | 'payments'} */
+  /** @type {'home' | 'card' | 'payments' | 'history'} */
   deskView: 'home',
   spendFilterCardId: '',
   tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
@@ -337,9 +337,10 @@ function deskShellHtml(mainHtml) {
           <nav class="desk-bar-nav" aria-label="Desk">
             <button type="button" class="desk-nav-btn ${view === 'home' || view === 'card' ? 'on' : ''}" data-action="desk-view-home">Cards</button>
             <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
+            <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
           </nav>
           <div class="desk-bar-actions">
-            <span class="pill desk-build-pill" title="Build">r</span>
+            <span class="pill desk-build-pill" title="Build">s</span>
             <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Out</button>
           </div>
         </div>
@@ -529,6 +530,9 @@ function capacityDeskHtml() {
   if (state.deskView === 'payments') {
     return deskShellHtml(deskPaymentsHtml());
   }
+  if (state.deskView === 'history') {
+    return deskShellHtml(deskHistoryHtml());
+  }
   if (
     state.deskView === 'card'
     && state.deskDetailCardId
@@ -592,7 +596,7 @@ function deskHomeHtml() {
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
             <h1>Cards &amp; balances</h1>
-            <p class="lede desk-home-lede">Select a card to check its balance. Open for card details — use <strong>Pay</strong> in the header to log spends.</p>
+            <p class="lede desk-home-lede">Select a card to check its balance. <strong>Pay</strong> to add a payment · <strong>History</strong> to review stored ones.</p>
             <label class="desk-card-menu-label">Card
               <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
                 ${menuOptions || '<option value="">Issue a card first</option>'}
@@ -604,7 +608,8 @@ function deskHomeHtml() {
               </button>
               <button class="ghost" type="button" data-action="desk-ensure-endless">Endless ····1955</button>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
-              <button class="ghost" type="button" data-action="desk-view-payments">Add payment</button>
+              <button class="ghost" type="button" data-action="desk-view-payments">Pay</button>
+              <button class="ghost" type="button" data-action="desk-view-history">History</button>
             </div>
           </div>
           <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
@@ -771,7 +776,8 @@ function deskCardDetailHtml() {
             </div>
             <div class="active-actions">
               <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
-              <button class="ghost" type="button" data-action="desk-view-payments">Log a payment</button>
+              <button class="ghost" type="button" data-action="desk-view-payments">Pay</button>
+              <button class="ghost" type="button" data-action="desk-view-history">History</button>
               <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}">Pay TEB</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}">RBKO</button>
               <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}">NLB</button>
@@ -808,7 +814,6 @@ function deskCardDetailHtml() {
 }
 
 function deskPaymentsHtml() {
-  reloadStoredSpends();
   const card =
     state.deskCards.find((c) => c.id === (state.spendDraft.cardId || state.deskSelectedCardId))
     || deskActiveCard();
@@ -826,6 +831,40 @@ function deskPaymentsHtml() {
         )}</option>`,
     )
     .join('');
+
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">New entry</p>
+          <h1>Add payment</h1>
+          <p class="lede desk-home-lede">One page · one job. Save a payment here. Review everything later under <strong>History</strong>.</p>
+        </section>
+
+        <section class="desk-deposit desk-page-panel" id="desk-spend">
+          <form id="desk-spend-form" class="desk-deposit-form desk-spend-form desk-pay-form">
+            <label>Card
+              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
+                ${cardOptions || '<option value="">Issue a card first</option>'}
+              </select>
+            </label>
+            <label>Merchant / place
+              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
+            </label>
+            <label>Amount (USD)
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
+            </label>
+            <label>Date &amp; time
+              <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
+            </label>
+            <div class="desk-pay-actions">
+              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save payment</button>
+              <button class="ghost" type="button" data-action="desk-view-history">Open History</button>
+            </div>
+          </form>
+        </section>`;
+}
+
+function deskHistoryHtml() {
+  reloadStoredSpends();
   const filterId = state.spendFilterCardId || '';
   const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
   const filterLast4 = filterCard ? String(filterCard.pan).slice(-4) : '';
@@ -861,63 +900,38 @@ function deskPaymentsHtml() {
         .join('')
     : `<tr><td colspan="5" class="muted">${
         filterId
-          ? 'No stored payments for this card yet. Save one above — it stays here.'
-          : 'No payments stored yet. Save one above — open Pay anytime to check them.'
+          ? 'No stored payments for this card.'
+          : 'No payments stored yet. Use Pay to add one — it will show up here.'
       }</td></tr>`;
 
   return `
-        <section class="desk-payments-hero">
-          <div class="desk-home-copy">
-            <p class="kicker launch-kicker">Stored ledger</p>
-            <h1>Payments</h1>
-            <p class="lede desk-home-lede">Every payment you save is kept on this device. Open <strong>Pay</strong> anytime to review or filter by card.</p>
-          </div>
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Stored ledger</p>
+          <h1>History</h1>
+          <p class="lede desk-home-lede">All saved payments on this device. Filter by card whenever you want to check.</p>
         </section>
 
-        <section class="desk-deposit" id="desk-spend">
+        <section class="desk-deposit desk-page-panel" id="desk-stored-payments">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">New entry</p>
-              <h2>Add payment</h2>
-            </div>
-            <button class="ghost" type="button" data-action="desk-view-home">← Cards</button>
-          </div>
-          <form id="desk-spend-form" class="desk-deposit-form desk-spend-form">
-            <label>Card
-              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
-                ${cardOptions || '<option value="">Issue a card first</option>'}
-              </select>
-            </label>
-            <label>Merchant / place
-              <input name="merchant" placeholder="Gjirafa50, fuel, rent…" value="${esc(state.spendDraft.merchant)}" required />
-            </label>
-            <label>Amount (USD)
-              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
-            </label>
-            <label>Date &amp; time
-              <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
-            </label>
-            <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save payment</button>
-          </form>
-        </section>
-
-        <section class="desk-deposit desk-compact" id="desk-stored-payments">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">Stored · ${storedSpends.length} shown</p>
-              <h2>Check anytime</h2>
+              <p class="eyebrow">${storedSpends.length} shown</p>
+              <h2>Transactions</h2>
             </div>
             <div class="desk-balance-chip">
-              <small>${filterId ? 'Filtered total' : 'All stored'}</small>
+              <small>${filterId ? 'Filtered' : 'Total stored'}</small>
               <strong>${esc(money(storedTotal))}</strong>
             </div>
           </div>
-          <label class="desk-card-menu-label">Show card
+          <label class="desk-card-menu-label">Card filter
             <select id="desk-spend-filter">
               ${filterOptions}
             </select>
           </label>
-          <p class="muted desk-store-note">Saved in your browser ledger · survives refresh · open Pay to check again.</p>
+          <div class="desk-pay-actions desk-history-actions">
+            <button class="primary" type="button" data-action="desk-view-payments">Add payment</button>
+            <button class="ghost" type="button" data-action="desk-view-home">← Cards</button>
+          </div>
+          <p class="muted desk-store-note">Saved in your browser · survives refresh · History is the only place to review them.</p>
           <div class="table-wrap">
             <table class="desk">
               <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Network</th></tr></thead>
@@ -1639,7 +1653,6 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-view-payments') {
     state.deskView = 'payments';
     state.deskDetailCardId = '';
-    reloadStoredSpends();
     if (!state.spendDraft.cardId && state.deskSelectedCardId) {
       state.spendDraft.cardId = state.deskSelectedCardId;
     }
@@ -1648,6 +1661,14 @@ document.body.addEventListener('click', (event) => {
       now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
       state.spendDraft.when = now.toISOString().slice(0, 16);
     }
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-view-history') {
+    state.deskView = 'history';
+    state.deskDetailCardId = '';
+    reloadStoredSpends();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -2070,15 +2091,15 @@ document.body.addEventListener('submit', (event) => {
       state.spendDraft = { cardId: card.id, merchant: '', amount: '', when: state.spendDraft.when || '' };
       state.deskSelectedCardId = card.id;
       state.spendFilterCardId = '';
-      state.deskView = 'payments';
+      state.deskView = 'history';
       saveDeskLedger();
       reloadStoredSpends();
       state.flash = {
         kind: 'ok',
-        text: `Stored ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)} · open Pay anytime to check`,
+        text: `Stored ${money(amountCents)} at ${merchant} · ${when} · ····${String(card.pan).slice(-4)} · see History anytime`,
       };
       render();
-      document.getElementById('desk-stored-payments')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   }
   if (form.id === 'client-form') {
