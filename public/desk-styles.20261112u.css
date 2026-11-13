@@ -1409,3 +1409,12 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   margin: 10px 0 0;
   font-size: 13px;
 }
+
+/* Build v — primary 1955 $0 + chain TX match */
+.desk-tx-link {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--navy-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
