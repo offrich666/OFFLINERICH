@@ -26,7 +26,7 @@
   }
 
   function money(cents) {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' }).format((cents || 0) / 100);
+    return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format((cents || 0) / 100);
   }
 
   function formatPan(pan) {
