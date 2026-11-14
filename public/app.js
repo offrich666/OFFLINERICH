@@ -169,6 +169,30 @@ function threeDsLabel(value) {
   return String(value || 'Not required');
 }
 
+/** Prefer the payment's own time (when / whenIso), not when it was saved. */
+function spendTimestamp(s) {
+  if (!s || typeof s !== 'object') return 0;
+  const iso = Date.parse(String(s.whenIso || ''));
+  if (Number.isFinite(iso) && iso > 0) return iso;
+  const when = String(s.when || '').trim();
+  // en-GB desk format: "14/11/2026, 16:51:03" (Europe/Belgrade)
+  const m = when.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const day = Number(m[1]);
+    const month = Number(m[2]) - 1;
+    const year = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const second = Number(m[6] || 0);
+    const local = new Date(year, month, day, hour, minute, second);
+    if (!Number.isNaN(local.getTime())) return local.getTime();
+  }
+  const parsed = Date.parse(when);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  const created = Number(s.createdAt);
+  return Number.isFinite(created) && created > 0 ? created : 0;
+}
+
 function filteredDeskSpends() {
   const filterId = state.spendFilterCardId || '';
   const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
@@ -186,10 +210,6 @@ function filteredDeskSpends() {
         : range === '30d'
           ? 30 * 24 * 60 * 60 * 1000
           : 0;
-
-  function spendTimestamp(s) {
-    return Number(s.createdAt) || Date.parse(s.whenIso || '') || Date.parse(String(s.when || '').replace(',', '')) || 0;
-  }
 
   return state.deskSpends
     .filter((s) => {
@@ -1247,7 +1267,11 @@ function deskCardDetailHtml() {
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
-  const detailTransfers = state.deskTransfers.filter((t) => t.cardLast4 === last4).slice(0, 6);
+  const detailTransfers = state.deskTransfers
+    .filter((t) => t.cardLast4 === last4)
+    .slice()
+    .sort((a, b) => spendTimestamp(b) - spendTimestamp(a))
+    .slice(0, 8);
   const statusKey = cardStatusKey(card);
   const canFund = cardIsOperable(card) && state.deskBalanceCents > 0;
   const menuOptions = state.deskCards
@@ -2856,13 +2880,14 @@ document.body.addEventListener('submit', (event) => {
         card.balanceCents = bal - amountCents;
       }
       const whenDate = new Date(whenRaw);
-      const when = whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
-      const whenIso = Number.isNaN(whenDate.getTime()) ? new Date().toISOString() : whenDate.toISOString();
+      const whenMs = Number.isNaN(whenDate.getTime()) ? Date.now() : whenDate.getTime();
+      const when = new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      const whenIso = new Date(whenMs).toISOString();
       const gateway = String(data.gateway || state.spendDraft.gateway || PAYMENT_GATEWAYS[0]).trim()
         || PAYMENT_GATEWAYS[0];
       const authNr = makeAuthNr();
       const entry = {
-        id: `spend-${Date.now()}-${String(card.pan).slice(-4)}-${amountCents}`,
+        id: `spend-${whenMs}-${String(card.pan).slice(-4)}-${amountCents}`,
         when,
         whenIso,
         merchant,
@@ -2874,7 +2899,7 @@ document.body.addEventListener('submit', (event) => {
         gateway,
         authNr,
         threeDs: 'not_required',
-        createdAt: Date.now(),
+        createdAt: whenMs,
       };
       state.deskSpends = [entry, ...state.deskSpends];
       state.spendDraft = {
