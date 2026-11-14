@@ -187,33 +187,39 @@ function filteredDeskSpends() {
           ? 30 * 24 * 60 * 60 * 1000
           : 0;
 
-  return state.deskSpends.filter((s) => {
-    if (filterId) {
-      const cardMatch = (s.cardId && s.cardId === filterId) || (filterLast4 && s.cardLast4 === filterLast4);
-      if (!cardMatch) return false;
-    }
-    if (gateway && String(s.gateway || '') !== gateway) return false;
-    if (status && String(s.status || 'Completed').toLowerCase() !== status) return false;
-    if (rangeMs) {
-      const ts = Number(s.createdAt) || Date.parse(s.whenIso || '') || 0;
-      if (!ts || now - ts > rangeMs) return false;
-    }
-    if (query) {
-      const hay = [
-        s.merchant,
-        s.gateway,
-        s.authNr,
-        s.status,
-        s.cardLast4,
-        s.when,
-        threeDsLabel(s.threeDs),
-      ]
-        .join(' ')
-        .toLowerCase();
-      if (!hay.includes(query)) return false;
-    }
-    return true;
-  });
+  function spendTimestamp(s) {
+    return Number(s.createdAt) || Date.parse(s.whenIso || '') || Date.parse(String(s.when || '').replace(',', '')) || 0;
+  }
+
+  return state.deskSpends
+    .filter((s) => {
+      if (filterId) {
+        const cardMatch = (s.cardId && s.cardId === filterId) || (filterLast4 && s.cardLast4 === filterLast4);
+        if (!cardMatch) return false;
+      }
+      if (gateway && String(s.gateway || '') !== gateway) return false;
+      if (status && String(s.status || 'Completed').toLowerCase() !== status) return false;
+      if (rangeMs) {
+        const ts = spendTimestamp(s);
+        if (!ts || now - ts > rangeMs) return false;
+      }
+      if (query) {
+        const hay = [
+          s.merchant,
+          s.gateway,
+          s.authNr,
+          s.status,
+          s.cardLast4,
+          s.when,
+          threeDsLabel(s.threeDs),
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(query)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => spendTimestamp(b) - spendTimestamp(a));
 }
 
 function ensureExampleSpend(primary) {
@@ -1511,7 +1517,7 @@ function deskHistoryHtml() {
             <td class="desk-tx-when">${esc(s.when)}</td>
             <td>
               <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
-              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')} · 3DS ${esc(threeDsLabel(s.threeDs))}</small>
+              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')}</small>
             </td>
             <td class="desk-tx-amount"><strong>${esc(money(s.amountCents))}</strong></td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
