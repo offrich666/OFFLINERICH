@@ -1150,6 +1150,10 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
 .desk-card-pick.on .desk-chip-status {
   color: rgba(247, 241, 230, 0.72);
 }
+.desk-card-pick.status-deactivated:not(.on) {
+  opacity: 0.72;
+  border-style: dashed;
+}
 .desk-card-pick-top {
   display: flex;
   justify-content: space-between;
