@@ -517,23 +517,18 @@ function syncCardStatuses() {
   let changed = false;
   for (const card of state.deskCards) {
     if (!card) continue;
-    if (card.endless) {
-      if (card.frozen) {
-        if (card.status !== 'frozen') {
-          card.status = 'frozen';
-          card.ready = false;
-          changed = true;
-        }
-      } else if (card.status !== 'active' || !card.ready) {
-        card.status = 'active';
-        card.ready = true;
-        card.frozen = false;
+    if (card.deactivated || card.status === 'deactivated') {
+      if (card.status !== 'deactivated' || card.ready) {
+        card.deactivated = true;
+        card.status = 'deactivated';
+        card.ready = false;
         changed = true;
       }
       continue;
     }
-    if (card.frozen) {
-      if (card.status !== 'frozen') {
+    if (card.frozen || card.status === 'frozen') {
+      if (card.status !== 'frozen' || card.ready) {
+        card.frozen = true;
         card.status = 'frozen';
         card.ready = false;
         changed = true;
@@ -543,6 +538,8 @@ function syncCardStatuses() {
     if (card.status !== 'active' || !card.ready || Number(card.activatesAt || 0) !== 0) {
       card.status = 'active';
       card.ready = true;
+      card.deactivated = false;
+      card.frozen = false;
       card.activatesAt = 0;
       if (card.label && String(card.label).toLowerCase().includes('activating')) {
         const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
@@ -556,6 +553,7 @@ function syncCardStatuses() {
 
 function cardStatusKey(card) {
   if (!card) return 'inactive';
+  if (card.deactivated || card.status === 'deactivated') return 'deactivated';
   if (card.frozen || card.status === 'frozen') return 'frozen';
   return 'active';
 }
@@ -578,6 +576,7 @@ function activationRemainingLabel(card) {
 
 function cardStatusPill(card) {
   const key = cardStatusKey(card);
+  if (key === 'deactivated') return '<span class="pill bad">Deactivated</span>';
   if (key === 'frozen') return '<span class="pill bad">Frozen</span>';
   if (key === 'activating') {
     const left = activationRemainingLabel(card);
@@ -593,9 +592,11 @@ function deskCardMenuLabel(c) {
   const key = cardStatusKey(c);
   const tag = isPrimary1955(c)
     ? '1955'
-    : key === 'frozen'
-      ? `${brand} frozen`
-      : brand;
+    : key === 'deactivated'
+      ? `${brand} off`
+      : key === 'frozen'
+        ? `${brand} frozen`
+        : brand;
   return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
@@ -698,6 +699,7 @@ function makeIssuedCard(options = {}) {
     status: 'active',
     ready: true,
     frozen: false,
+    deactivated: false,
     issuedAt,
     activatesAt: 0,
     label: endless ? `Active · ····1955` : `Active · ${brand === 'visa' ? 'Visa' : 'Mastercard'}`,
@@ -1102,7 +1104,8 @@ function deskCardPickerHtml(selectedId) {
       const on = c.id === selectedId ? 'on' : '';
       const key = cardStatusKey(c);
       const brandTag = c.endless ? 'Primary 1955' : c.brand === 'visa' ? 'Visa' : 'Mastercard';
-      const statusLabel = key === 'frozen' ? 'Frozen' : 'Active';
+      const statusLabel =
+        key === 'deactivated' ? 'Off' : key === 'frozen' ? 'Frozen' : 'Active';
       return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}">
           <span class="desk-card-pick-top">
             <small>${esc(brandTag)}</small>
@@ -1375,11 +1378,13 @@ function deskCardDetailHtml() {
     : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
 
   const controlsNote =
-    statusKey === 'frozen'
-      ? '<p class="muted desk-control-note"><strong>Frozen</strong> — funding, transfers, and Pay are blocked until you unfreeze.</p>'
-      : isPrimary1955(card)
-        ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then use Pay / History.</p>'
-        : `<p class="muted desk-control-note"><strong>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
+    statusKey === 'deactivated'
+      ? '<p class="muted desk-control-note"><strong>Deactivated</strong> — card is off. Reactivate to fund, transfer, or pay again.</p>'
+      : statusKey === 'frozen'
+        ? '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
+        : isPrimary1955(card)
+          ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then use Pay / History.</p>'
+          : `<p class="muted desk-control-note"><strong>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
@@ -1390,7 +1395,7 @@ function deskCardDetailHtml() {
             </select>
           </label>
         </section>
-        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze controls, bank Pay shortcuts, and recent funds onto this card.</p>
+        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, bank Pay shortcuts, and recent funds onto this card.</p>
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Card details">
@@ -1413,15 +1418,24 @@ function deskCardDetailHtml() {
               <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
               <div class="wallet-field"><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
-              <div class="wallet-field"><small>Status</small><strong>${esc(statusKey === 'frozen' ? 'Frozen' : 'Active')}</strong></div>
+              <div class="wallet-field"><small>Status</small><strong>${esc(
+                statusKey === 'deactivated' ? 'Deactivated' : statusKey === 'frozen' ? 'Frozen' : 'Active',
+              )}</strong></div>
             </div>
             <div class="desk-card-controls">
               <p class="eyebrow">Controls</p>
               <div class="active-actions">
                 ${
+                  statusKey === 'deactivated'
+                    ? `<button class="primary" type="button" data-action="desk-reactivate-card" data-id="${esc(card.id)}">Reactivate</button>`
+                    : `<button class="ghost" type="button" data-action="desk-deactivate-card" data-id="${esc(card.id)}">Deactivate</button>`
+                }
+                ${
                   statusKey === 'frozen'
-                    ? `<button class="primary" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
-                    : `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
+                    ? `<button class="ghost" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
+                    : statusKey === 'active'
+                      ? `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
+                      : ''
                 }
                 <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
               </div>
@@ -1445,9 +1459,11 @@ function deskCardDetailHtml() {
             <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
           ${
-            statusKey === 'frozen'
-              ? `<p class="lede">Unfreeze the card before funding.</p>`
-              : ''
+            statusKey === 'deactivated'
+              ? `<p class="lede">Reactivate the card before funding.</p>`
+              : statusKey === 'frozen'
+                ? `<p class="lede">Unfreeze the card before funding.</p>`
+                : ''
           }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
@@ -2436,13 +2452,18 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-freeze-card') {
     const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
     if (!card) return;
+    if (card.deactivated) {
+      state.flash = { kind: 'error', text: 'Card is deactivated. Reactivate it first, or leave it off.' };
+      render();
+      return;
+    }
     card.frozen = true;
     card.status = 'frozen';
     card.ready = false;
     saveDeskLedger();
     state.flash = {
       kind: 'ok',
-      text: `Frozen ····${String(card.pan).slice(-4)} · funding and spending paused`,
+      text: `Frozen ····${String(card.pan).slice(-4)} · temporary pause`,
     };
     render();
     return;
@@ -2451,14 +2472,52 @@ document.body.addEventListener('click', (event) => {
     const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
     if (!card) return;
     card.frozen = false;
-    card.status = 'active';
-    card.ready = true;
-    card.activatesAt = 0;
+    if (!card.deactivated) {
+      card.status = 'active';
+      card.ready = true;
+      card.activatesAt = 0;
+    }
     syncCardStatuses();
     saveDeskLedger();
     state.flash = {
       kind: 'ok',
-      text: `Unfrozen ····${String(card.pan).slice(-4)} · active again`,
+      text: `Unfrozen ····${String(card.pan).slice(-4)} · ${card.deactivated ? 'still deactivated' : 'active again'}`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-deactivate-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.deactivated = true;
+    card.frozen = false;
+    card.status = 'deactivated';
+    card.ready = false;
+    const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
+    card.label = card.endless ? 'Deactivated · ····1955' : `Deactivated · ${brand}`;
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Deactivated ····${String(card.pan).slice(-4)} · off until you reactivate`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-reactivate-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.deactivated = false;
+    card.frozen = false;
+    card.status = 'active';
+    card.ready = true;
+    card.activatesAt = 0;
+    const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
+    card.label = card.endless ? 'Active · ····1955' : `Active · ${brand}`;
+    syncCardStatuses();
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Reactivated ····${String(card.pan).slice(-4)} · active again`,
     };
     render();
     return;
@@ -2643,7 +2702,10 @@ document.body.addEventListener('click', (event) => {
     if (!cardIsOperable(card)) {
       state.flash = {
         kind: 'error',
-        text: 'Card is frozen. Unfreeze it first.',
+        text:
+          cardStatusKey(card) === 'deactivated'
+            ? 'Card is deactivated. Reactivate it first.'
+            : 'Card is frozen. Unfreeze it first.',
       };
       render();
       return;
@@ -2906,6 +2968,9 @@ document.body.addEventListener('submit', (event) => {
       const amount = Number(data.amount || state.deskCardFundAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
       const amountCents = Math.round(amount * 100);
+      if (cardStatusKey(card) === 'deactivated') {
+        throw new Error('Card is deactivated. Reactivate it before funding.');
+      }
       if (cardStatusKey(card) === 'frozen') {
         throw new Error('Card is frozen. Unfreeze it before funding.');
       }
@@ -2969,6 +3034,8 @@ document.body.addEventListener('submit', (event) => {
       const to = state.deskCards.find((c) => c.id === toId);
       if (!from || !to) throw new Error('Choose both From and To cards.');
       if (from.id === to.id) throw new Error('Pick two different cards.');
+      if (cardStatusKey(from) === 'deactivated') throw new Error('From card is deactivated. Reactivate it first.');
+      if (cardStatusKey(to) === 'deactivated') throw new Error('To card is deactivated. Reactivate it first.');
       if (cardStatusKey(from) === 'frozen') throw new Error('From card is frozen. Unfreeze it first.');
       if (cardStatusKey(to) === 'frozen') throw new Error('To card is frozen. Unfreeze it first.');
       const amount = Number(data.amount || state.deskMoveAmount);
@@ -3022,6 +3089,7 @@ document.body.addEventListener('submit', (event) => {
       const cardId = String(data.cardId || '');
       const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
       if (!card) throw new Error('Choose a card for this payment.');
+      if (cardStatusKey(card) === 'deactivated') throw new Error('Card is deactivated. Reactivate it first.');
       if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
       const amount = Number(data.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a spend amount greater than zero.');
