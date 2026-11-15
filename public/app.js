@@ -36,6 +36,9 @@ const state = {
   deskTransfers: [],
   deskTopupCardId: '',
   deskCardFundAmount: '',
+  deskMoveFromId: '',
+  deskMoveToId: '',
+  deskMoveAmount: '',
   deskDetailCardId: '',
   deskSelectedCardId: '',
   /** @type {'home' | 'card' | 'payments' | 'history'} */
@@ -1078,6 +1081,40 @@ function capacityDeskHtml() {
   return deskShellHtml(deskHomeHtml());
 }
 
+function deskCardSelectOptions(selectedId, { excludeId = '', emptyLabel = 'Choose card' } = {}) {
+  const rows = state.deskCards.filter((c) => !excludeId || c.id !== excludeId);
+  if (!rows.length) return `<option value="">${esc(emptyLabel)}</option>`;
+  return rows
+    .map((c) => {
+      const brand = c.endless ? '1955' : c.brand === 'visa' ? 'Visa' : 'Mastercard';
+      const label = `${brand} ····${String(c.pan).slice(-4)} · ${money(c.balanceCents || 0)}`;
+      return `<option value="${esc(c.id)}" ${c.id === selectedId ? 'selected' : ''}>${esc(label)}</option>`;
+    })
+    .join('');
+}
+
+function deskCardPickerHtml(selectedId) {
+  if (!state.deskCards.length) {
+    return '<p class="muted desk-empty-cards">No cards yet — create Visa or Mastercard below.</p>';
+  }
+  return state.deskCards
+    .map((c) => {
+      const on = c.id === selectedId ? 'on' : '';
+      const key = cardStatusKey(c);
+      const brandTag = c.endless ? 'Primary 1955' : c.brand === 'visa' ? 'Visa' : 'Mastercard';
+      const statusLabel = key === 'frozen' ? 'Frozen' : 'Active';
+      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}">
+          <span class="desk-card-pick-top">
+            <small>${esc(brandTag)}</small>
+            <span class="desk-chip-status">${esc(statusLabel)}</span>
+          </span>
+          <strong class="desk-card-pick-pan">····${esc(String(c.pan).slice(-4))}</strong>
+          <span class="desk-card-pick-bal">${esc(money(c.balanceCents || 0))}</span>
+        </button>`;
+    })
+    .join('');
+}
+
 function deskHomeHtml() {
   const card = deskActiveCard();
   const hasCard = Boolean(card?.pan);
@@ -1098,6 +1135,27 @@ function deskHomeHtml() {
   const topupCard = card;
   if (topupCard && state.deskTopupCardId !== topupCard.id) state.deskTopupCardId = topupCard.id;
 
+  if (!state.deskMoveFromId && topupCard) state.deskMoveFromId = topupCard.id;
+  if (
+    state.deskMoveFromId
+    && (!state.deskMoveToId || state.deskMoveToId === state.deskMoveFromId)
+  ) {
+    const other = state.deskCards.find((c) => c.id !== state.deskMoveFromId);
+    state.deskMoveToId = other?.id || '';
+  }
+
+  const moveFrom = state.deskCards.find((c) => c.id === state.deskMoveFromId) || topupCard;
+  const moveTo = state.deskCards.find((c) => c.id === state.deskMoveToId);
+  const moveAmountNum = Number(state.deskMoveAmount);
+  const moveCents =
+    Number.isFinite(moveAmountNum) && moveAmountNum > 0 ? Math.round(moveAmountNum * 100) : 0;
+  const canMove =
+    Boolean(moveFrom && moveTo && moveFrom.id !== moveTo.id)
+    && cardIsOperable(moveFrom)
+    && cardIsOperable(moveTo)
+    && Number(moveFrom.balanceCents || 0) > 0
+    && state.deskCards.length >= 2;
+
   const tokenButtons = DESK_DEPOSIT_TOKENS.map(
     (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
         <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.chain)}</span></span>
@@ -1105,53 +1163,22 @@ function deskHomeHtml() {
       </button>`,
   ).join('');
 
-  const menuOptions = state.deskCards
-    .map(
-      (c) =>
-        `<option value="${esc(c.id)}" ${c.id === (card?.id || '') ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
-    )
-    .join('');
-
-  const balanceStrip = state.deskCards.length
-    ? state.deskCards
-        .map((c) => {
-          const on = c.id === (card?.id || '') ? 'on' : '';
-          const bal = money(c.balanceCents || 0);
-          const key = cardStatusKey(c);
-          const brandTag = c.endless ? '1955' : (c.brand === 'visa' ? 'Visa' : 'MC');
-          const statusLabel =
-            key === 'frozen' ? 'Frozen' : key === 'activating' ? 'Activating' : 'Active';
-          return `<button type="button" class="desk-balance-chip-btn ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}">
-            <small>${esc(brandTag)} ····${esc(String(c.pan).slice(-4))}</small>
-            <strong>${esc(bal)}</strong>
-            <span class="desk-chip-status">${esc(statusLabel)}</span>
-          </button>`;
-        })
-        .join('')
-    : '<p class="muted desk-empty-cards">No card on desk.</p>';
-
-  const activationNote = `<aside class="desk-activation-note" role="status">
-          <p class="eyebrow">Cards</p>
-          <p><strong>Primary ····1955</strong> · <span class="mono">${esc(PRIMARY_1955_PAN)}</span></p>
-          <p class="muted">Create Visa or Mastercard anytime — both are active immediately at €0. Fund from desk, then spend.</p>
-        </aside>`;
+  const selectedLabel = hasCard
+    ? `${isPrimary1955(card) ? 'Primary 1955' : card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)}`
+    : 'No card selected';
 
   return `
         <section class="desk-home-hero">
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
-            <h1>Cards</h1>
-            <p class="lede desk-home-lede">Keep ····1955 plus any cards you create. Fund from desk balance, then spend via Pay / History.</p>
-            <label class="desk-card-menu-label">Card
-              <select id="desk-card-menu" ${state.deskCards.length ? '' : 'disabled'}>
-                ${menuOptions || '<option value="">No card</option>'}
-              </select>
-            </label>
+            <h1>Dashboard</h1>
+            <p class="lede desk-home-lede">1) Tap a card to select it · 2) Move money (desk → card or card → card) · 3) Pay / History for spending.</p>
+            <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
               <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${state.deskIssuing ? 'Creating…' : 'Create card'}</button>
               <button class="ghost" type="button" data-action="desk-issue-new" data-brand="visa" ${state.deskIssuing ? 'disabled' : ''}>Visa</button>
               <button class="ghost" type="button" data-action="desk-issue-new" data-brand="mastercard" ${state.deskIssuing ? 'disabled' : ''}>Mastercard</button>
-              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Open card</button>` : ''}
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>` : ''}
             </div>
           </div>
           <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
@@ -1163,29 +1190,39 @@ function deskHomeHtml() {
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
               <div><small>Balance</small><strong>${esc(hasCard ? money(card.balanceCents || 0) : money(0))}</strong></div>
             </div>
-            <p class="desk-card-status">${hasCard ? `${cardStatusPill(card)} · tap to open` : '<span class="pill">Not issued</span>'}</p>
+            <p class="desk-card-status">${hasCard ? `${cardStatusPill(card)} · tap for PAN / CVV` : '<span class="pill">Not issued</span>'}</p>
           </article>
         </section>
 
-        ${activationNote}
-
-        <section class="desk-balance-menu" aria-label="Card balances">
+        <section class="desk-balance-menu desk-card-picker-panel" aria-label="Choose a card">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Balances</p>
-              <h2>All cards</h2>
+              <p class="eyebrow">Step 1</p>
+              <h2>Choose card</h2>
+              <p class="muted desk-panel-help">Tap a card tile to select it for funding, transfer, and Pay. Desk wallet sits beside the tiles.</p>
             </div>
-            <span class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></span>
+            <span class="desk-balance-chip" title="House wallet used to fund cards"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></span>
           </div>
-          <div class="desk-balance-strip">${balanceStrip}</div>
+          <div class="desk-card-picker">${deskCardPickerHtml(card?.id || '')}</div>
         </section>
 
-        <section class="desk-fund-grid">
+        <section class="desk-howto" aria-label="How money moves">
+          <p class="eyebrow">How it works</p>
+          <ol class="desk-howto-list">
+            <li><strong>Top up desk</strong> — credit the house wallet from USDT (Solana or BSC).</li>
+            <li><strong>Fund card</strong> — move EUR from the desk wallet onto the selected card.</li>
+            <li><strong>Card → card</strong> — send EUR between your own cards instantly.</li>
+            <li><strong>Pay / History</strong> — record spends; 3-D Secure is not required.</li>
+          </ol>
+        </section>
+
+        <section class="desk-fund-grid desk-fund-grid-3">
           <section class="desk-deposit desk-compact" id="desk-deposit">
             <div class="panel-head-inline">
               <div>
-                <p class="eyebrow">Desk balance</p>
+                <p class="eyebrow">Desk wallet</p>
                 <h2>Top up</h2>
+                <p class="muted desk-panel-help">Adds EUR to the shared desk balance (not a card yet).</p>
               </div>
               <div class="desk-balance-chip">
                 <small>USDT · ${esc(selected.chain)}</small>
@@ -1201,50 +1238,89 @@ function deskHomeHtml() {
                 <small>To desk (EUR)</small>
                 <strong>${esc(money(Math.round(creditEur * 100)))}</strong>
               </div>
-              <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>${state.deskDepositBusy ? '…' : 'Top up'}</button>
+              <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>${state.deskDepositBusy ? '…' : 'Top up desk'}</button>
             </form>
           </section>
 
           <section class="desk-deposit desk-compact" id="desk-card-fund">
             <div class="panel-head-inline">
               <div>
-                <p class="eyebrow">From desk → card</p>
+                <p class="eyebrow">Desk → card</p>
                 <h2>Fund card</h2>
+                <p class="muted desk-panel-help">Moves EUR from the desk wallet onto one card. We then try to match a live USDT TX.</p>
               </div>
               <div class="desk-balance-chip">
-                <small>Available</small>
+                <small>Desk left</small>
                 <strong>${esc(money(state.deskBalanceCents))}</strong>
               </div>
             </div>
             <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
-              <label>Card
+              <label>To card
                 <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${
-                  state.deskCards
-                    .map(
-                      (c) =>
-                        `<option value="${esc(c.id)}" ${c.id === (topupCard?.id || '') ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
-                    )
-                    .join('') || '<option value="">Issue first</option>'
+                  deskCardSelectOptions(topupCard?.id || '', { emptyLabel: 'Create a card first' })
                 }</select>
               </label>
               <label>Amount (EUR)
                 <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
               </label>
               <div class="desk-credit-preview">
-                <small>Left on desk</small>
+                <small>Desk after</small>
                 <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
               </div>
-              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund</button>
+              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund card</button>
             </form>
-            <p class="muted desk-fund-hint">Fund ····1955 from desk (EUR). After fund we match a live USDT chain TX to the EUR amount.</p>
+          </section>
+
+          <section class="desk-deposit desk-compact" id="desk-card-move">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">Card → card</p>
+                <h2>Transfer</h2>
+                <p class="muted desk-panel-help">Send EUR between your cards. Needs at least two active cards.</p>
+              </div>
+            </div>
+            <form id="desk-card-move-form" class="desk-deposit-form desk-fund-form">
+              <label>From
+                <select name="fromId" ${state.deskCards.length >= 2 ? '' : 'disabled'}>${
+                  deskCardSelectOptions(state.deskMoveFromId || moveFrom?.id || '', {
+                    emptyLabel: 'Need 2+ cards',
+                  })
+                }</select>
+              </label>
+              <label>To
+                <select name="toId" ${state.deskCards.length >= 2 ? '' : 'disabled'}>${
+                  deskCardSelectOptions(state.deskMoveToId || '', {
+                    excludeId: state.deskMoveFromId || moveFrom?.id || '',
+                    emptyLabel: 'Choose destination',
+                  })
+                }</select>
+              </label>
+              <label>Amount (EUR)
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskMoveAmount)}" required ${canMove ? '' : 'disabled'} />
+              </label>
+              <div class="desk-credit-preview">
+                <small>From left after</small>
+                <strong>${esc(
+                  money(
+                    Math.max(0, Number(moveFrom?.balanceCents || 0) - moveCents),
+                  ),
+                )}</strong>
+              </div>
+              <button class="primary" type="submit" ${canMove ? '' : 'disabled'}>Transfer</button>
+            </form>
+            ${
+              state.deskCards.length < 2
+                ? '<p class="muted desk-fund-hint">Create a second card to enable transfers.</p>'
+                : '<p class="muted desk-fund-hint">Instant internal move — does not use the desk wallet.</p>'
+            }
           </section>
         </section>
 
         <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
-          <article class="stat"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
+          <article class="stat"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
           <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>USDT</small><strong>€${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
+          <article class="stat"><small>USDT ≈</small><strong>€${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
         </section>`;
 }
 
@@ -1300,20 +1376,21 @@ function deskCardDetailHtml() {
 
   const controlsNote =
     statusKey === 'frozen'
-      ? '<p class="muted desk-control-note">Card is frozen. Unfreeze to allow funding and spending again.</p>'
+      ? '<p class="muted desk-control-note"><strong>Frozen</strong> — funding, transfers, and Pay are blocked until you unfreeze.</p>'
       : isPrimary1955(card)
-        ? '<p class="muted desk-control-note">····1955 is active. Balance is real — fund from desk, then spend.</p>'
-        : `<p class="muted desk-control-note">${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} is active now. 3-D Secure is not required. Top-ups apply immediately.</p>`;
+        ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then use Pay / History.</p>'
+        : `<p class="muted desk-control-note"><strong>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
-          <button class="ghost desk-back" type="button" data-action="desk-close-detail">← All cards</button>
-          <label class="desk-card-menu-label desk-detail-menu">Card
+          <button class="ghost desk-back" type="button" data-action="desk-close-detail">← Dashboard</button>
+          <label class="desk-card-menu-label desk-detail-menu">Switch card
             <select id="desk-card-menu-detail">
               ${menuOptions}
             </select>
           </label>
         </section>
+        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze controls, bank Pay shortcuts, and recent funds onto this card.</p>
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Card details">
@@ -1361,8 +1438,9 @@ function deskCardDetailHtml() {
         <section class="desk-deposit desk-compact" id="desk-card-fund">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Fund this card</p>
-              <h2>From desk balance</h2>
+              <p class="eyebrow">Desk → this card</p>
+              <h2>Fund from desk</h2>
+              <p class="muted desk-panel-help">Takes EUR from the shared desk wallet and adds it to this card’s spendable balance.</p>
             </div>
             <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
@@ -2182,6 +2260,16 @@ document.body.addEventListener('input', (event) => {
     const preview = document.querySelector('#desk-card-fund .desk-credit-preview strong');
     if (preview) preview.textContent = money(Math.max(0, state.deskBalanceCents - fundCents));
   }
+  if (event.target.closest?.('#desk-card-move-form') && event.target.name === 'amount') {
+    state.deskMoveAmount = event.target.value;
+    const amountNum = Number(state.deskMoveAmount);
+    const moveCents = Number.isFinite(amountNum) && amountNum > 0 ? Math.round(amountNum * 100) : 0;
+    const from = state.deskCards.find((c) => c.id === state.deskMoveFromId);
+    const preview = document.querySelector('#desk-card-move .desk-credit-preview strong');
+    if (preview) {
+      preview.textContent = money(Math.max(0, Number(from?.balanceCents || 0) - moveCents));
+    }
+  }
 });
 
 document.body.addEventListener('change', (event) => {
@@ -2205,6 +2293,16 @@ document.body.addEventListener('change', (event) => {
   if (target.closest?.('#desk-card-fund-form') && target.name === 'cardId') {
     state.deskTopupCardId = target.value || '';
     state.deskSelectedCardId = state.deskTopupCardId;
+  }
+  if (target.closest?.('#desk-card-move-form') && target.name === 'fromId') {
+    state.deskMoveFromId = target.value || '';
+    if (state.deskMoveToId === state.deskMoveFromId) {
+      state.deskMoveToId = state.deskCards.find((c) => c.id !== state.deskMoveFromId)?.id || '';
+    }
+    render();
+  }
+  if (target.closest?.('#desk-card-move-form') && target.name === 'toId') {
+    state.deskMoveToId = target.value || '';
   }
   if (target.closest?.('#desk-spend-form') && target.name === 'cardId') {
     state.spendDraft.cardId = target.value || '';
@@ -2453,6 +2551,11 @@ document.body.addEventListener('click', (event) => {
     const id = button.dataset.id || '';
     state.deskSelectedCardId = id;
     state.deskTopupCardId = id;
+    state.deskMoveFromId = id;
+    const other = state.deskCards.find((c) => c.id !== id);
+    if (other && (!state.deskMoveToId || state.deskMoveToId === id)) {
+      state.deskMoveToId = other.id;
+    }
     state.spendDraft.cardId = id;
     if (state.deskView === 'card') state.deskDetailCardId = id;
     render();
@@ -2855,6 +2958,63 @@ document.body.addEventListener('submit', (event) => {
         };
       }
       render();
+    });
+  }
+  if (form.id === 'desk-card-move-form') {
+    run(async () => {
+      if (state.deskCards.length < 2) throw new Error('Create at least two cards to transfer between them.');
+      const fromId = String(data.fromId || state.deskMoveFromId || '');
+      const toId = String(data.toId || state.deskMoveToId || '');
+      const from = state.deskCards.find((c) => c.id === fromId);
+      const to = state.deskCards.find((c) => c.id === toId);
+      if (!from || !to) throw new Error('Choose both From and To cards.');
+      if (from.id === to.id) throw new Error('Pick two different cards.');
+      if (cardStatusKey(from) === 'frozen') throw new Error('From card is frozen. Unfreeze it first.');
+      if (cardStatusKey(to) === 'frozen') throw new Error('To card is frozen. Unfreeze it first.');
+      const amount = Number(data.amount || state.deskMoveAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
+      const amountCents = Math.round(amount * 100);
+      const fromBal = Number(from.balanceCents || 0);
+      if (fromBal < amountCents) {
+        throw new Error(
+          `····${String(from.pan).slice(-4)} only has ${money(fromBal)}. Fund it or choose another card.`,
+        );
+      }
+      from.balanceCents = fromBal - amountCents;
+      to.balanceCents = Number(to.balanceCents || 0) + amountCents;
+      const whenMs = Date.now();
+      const when = new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      state.deskTransfers = [
+        {
+          when,
+          whenIso: new Date(whenMs).toISOString(),
+          createdAt: whenMs,
+          amountCents,
+          cardId: to.id,
+          cardLast4: String(to.pan).slice(-4),
+          fromCardId: from.id,
+          fromLast4: String(from.pan).slice(-4),
+          status: `From ····${String(from.pan).slice(-4)}`,
+          kind: 'card_to_card',
+          txHash: '',
+          txUrl: '',
+          txChain: '',
+          txAmount: 0,
+        },
+        ...state.deskTransfers,
+      ];
+      state.deskMoveAmount = '';
+      state.deskMoveFromId = from.id;
+      state.deskMoveToId = to.id;
+      state.deskSelectedCardId = to.id;
+      state.deskTopupCardId = to.id;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Transferred ${money(amountCents)} · ····${String(from.pan).slice(-4)} → ····${String(to.pan).slice(-4)}`,
+      };
+      render();
+      document.getElementById('desk-card-move')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
   }
   if (form.id === 'desk-spend-form') {

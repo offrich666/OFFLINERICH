@@ -1095,3 +1095,105 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
     display: none;
   }
 }
+
+/* Easier card picker + dashboard help */
+.desk-selected-line {
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+}
+.desk-selected-line small {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--muted);
+}
+.desk-panel-help {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 46ch;
+}
+.desk-detail-help {
+  margin: 0 0 14px;
+}
+.desk-card-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 10px;
+}
+.desk-card-pick {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  padding: 14px 14px 12px;
+  border: 1px solid #d5d0c6;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+.desk-card-pick:hover,
+.desk-card-pick:focus-visible {
+  border-color: #1a2430;
+  outline: none;
+  transform: translateY(-1px);
+}
+.desk-card-pick.on {
+  background: #1a2430;
+  border-color: #1a2430;
+  color: #f7f1e6;
+}
+.desk-card-pick.on small,
+.desk-card-pick.on .desk-chip-status {
+  color: rgba(247, 241, 230, 0.72);
+}
+.desk-card-pick-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.desk-card-pick-top small {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.desk-card-pick-pan {
+  font-size: 20px;
+  letter-spacing: 0.04em;
+}
+.desk-card-pick-bal {
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+}
+.desk-howto {
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbf8f1 0%, #f3eee3 100%);
+}
+.desk-howto-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.desk-howto-list li {
+  margin-bottom: 6px;
+}
+.desk-fund-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .desk-fund-grid-3 {
+    grid-template-columns: 1fr;
+  }
+}
