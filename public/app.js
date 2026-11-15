@@ -62,6 +62,7 @@ const PAYMENT_GATEWAYS = [
   'NLB Banka',
 ];
 const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
+const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
@@ -265,6 +266,44 @@ function ensureExampleSpend(primary) {
       status: 'Completed',
       gateway: 'TEB BNP PARIBAS',
       authNr: '389274',
+      threeDs: 'not_required',
+      createdAt: whenDate.getTime(),
+    },
+    ...state.deskSpends,
+  ];
+}
+
+/** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
+function ensureIpkoSpend(primary) {
+  if (!primary) return;
+  if (
+    state.deskSpends.some(
+      (s) =>
+        s.id === IPKO_SPEND_ID
+        || (String(s.authNr || '') === '388964' && String(s.merchant || '').toUpperCase().includes('IPKO')),
+    )
+  ) {
+    return;
+  }
+  const whenDate = new Date('2026-11-13T17:55:00+01:00');
+  const amountCents = 500;
+  const bal = Number(primary.balanceCents || 0);
+  if (bal >= amountCents) {
+    primary.balanceCents = bal - amountCents;
+  }
+  state.deskSpends = [
+    {
+      id: IPKO_SPEND_ID,
+      when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+      whenIso: whenDate.toISOString(),
+      merchant: 'IPKO E-COMMERCE',
+      amountCents,
+      cardId: primary.id,
+      cardLast4: String(primary.pan).slice(-4) || '1955',
+      network: String(primary.brand || 'mastercard'),
+      status: 'Completed',
+      gateway: 'TEB BNP PARIBAS',
+      authNr: '388964',
       threeDs: 'not_required',
       createdAt: whenDate.getTime(),
     },
@@ -753,6 +792,7 @@ function ensureDeskDefaults() {
     state.deskBalanceSeeded = true;
   }
   ensureExampleSpend(primary);
+  ensureIpkoSpend(primary);
   syncCardStatuses();
   if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
     state.deskSelectedCardId = primary.id;
@@ -2550,7 +2590,9 @@ document.body.addEventListener('click', (event) => {
     state.deskView = 'history';
     state.deskDetailCardId = '';
     reloadStoredSpends();
-    ensureExampleSpend(deskActiveCard());
+    const primary = deskActiveCard();
+    ensureExampleSpend(primary);
+    ensureIpkoSpend(primary);
     saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
