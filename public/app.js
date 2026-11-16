@@ -395,13 +395,11 @@ function ensureExampleSpend(primary) {
   ];
 }
 
-/** Drop the €7,598.00 spend the user asked to remove; refund the card once. */
-function purgeSpend7598() {
-  const targetCents = 759_800; // €7,598.00
+function refundAndDropSpends(predicate) {
   const kept = [];
   const removed = [];
   for (const s of state.deskSpends) {
-    if (Number(s.amountCents) === targetCents) removed.push(s);
+    if (predicate(s)) removed.push(s);
     else kept.push(s);
   }
   if (!removed.length) return false;
@@ -420,6 +418,20 @@ function purgeSpend7598() {
     state.spendDetailId = '';
   }
   return true;
+}
+
+/** Drop the €7,598.00 spend the user asked to remove; refund the card once. */
+function purgeSpend7598() {
+  return refundAndDropSpends((s) => Number(s.amountCents) === 759_800);
+}
+
+/** Drop the €25.00 Gjirafa spend; refund the card once. */
+function purgeGjirafa25() {
+  return refundAndDropSpends(
+    (s) =>
+      Number(s.amountCents) === 2500
+      && String(s.merchant || '').toLowerCase().includes('gjirafa'),
+  );
 }
 
 /** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
@@ -1222,6 +1234,7 @@ function ensureDeskDefaults() {
   ensureExampleSpend(primary);
   ensureIpkoSpend(primary);
   purgeSpend7598();
+  purgeGjirafa25();
   syncCardStatuses();
   if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
     state.deskSelectedCardId = primary.id;
