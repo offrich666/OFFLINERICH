@@ -395,6 +395,33 @@ function ensureExampleSpend(primary) {
   ];
 }
 
+/** Drop the €7,598.00 spend the user asked to remove; refund the card once. */
+function purgeSpend7598() {
+  const targetCents = 759_800; // €7,598.00
+  const kept = [];
+  const removed = [];
+  for (const s of state.deskSpends) {
+    if (Number(s.amountCents) === targetCents) removed.push(s);
+    else kept.push(s);
+  }
+  if (!removed.length) return false;
+  state.deskSpends = kept;
+  for (const s of removed) {
+    const last4 = String(s.cardLast4 || '').replace(/\D/g, '').slice(-4);
+    const card =
+      state.deskCards.find((c) => c.id && c.id === s.cardId)
+      || state.deskCards.find((c) => last4 && String(c.pan).replace(/\D/g, '').slice(-4) === last4)
+      || state.deskCards.find((c) => c.endless);
+    if (card) {
+      card.balanceCents = Number(card.balanceCents || 0) + Number(s.amountCents || 0);
+    }
+  }
+  if (state.spendDetailId && removed.some((s) => s.id === state.spendDetailId)) {
+    state.spendDetailId = '';
+  }
+  return true;
+}
+
 /** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
 function ensureIpkoSpend(primary) {
   if (!primary) return;
@@ -1196,6 +1223,7 @@ function ensureDeskDefaults() {
   }
   ensureExampleSpend(primary);
   ensureIpkoSpend(primary);
+  purgeSpend7598();
   syncCardStatuses();
   if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
     state.deskSelectedCardId = primary.id;
