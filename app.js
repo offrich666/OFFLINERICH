@@ -75,10 +75,15 @@ const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
 const G_CORP_STATEMENT = {
   legalName: 'G Corp Cards',
-  entity: 'G Corp Cards EU · Virtual card programme',
+  entity: 'G Corp Cards EU S.A.',
+  tagline: 'Virtual card programme · Statement of account',
   address: ['Keizerlijke 12', '1000 Brussels', 'Belgium'],
+  registry: 'BCE / KBO 0789.456.321',
+  vat: 'BE0789456321',
   support: 'statements@g-cards.eu',
+  phone: '+32 2 555 0190',
   programme: 'G Cards EU Issuing Desk',
+  website: 'g-cards.eu',
 };
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
@@ -676,7 +681,24 @@ function pdfAscii(text) {
     .replace(/[^\x20-\x7E]/g, '?');
 }
 
-/** Minimal multi-page PDF writer (Helvetica) for G Corp Cards statements. */
+function pdfColor(rgb = [0.12, 0.16, 0.22]) {
+  const [r, g, b] = rgb;
+  return `${Number(r).toFixed(3)} ${Number(g).toFixed(3)} ${Number(b).toFixed(3)}`;
+}
+
+function pdfTextWidth(text, size = 10) {
+  // Helvetica average glyph width ≈ 0.5em — enough for right-align on statements.
+  return String(text || '').length * size * 0.5;
+}
+
+function pdfRightX(text, size, rightEdge) {
+  return rightEdge - pdfTextWidth(text, size);
+}
+
+/**
+ * Multi-page PDF writer for G Corp Cards statements.
+ * Page items: {text,x,y,size,bold,color} | {rect,x,y,w,h,fill} | {rule,x1,y1,x2,y2,color,width}
+ */
 function buildPdfDocument(pages) {
   const encoder = new TextEncoder();
   const objects = [];
@@ -691,18 +713,25 @@ function buildPdfDocument(pages) {
 
   for (const page of pages) {
     const ops = [];
-    ops.push('0.12 0.16 0.22 RG', '0.6 w');
     for (const item of page) {
+      if (item.rect) {
+        ops.push(`${pdfColor(item.fill || [0.95, 0.95, 0.96])} rg`);
+        ops.push(`${item.x} ${item.y} ${item.w} ${item.h} re f`);
+        continue;
+      }
       if (item.rule) {
+        ops.push(`${pdfColor(item.color || [0.75, 0.78, 0.82])} RG`);
+        ops.push(`${Number(item.width || 0.6).toFixed(2)} w`);
         ops.push(`${item.x1} ${item.y1} m ${item.x2} ${item.y2} l S`);
       }
     }
     ops.push('BT');
     for (const item of page) {
-      if (item.rule || item.text == null) continue;
+      if (item.rect || item.rule || item.text == null) continue;
       const size = item.size || 10;
       const x = item.x ?? 48;
       const y = item.y ?? 750;
+      ops.push(`${pdfColor(item.color || [0.12, 0.16, 0.22])} rg`);
       ops.push(`/${item.bold ? 'FB' : 'FR'} ${size} Tf`);
       ops.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
       ops.push(`(${pdfEscape(pdfAscii(item.text))}) Tj`);
@@ -713,13 +742,8 @@ function buildPdfDocument(pages) {
     contentIds.push(add(`<< /Length ${bytes.length} >>\nstream\n${full}\nendstream`));
   }
 
-  for (let i = 0; i < pages.length; i += 1) {
-    pageIds.push(0); // placeholder
-  }
-  const kidsPlaceholder = pageIds.map(() => 'PG').join(' ');
-  // Allocate page objects after we know pagesId… build pages with temporary parent, then fix.
-  const pagesObjIndex = objects.length; // will push next
-  add('<< /Type /Pages /Kids [] /Count 0 >>'); // temporary
+  const pagesObjIndex = objects.length;
+  add('<< /Type /Pages /Kids [] /Count 0 >>');
   for (let i = 0; i < pages.length; i += 1) {
     pageIds[i] = add(
       `<< /Type /Page /Parent ${pagesObjIndex + 1} 0 R /MediaBox [0 0 595 842] /Contents ${contentIds[i]} 0 R /Resources << /Font << /FR ${fontRegular} 0 R /FB ${fontBold} 0 R >> >> >>`,
@@ -727,7 +751,6 @@ function buildPdfDocument(pages) {
   }
   objects[pagesObjIndex] =
     `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
-  void kidsPlaceholder;
   const catalogId = add(`<< /Type /Catalog /Pages ${pagesObjIndex + 1} 0 R >>`);
 
   let pdf = '%PDF-1.4\n';
@@ -769,7 +792,7 @@ function spendsForCardInPeriod(card, fromMs, toMs) {
 
 function formatStatementDate(ms) {
   return new Date(ms).toLocaleString('en-GB', {
-    timeZone: 'Europe/Belgrade',
+    timeZone: 'Europe/Warsaw',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -779,116 +802,330 @@ function formatStatementDate(ms) {
   });
 }
 
+function formatStatementDay(isoDate) {
+  const ms = Date.parse(`${isoDate}T12:00:00+01:00`);
+  if (!Number.isFinite(ms)) return isoDate;
+  return new Date(ms).toLocaleDateString('en-GB', {
+    timeZone: 'Europe/Warsaw',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+function ensureStatementDraft(cardId = '') {
+  if (!state.statementDraft) state.statementDraft = { cardId: '', from: '', to: '' };
+  if (cardId) state.statementDraft.cardId = cardId;
+  if (!state.statementDraft.cardId && state.deskCards[0]) {
+    state.statementDraft.cardId = state.deskSelectedCardId || state.deskCards[0].id;
+  }
+  if (!state.statementDraft.from || !state.statementDraft.to) {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - 30);
+    state.statementDraft.from = from.toISOString().slice(0, 10);
+    state.statementDraft.to = to.toISOString().slice(0, 10);
+  }
+  return state.statementDraft;
+}
+
+function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 'desk-statement-form' } = {}) {
+  const draft = ensureStatementDraft(cardId);
+  const selectedId = draft.cardId || cardId || '';
+  const cardField = embedCardSelect
+    ? `<label>Card
+        <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
+          ${deskCardSelectOptions(selectedId, { emptyLabel: 'Choose card' })}
+        </select>
+      </label>`
+    : `<input type="hidden" name="cardId" value="${esc(selectedId)}" />`;
+  return `
+        <section class="desk-statement-panel" id="desk-statement">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">G Corp Cards</p>
+              <h2>Download statement</h2>
+              <p class="muted desk-panel-help">Official PDF statement of account — cardholder details, period summary, and itemised payments / refunds.</p>
+            </div>
+          </div>
+          <form id="${esc(formId)}" class="desk-statement-form ${embedCardSelect ? 'desk-statement-form-wide' : ''}">
+            ${cardField}
+            <label>From
+              <input name="from" type="date" value="${esc(draft.from)}" required />
+            </label>
+            <label>To
+              <input name="to" type="date" value="${esc(draft.to)}" required />
+            </label>
+            <button class="primary" type="submit">Download PDF</button>
+          </form>
+        </section>`;
+}
+
 function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const { from, to } = statementPeriodBounds(fromStr, toStr);
   const rows = spendsForCardInPeriod(card, from, to);
   const cur = cardCurrency(card);
-  const totalSpend = rows.reduce((sum, s) => sum + spendSignedCents(s), 0);
+  const payments = rows.filter((s) => !isSpendRefund(s));
+  const refunds = rows.filter((s) => isSpendRefund(s));
+  const paymentTotal = payments.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const refundTotal = refunds.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const netTotal = refundTotal - paymentTotal;
   const stmtId = `GCS-${belgradeYmd(Date.now()).replace(/-/g, '')}-${String(card.pan).slice(-4)}`;
   const generated = formatStatementDate(Date.now());
   const brand = brandLabel(card.brand);
   const kind = kindLabel(card.kind);
   const last4 = String(card.pan).replace(/\D/g, '').slice(-4);
+  const statusLabel = String(cardStatusKey(card) || 'active').replace(/^\w/, (c) => c.toUpperCase());
+  const ink = [0.1, 0.14, 0.2];
+  const muted = [0.42, 0.46, 0.52];
+  const navy = [0.09, 0.16, 0.28];
+  const gold = [0.72, 0.58, 0.32];
+  const line = [0.82, 0.84, 0.87];
+  const rowAlt = [0.97, 0.97, 0.98];
+  const white = [1, 1, 1];
+  const good = [0.12, 0.42, 0.27];
+  const bad = [0.55, 0.18, 0.18];
+  const rightEdge = 547;
+  const left = 48;
 
-  const headerBlock = (pageNo, pageCount) => [
-    { text: G_CORP_STATEMENT.legalName, x: 48, y: 800, size: 18, bold: true },
-    { text: G_CORP_STATEMENT.entity, x: 48, y: 782, size: 9 },
-    { text: G_CORP_STATEMENT.address.join(' · '), x: 48, y: 768, size: 8 },
-    { text: `Statement of Account`, x: 48, y: 742, size: 14, bold: true },
-    { text: `Statement ID ${stmtId}`, x: 360, y: 800, size: 8 },
-    { text: `Generated ${generated}`, x: 360, y: 786, size: 8 },
-    { text: `Page ${pageNo} of ${pageCount}`, x: 360, y: 772, size: 8 },
-    { rule: true, x1: 48, y1: 730, x2: 547, y2: 730 },
-  ];
-
-  const metaLines = [
-    { text: `Cardholder: ${card.holder || 'G Cards Member'}`, x: 48, y: 710, size: 10 },
-    { text: `Product: ${brand} ${kind} · ${cur}`, x: 48, y: 694, size: 10 },
-    { text: `Card number: ····${last4}`, x: 48, y: 678, size: 10 },
-    {
-      text: `Daily limit: ${money(cardDailyLimitCents(card), cur)} · Status: ${cardStatusKey(card)}`,
-      x: 48,
-      y: 662,
-      size: 10,
-    },
-    {
-      text: `Period: ${fromStr} → ${toStr} (Europe/Belgrade)`,
-      x: 48,
-      y: 646,
-      size: 10,
-      bold: true,
-    },
-    { text: `Opening note: Available balance ${cardMoney(card)}`, x: 48, y: 630, size: 10 },
-    {
-      text: `Period net: ${totalSpend > 0 ? '+' : totalSpend < 0 ? '-' : ''}${money(Math.abs(totalSpend), cur)} · ${rows.length} transaction(s)`,
-      x: 48,
-      y: 614,
-      size: 10,
-      bold: true,
-    },
-    { text: 'Date / time', x: 48, y: 588, size: 9, bold: true },
-    { text: 'Merchant / auth', x: 160, y: 588, size: 9, bold: true },
-    { text: 'Gateway', x: 360, y: 588, size: 9, bold: true },
-    { text: 'Amount', x: 480, y: 588, size: 9, bold: true },
-    { rule: true, x1: 48, y1: 580, x2: 547, y2: 580 },
-  ];
+  const signedMoney = (cents) => {
+    const n = Number(cents || 0);
+    if (n > 0) return `+${money(n, cur)}`;
+    if (n < 0) return `-${money(Math.abs(n), cur)}`;
+    return money(0, cur);
+  };
 
   const lineItems = rows.length
-    ? rows.map((s) => ({
-        when: formatStatementDate(spendTimestamp(s)),
-        merchant: `${isSpendRefund(s) ? 'REFUND · ' : ''}${String(s.merchant || '—')}`.slice(0, 36),
-        auth: `Auth ${s.authNr || '—'}`,
-        gateway: String(s.gateway || '—').slice(0, 22),
-        amount: `${isSpendRefund(s) ? '+' : '-'}${money(Math.abs(Number(s.amountCents || 0)), cur)}`,
-      }))
+    ? rows.map((s) => {
+        const refund = isSpendRefund(s);
+        return {
+          when: formatStatementDate(spendTimestamp(s)),
+          type: refund ? 'Refund' : 'Payment',
+          merchant: String(s.merchant || '—').slice(0, 34),
+          auth: String(s.authNr || '—'),
+          gateway: String(s.gateway || '—').split(' ')[0].slice(0, 12),
+          amount: `${refund ? '+' : '-'}${money(Math.abs(Number(s.amountCents || 0)), cur)}`,
+          refund,
+        };
+      })
     : [
         {
           when: '—',
-          merchant: 'No card spend in this period',
-          auth: '',
-          gateway: '',
+          type: '—',
+          merchant: 'No posted transactions in this period',
+          auth: '—',
+          gateway: '—',
           amount: money(0, cur),
+          refund: false,
         },
       ];
 
-  const rowsPerPage = 22;
-  const pageCount = Math.max(1, Math.ceil(lineItems.length / rowsPerPage));
-  const pages = [];
+  const firstPageRows = 14;
+  const nextPageRows = 22;
+  const pageCount =
+    lineItems.length <= firstPageRows
+      ? 1
+      : 1 + Math.ceil((lineItems.length - firstPageRows) / nextPageRows);
 
-  for (let p = 0; p < pageCount; p += 1) {
-    const slice = lineItems.slice(p * rowsPerPage, (p + 1) * rowsPerPage);
-    const page = [...headerBlock(p + 1, pageCount)];
-    if (p === 0) page.push(...metaLines);
-    let y = p === 0 ? 562 : 700;
-    for (const row of slice) {
-      page.push({ text: row.when, x: 48, y, size: 8 });
-      page.push({ text: row.merchant, x: 160, y, size: 8 });
-      page.push({ text: row.auth, x: 160, y: y - 10, size: 7 });
-      page.push({ text: row.gateway, x: 360, y, size: 8 });
-      page.push({ text: row.amount, x: 470, y, size: 8, bold: true });
-      y -= 22;
-    }
+  const drawHeader = (page, pageNo) => {
+    page.push({ rect: true, x: 0, y: 792, w: 595, h: 50, fill: navy });
+    page.push({ rect: true, x: 0, y: 788, w: 595, h: 4, fill: gold });
+    page.push({ text: G_CORP_STATEMENT.legalName, x: left, y: 818, size: 16, bold: true, color: white });
+    page.push({ text: G_CORP_STATEMENT.tagline, x: left, y: 802, size: 8, color: [0.85, 0.88, 0.92] });
+    page.push({ text: stmtId, x: pdfRightX(stmtId, 8, rightEdge), y: 818, size: 8, bold: true, color: white });
     page.push({
-      text: 'G Corp Cards · Confidential cardholder statement · Not a bank advice',
-      x: 48,
-      y: 36,
+      text: `Page ${pageNo} of ${pageCount}`,
+      x: pdfRightX(`Page ${pageNo} of ${pageCount}`, 8, rightEdge),
+      y: 804,
+      size: 8,
+      color: [0.85, 0.88, 0.92],
+    });
+  };
+
+  const drawFooter = (page) => {
+    page.push({ rule: true, x1: left, y1: 52, x2: rightEdge, y2: 52, color: line, width: 0.5 });
+    page.push({
+      text: `${G_CORP_STATEMENT.entity} · ${G_CORP_STATEMENT.registry} · VAT ${G_CORP_STATEMENT.vat}`,
+      x: left,
+      y: 38,
       size: 7,
+      color: muted,
     });
     page.push({
-      text: `${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.programme}`,
-      x: 48,
-      y: 24,
+      text: `${G_CORP_STATEMENT.address.join(', ')} · ${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.phone}`,
+      x: left,
+      y: 26,
       size: 7,
+      color: muted,
     });
-    if (p === pageCount - 1) {
+    page.push({
+      text: 'Confidential cardholder statement. For information only — not a regulated bank advice.',
+      x: left,
+      y: 14,
+      size: 6.5,
+      color: muted,
+    });
+  };
+
+  const drawTableHeader = (page, y) => {
+    page.push({ rect: true, x: left, y: y - 4, w: rightEdge - left, h: 18, fill: [0.93, 0.94, 0.96] });
+    page.push({ text: 'Date / time', x: left + 4, y, size: 8, bold: true, color: muted });
+    page.push({ text: 'Type', x: 138, y, size: 8, bold: true, color: muted });
+    page.push({ text: 'Merchant / Auth', x: 178, y, size: 8, bold: true, color: muted });
+    page.push({ text: 'Gateway', x: 360, y, size: 8, bold: true, color: muted });
+    page.push({
+      text: 'Amount',
+      x: pdfRightX('Amount', 8, rightEdge - 4),
+      y,
+      size: 8,
+      bold: true,
+      color: muted,
+    });
+    return y - 22;
+  };
+
+  const drawRows = (page, slice, startY) => {
+    let y = startY;
+    slice.forEach((row, idx) => {
+      if (idx % 2 === 1) {
+        page.push({ rect: true, x: left, y: y - 6, w: rightEdge - left, h: 20, fill: rowAlt });
+      }
+      page.push({ text: row.when, x: left + 4, y, size: 7.5, color: ink });
       page.push({
-        text: `Closing available balance: ${cardMoney(card)}`,
-        x: 48,
-        y: Math.max(56, y - 8),
+        text: row.type,
+        x: 138,
+        y,
+        size: 7.5,
+        bold: true,
+        color: row.refund ? good : bad,
+      });
+      page.push({ text: row.merchant, x: 178, y, size: 7.5, color: ink });
+      page.push({ text: `Auth ${row.auth}`, x: 178, y: y - 9, size: 6.5, color: muted });
+      page.push({ text: row.gateway, x: 360, y, size: 7.5, color: ink });
+      page.push({
+        text: row.amount,
+        x: pdfRightX(row.amount, 8, rightEdge - 4),
+        y,
+        size: 8,
+        bold: true,
+        color: row.refund ? good : bad,
+      });
+      y -= 22;
+    });
+    return y;
+  };
+
+  const pages = [];
+  let cursor = 0;
+  for (let p = 0; p < pageCount; p += 1) {
+    const page = [];
+    drawHeader(page, p + 1);
+    drawFooter(page);
+
+    if (p === 0) {
+      page.push({ text: 'STATEMENT OF ACCOUNT', x: left, y: 768, size: 13, bold: true, color: navy });
+      page.push({
+        text: `Statement period  ${formatStatementDay(fromStr)}  —  ${formatStatementDay(toStr)}`,
+        x: left,
+        y: 752,
+        size: 9,
+        color: ink,
+      });
+      page.push({
+        text: `Generated ${generated} · ${G_CORP_STATEMENT.website}`,
+        x: left,
+        y: 738,
+        size: 8,
+        color: muted,
+      });
+
+      // Cardholder box
+      page.push({ rect: true, x: left, y: 648, w: 248, h: 78, fill: [0.96, 0.97, 0.98] });
+      page.push({ rule: true, x1: left, y1: 726, x2: left + 248, y2: 726, color: gold, width: 1.2 });
+      page.push({ text: 'CARDHOLDER', x: left + 10, y: 712, size: 7, bold: true, color: muted });
+      page.push({
+        text: String(card.holder || 'G Cards Member').slice(0, 28),
+        x: left + 10,
+        y: 696,
+        size: 11,
+        bold: true,
+        color: ink,
+      });
+      page.push({ text: `${brand} · ${kind}`, x: left + 10, y: 680, size: 9, color: ink });
+      page.push({ text: `Card ····${last4}`, x: left + 10, y: 664, size: 9, color: ink });
+      page.push({ text: `Status ${statusLabel}`, x: left + 10, y: 650, size: 8, color: muted });
+
+      // Account box
+      page.push({ rect: true, x: 310, y: 648, w: rightEdge - 310, h: 78, fill: [0.96, 0.97, 0.98] });
+      page.push({ rule: true, x1: 310, y1: 726, x2: rightEdge, y2: 726, color: gold, width: 1.2 });
+      page.push({ text: 'ACCOUNT SUMMARY', x: 320, y: 712, size: 7, bold: true, color: muted });
+      page.push({ text: `Currency ${cur}`, x: 320, y: 696, size: 9, color: ink });
+      page.push({
+        text: `Daily limit ${money(cardDailyLimitCents(card), cur)}`,
+        x: 320,
+        y: 680,
+        size: 9,
+        color: ink,
+      });
+      page.push({
+        text: `Available ${cardMoney(card)}`,
+        x: 320,
+        y: 664,
         size: 10,
         bold: true,
+        color: navy,
       });
+      page.push({ text: G_CORP_STATEMENT.programme, x: 320, y: 650, size: 7.5, color: muted });
+
+      // Totals strip
+      page.push({ rect: true, x: left, y: 575, w: rightEdge - left, h: 56, fill: navy });
+      const colW = (rightEdge - left) / 4;
+      const totals = [
+        ['Payments', `-${money(paymentTotal, cur)}`, String(payments.length)],
+        ['Refunds', `+${money(refundTotal, cur)}`, String(refunds.length)],
+        ['Net movement', signedMoney(netTotal), `${rows.length} txn`],
+        ['Closing available', cardMoney(card), cur],
+      ];
+      totals.forEach((t, i) => {
+        const x = left + 10 + i * colW;
+        page.push({ text: t[0].toUpperCase(), x, y: 616, size: 6.5, bold: true, color: [0.7, 0.75, 0.82] });
+        page.push({ text: t[1], x, y: 598, size: 10, bold: true, color: white });
+        page.push({ text: t[2], x, y: 584, size: 7, color: [0.75, 0.8, 0.86] });
+      });
+
+      page.push({ text: 'TRANSACTION HISTORY', x: left, y: 558, size: 9, bold: true, color: navy });
+      let y = drawTableHeader(page, 540);
+      const slice = lineItems.slice(0, firstPageRows);
+      cursor = slice.length;
+      y = drawRows(page, slice, y);
+      if (pageCount === 1) {
+        page.push({
+          text: 'End of statement',
+          x: left,
+          y: Math.max(68, y - 8),
+          size: 8,
+          bold: true,
+          color: muted,
+        });
+      }
+    } else {
+      page.push({ text: 'TRANSACTION HISTORY (continued)', x: left, y: 768, size: 9, bold: true, color: navy });
+      let y = drawTableHeader(page, 748);
+      const slice = lineItems.slice(cursor, cursor + nextPageRows);
+      cursor += slice.length;
+      y = drawRows(page, slice, y);
+      if (p === pageCount - 1) {
+        page.push({
+          text: 'End of statement',
+          x: left,
+          y: Math.max(68, y - 8),
+          size: 8,
+          bold: true,
+          color: muted,
+        });
+      }
     }
+
     pages.push(page);
   }
 
@@ -1941,15 +2178,7 @@ function deskCardDetailHtml() {
   const spentToday = cardSpentTodayCents(card);
   const dailyLimit = cardDailyLimitCents(card);
   const cur = cardCurrency(card);
-  if (!state.statementDraft) state.statementDraft = { cardId: '', from: '', to: '' };
-  if (!state.statementDraft.cardId) state.statementDraft.cardId = card.id;
-  if (!state.statementDraft.from || !state.statementDraft.to) {
-    const to = new Date();
-    const from = new Date();
-    from.setDate(to.getDate() - 30);
-    state.statementDraft.from = from.toISOString().slice(0, 10);
-    state.statementDraft.to = to.toISOString().slice(0, 10);
-  }
+  ensureStatementDraft(card.id);
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
@@ -2101,25 +2330,7 @@ function deskCardDetailHtml() {
           </div>
         </section>
 
-        <section class="desk-statement-panel" id="desk-statement">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow">G Corp Cards</p>
-              <h2>Card statement</h2>
-              <p class="muted desk-panel-help">Download a professional PDF statement for a selected period. Includes spends, auth numbers, and card product details.</p>
-            </div>
-          </div>
-          <form id="desk-statement-form" class="desk-statement-form">
-            <input type="hidden" name="cardId" value="${esc(card.id)}" />
-            <label>From
-              <input name="from" type="date" value="${esc(state.statementDraft.from)}" required />
-            </label>
-            <label>To
-              <input name="to" type="date" value="${esc(state.statementDraft.to)}" required />
-            </label>
-            <button class="primary" type="submit">Download PDF</button>
-          </form>
-        </section>`;
+        ${deskStatementFormHtml({ cardId: card.id, embedCardSelect: false })}`;
 }
 
 function deskPaymentsHtml() {
@@ -2301,10 +2512,15 @@ function deskHistoryHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Search and filter payments. Tap a row for full details — 3-D Secure is not required on these cards.</p>
+          <p class="lede desk-home-lede">Search and filter payments. Download a G Corp Cards PDF statement for any card and period below.</p>
         </section>
 
         ${selected ? spendDetailHtml(selected) : ''}
+
+        ${deskStatementFormHtml({
+          cardId: state.spendFilterCardId || deskActiveCard()?.id || '',
+          embedCardSelect: true,
+        })}
 
         <section class="desk-deposit desk-page-panel desk-history-panel" id="desk-stored-payments">
           <div class="panel-head-inline desk-history-head">
@@ -2319,11 +2535,7 @@ function deskHistoryHtml() {
                   storedTotal > 0 ? '+' : storedTotal < 0 ? '−' : ''
                 }${esc(money(Math.abs(storedTotal)))}</strong>
               </div>
-              ${
-                state.spendFilterCardId
-                  ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(state.spendFilterCardId)}">Statement PDF</button>`
-                  : `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(deskActiveCard()?.id || '')}">Statement PDF</button>`
-              }
+              <a class="ghost" href="#desk-statement">Download statement</a>
             </div>
           </div>
 
@@ -3080,15 +3292,13 @@ document.body.addEventListener('click', (event) => {
     const id = button.dataset.id || '';
     const card = state.deskCards.find((c) => c.id === id) || deskActiveCard();
     if (!card) return;
-    state.deskDetailCardId = card.id;
+    ensureStatementDraft(card.id);
     state.deskSelectedCardId = card.id;
-    state.deskView = 'card';
-    state.statementDraft = {
-      ...(state.statementDraft || {}),
-      cardId: card.id,
-      from: state.statementDraft?.from || '',
-      to: state.statementDraft?.to || '',
-    };
+    state.deskTopupCardId = card.id;
+    // Prefer History transactions page for statement download.
+    state.deskView = 'history';
+    state.deskDetailCardId = '';
+    state.spendFilterCardId = card.id;
     render();
     setTimeout(() => {
       document.getElementById('desk-statement')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
