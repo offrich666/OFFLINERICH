@@ -1022,7 +1022,9 @@ function deskShellHtml(mainHtml) {
           </div>
           <nav class="desk-bar-nav" aria-label="Desk">
             <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
-            <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
+            <a class="desk-nav-btn desk-nav-link" href="${esc(
+              window.GCARDS_SITE?.pageUrl ? window.GCARDS_SITE.pageUrl('pay.html') : '/pay',
+            )}">/pay</a>
             <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
           </nav>
           <div class="desk-bar-actions">
@@ -1508,7 +1510,8 @@ function architectureSrc() {
 function capacityDeskHtml() {
   syncCardStatuses();
   if (state.deskView === 'payments') {
-    return deskShellHtml(deskPaymentsHtml());
+    // Payments are made on /pay — keep History / Cards in the desk shell.
+    state.deskView = 'home';
   }
   if (state.deskView === 'history') {
     return deskShellHtml(deskHistoryHtml());
@@ -1680,7 +1683,7 @@ function deskHomeHtml() {
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
             <h1>Dashboard</h1>
-            <p class="lede desk-home-lede">1) Tap a card to select it · 2) Move money (desk → card or card → card) · 3) Pay / History for spending.</p>
+            <p class="lede desk-home-lede">1) Tap a card to select it · 2) Move money (desk → card or card → card) · 3) Pay at /pay · History for the ledger.</p>
             <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
               <a class="primary" href="#desk-issue">Issue card</a>
@@ -1721,7 +1724,7 @@ function deskHomeHtml() {
             <li><strong>Top up desk</strong> — credit the house wallet from USDT (Solana or BSC).</li>
             <li><strong>Fund card</strong> — move EUR from the desk wallet onto the selected card.</li>
             <li><strong>Card → card</strong> — send EUR between your own cards instantly.</li>
-            <li><strong>Pay / History</strong> — record spends; 3-D Secure is not required.</li>
+            <li><strong>/pay + History</strong> — pay at <span class="mono">/pay</span>; History keeps the ledger.</li>
           </ol>
         </section>
 
@@ -1915,7 +1918,7 @@ function deskCardDetailHtml() {
             </select>
           </label>
         </section>
-        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, bank Pay shortcuts, and recent funds onto this card.</p>
+        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card. Payments go through /pay.</p>
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${plasticClass(brand)} desk-live-card" aria-label="Card details">
@@ -1965,9 +1968,9 @@ function deskCardDetailHtml() {
               ${controlsNote}
             </div>
             <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>Pay TEB</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>RBKO</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>NLB</button>
+              <a class="primary" href="${esc(
+                window.GCARDS_SITE?.pageUrl ? window.GCARDS_SITE.pageUrl('pay.html') : '/pay',
+              )}">Open /pay</a>
             </div>
           </div>
         </section>
