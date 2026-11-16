@@ -1195,6 +1195,13 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   font-size: 20px;
   letter-spacing: 0.04em;
 }
+.desk-card-pick-holder {
+  font-size: 13px;
+  color: var(--muted);
+}
+.desk-card-pick.on .desk-card-pick-holder {
+  color: rgba(247, 241, 230, 0.82);
+}
 .desk-card-pick-bal {
   font-variant-numeric: tabular-nums;
   font-size: 15px;
