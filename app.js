@@ -70,7 +70,8 @@ const GJIRAFA_SPEND_AUTH = '790924';
 const GJIRAFA_SPEND_AMOUNT_CENTS = 759_800; // €7,598.00
 const PRIMARY_1955_BALANCE_CENTS = 9_242_281; // €92,422.81 (matches tx PDF)
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v10';
+const DESK_BUILD = '20261116t';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v11';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -575,6 +576,17 @@ function loadDeskLedger() {
       applyLedgerPayload(JSON.parse(rawCurrent));
       return;
     }
+    const rawV10 = localStorage.getItem('gcards-desk-ledger-v10');
+    if (rawV10) {
+      applyLedgerPayload(JSON.parse(rawV10));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v10');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const rawV9 = localStorage.getItem('gcards-desk-ledger-v9');
     if (rawV9) {
       applyLedgerPayload(JSON.parse(rawV9));
@@ -677,6 +689,7 @@ function reloadStoredSpends() {
 }
 
 loadDeskLedger();
+enforceDeskBuildStamp();
 
 const DESK_DEPOSIT_TOKENS = [
   {
@@ -843,6 +856,60 @@ function pdfTextWidth(text, size = 10) {
 
 function pdfRightX(text, size, rightEdge) {
   return rightEdge - pdfTextWidth(text, size);
+}
+
+/** Download a Blob on Safari, Chrome, Firefox, and mobile (iOS-safe). */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const ua = String(navigator.userAgent || '');
+  const isIos =
+    /iPad|iPhone|iPod/i.test(ua)
+    || (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+  try {
+    if (isIos) {
+      // iOS often ignores <a download> for blobs — open the file instead.
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  } catch {
+    window.location.href = url;
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function enforceDeskBuildStamp() {
+  try {
+    const meta = document.querySelector('meta[name="desk-build"]');
+    const htmlBuild = meta?.getAttribute('content') || document.body?.dataset?.deskBuild || '';
+    if (htmlBuild && htmlBuild !== DESK_BUILD) {
+      const key = `gcards-desk-stale-${DESK_BUILD}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        const u = new URL(location.href);
+        u.searchParams.set('v', DESK_BUILD);
+        location.replace(u.toString());
+      }
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function pdfCircleOps(cx, cy, r, fillRgb, { multiply = false } = {}) {
@@ -1418,15 +1485,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
     pages.push(page);
   }
 
-  const blob = buildPdfDocument(pages);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `gcards-statement-${stmtId}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2500);
+  downloadBlob(buildPdfDocument(pages), `gcards-statement-${stmtId}.pdf`);
 }
 
 /** Bank-style single-transaction information PDF (card issuer format). */
@@ -1658,15 +1717,10 @@ function downloadGCorpTransactionPdf(spend) {
     color: muted,
   });
 
-  const blob = buildPdfDocument([page]);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `G-Cards-Transaction-Information-${last4}-${auth}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2500);
+  downloadBlob(
+    buildPdfDocument([page]),
+    `G-Cards-Transaction-Information-${last4}-${auth}.pdf`,
+  );
 }
 
 function usdToEurRate() {
@@ -5014,6 +5068,7 @@ async function loadDesk() {
 }
 
 async function boot() {
+  enforceDeskBuildStamp();
   // Static CDN hosts (jsDelivr / GitHub) have no API — still show the desk login gate.
   if (window.GCARDS_SITE && !window.GCARDS_SITE.hasApi()) {
     state.config = {

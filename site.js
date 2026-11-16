@@ -14,13 +14,14 @@
     host.endsWith('.tmp.now');
 
   /** Your personal domain — primary public URL for PC and iPhone. */
-  const CUSTOM_ORIGIN = 'https://g-cards.eu';
+  const CUSTOM_ORIGIN = 'https://www.g-cards.eu';
 
-  const LIVE_SHA = '8cae3ee2aced2696f0f51248ecc5bd7354cc322c';
+  const LIVE_SHA = '274a157c5aa07e03318462158e6fdfef5d511df2';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
+  // Prefer SHA assets (cache-stable across Chrome / Safari / mobile). Branch tip lags on jsDelivr.
   const MIRROR_ASSETS =
-    'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@gcards-eu-live/public';
+    'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@' + LIVE_SHA + '/public';
 
   const PERMANENT_HTML = onCustomDomain ? CUSTOM_ORIGIN : CUSTOM_ORIGIN;
   const PERMANENT_INDEX = CUSTOM_ORIGIN + '/';
