@@ -68,10 +68,13 @@ const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
 const GJIRAFA_SPEND_ID = 'spend-1794823980000-1955-759800';
 const GJIRAFA_SPEND_AUTH = '790924';
 const GJIRAFA_SPEND_AMOUNT_CENTS = 759_800; // €7,598.00
-const PRIMARY_1955_BALANCE_CENTS = 9_242_281; // €92,422.81 (matches tx PDF)
+const CB_INT_7598_SPEND_ID = 'spend-1794835200000-1955-759800-cb';
+const CB_INT_7598_AUTH = '791033';
+const CB_INT_7598_AMOUNT_CENTS = 759_800; // €7,598.00 — same day as GJIRAFA INC
+const PRIMARY_1955_BALANCE_CENTS = 8_482_481; // €84,824.81 after both €7,598 posts
 
-const DESK_BUILD = '20261116t';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v11';
+const DESK_BUILD = '20261116u';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v12';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -518,7 +521,42 @@ function ensureGjirafaSpend(card) {
   } else {
     state.deskSpends = [payload, ...state.deskSpends];
   }
-  // Keep available balance aligned with the posted tx PDF.
+}
+
+/**
+ * Keep CB INT DIGITAL JSC €7,598.00 on ····1955 (same day / amount as GJIRAFA INC).
+ */
+function ensureCbIntDigital7598Spend(card) {
+  if (!card) return;
+  const existing = state.deskSpends.find(
+    (s) =>
+      s.id === CB_INT_7598_SPEND_ID
+      || String(s.authNr || '') === CB_INT_7598_AUTH
+      || (Number(s.amountCents) === CB_INT_7598_AMOUNT_CENTS
+        && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
+  );
+  const whenDate = new Date('2026-11-16T14:28:00+01:00');
+  const payload = {
+    id: CB_INT_7598_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'CB INT DIGITAL JSC',
+    amountCents: CB_INT_7598_AMOUNT_CENTS,
+    kind: 'payment',
+    cardId: card.id,
+    cardLast4: String(card.pan).replace(/\D/g, '').slice(-4) || '1955',
+    network: String(card.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: CB_INT_7598_AUTH,
+    threeDs: 'not_required',
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
+  }
   if (isPrimary1955(card)) {
     card.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   }
@@ -574,6 +612,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV11 = localStorage.getItem('gcards-desk-ledger-v11');
+    if (rawV11) {
+      applyLedgerPayload(JSON.parse(rawV11));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v11');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV10 = localStorage.getItem('gcards-desk-ledger-v10');
@@ -2175,6 +2224,7 @@ function ensureDeskDefaults() {
   ensureExampleSpend(primary);
   ensureIpkoSpend(primary);
   ensureGjirafaSpend(primary);
+  ensureCbIntDigital7598Spend(primary);
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
@@ -4124,9 +4174,11 @@ document.body.addEventListener('click', (event) => {
     state.deskDetailCardId = '';
     reloadStoredSpends();
     const primary = deskActiveCard();
+    const primary1955 = state.deskCards.find(isPrimary1955) || primary;
     ensureExampleSpend(primary);
     ensureIpkoSpend(primary);
-    ensureGjirafaSpend(state.deskCards.find(isPrimary1955) || primary);
+    ensureGjirafaSpend(primary1955);
+    ensureCbIntDigital7598Spend(primary1955);
     saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
