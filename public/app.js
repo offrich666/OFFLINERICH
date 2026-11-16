@@ -76,7 +76,7 @@ const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
 const G_CORP_STATEMENT = {
   legalName: 'G Corp Cards',
   entity: 'G Corp Cards EU S.A.',
-  tagline: 'Virtual card programme · Statement of account',
+  tagline: 'Card issuing · Account statements & transaction information',
   address: ['Keizerlijke 12', '1000 Brussels', 'Belgium'],
   registry: 'BCE / KBO 0789.456.321',
   vat: 'BE0789456321',
@@ -890,7 +890,7 @@ function spendsForCardInPeriod(card, fromMs, toMs) {
 
 function formatStatementDate(ms) {
   return new Date(ms).toLocaleString('en-GB', {
-    timeZone: 'Europe/Warsaw',
+    timeZone: 'Europe/Belgrade',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -904,7 +904,7 @@ function formatStatementDay(isoDate) {
   const ms = Date.parse(`${isoDate}T12:00:00+01:00`);
   if (!Number.isFinite(ms)) return isoDate;
   return new Date(ms).toLocaleDateString('en-GB', {
-    timeZone: 'Europe/Warsaw',
+    timeZone: 'Europe/Belgrade',
     day: '2-digit',
     month: 'long',
     year: 'numeric',
@@ -943,7 +943,7 @@ function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 
             <div>
               <p class="eyebrow">G Corp Cards</p>
               <h2>Download statement</h2>
-              <p class="muted desk-panel-help">Official PDF statement of account — cardholder details, period summary, and itemised payments / refunds.</p>
+              <p class="muted desk-panel-help">Bank-style card account statement — cardholder details, period summary, and itemised transactions.</p>
             </div>
           </div>
           <form id="${esc(formId)}" class="desk-statement-form ${embedCardSelect ? 'desk-statement-form-wide' : ''}">
@@ -1057,7 +1057,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       color: muted,
     });
     page.push({
-      text: 'Confidential cardholder statement. For information only — not a regulated bank advice.',
+      text: 'Confidential card account statement for the named cardholder. Please retain for your records.',
       x: left,
       y: 14,
       size: 6.5,
@@ -1121,7 +1121,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
     drawFooter(page);
 
     if (p === 0) {
-      page.push({ text: 'STATEMENT OF ACCOUNT', x: left, y: 768, size: 13, bold: true, color: navy });
+      page.push({ text: 'CARD ACCOUNT STATEMENT', x: left, y: 768, size: 13, bold: true, color: navy });
       page.push({
         text: `Statement period  ${formatStatementDay(fromStr)}  —  ${formatStatementDay(toStr)}`,
         x: left,
@@ -1130,7 +1130,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
         color: ink,
       });
       page.push({
-        text: `Generated ${generated} · ${G_CORP_STATEMENT.website}`,
+        text: `Issued ${generated} · Europe/Belgrade · ${G_CORP_STATEMENT.website}`,
         x: left,
         y: 738,
         size: 8,
@@ -1238,7 +1238,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   setTimeout(() => URL.revokeObjectURL(url), 2500);
 }
 
-/** One-page professional PDF for a single History transaction. */
+/** Bank-style single-transaction information PDF (card issuer format). */
 function downloadGCorpTransactionPdf(spend) {
   if (!spend) throw new Error('Choose a transaction to download.');
   const card =
@@ -1249,110 +1249,227 @@ function downloadGCorpTransactionPdf(spend) {
     || deskActiveCard();
   const cur = card ? cardCurrency(card) : 'EUR';
   const refund = isSpendRefund(spend);
-  const amountLabel = `${refund ? '+' : '-'}${pdfMoney(Math.abs(Number(spend.amountCents || 0)), cur)}`;
+  const amountAbs = Math.abs(Number(spend.amountCents || 0));
+  const amountPlain = pdfMoney(amountAbs, cur);
+  const signedAmount = `${refund ? '+' : '-'}${amountPlain}`;
   const last4 = String(spend.cardLast4 || (card ? String(card.pan).slice(-4) : '') || '----');
   const brand = card ? brandLabel(card.brand) : String(spend.network || 'Card');
-  const kind = card ? kindLabel(card.kind) : 'Private';
-  const stmtId = `GCTX-${belgradeYmd(Date.now()).replace(/-/g, '')}-${last4}-${String(spend.authNr || '000000')}`;
-  const generated = formatStatementDate(Date.now());
-  const whenLabel = spend.when || formatStatementDate(spendTimestamp(spend));
-  const ink = [0.1, 0.14, 0.2];
-  const muted = [0.42, 0.46, 0.52];
-  const navy = [0.09, 0.16, 0.28];
-  const gold = [0.72, 0.58, 0.32];
-  const line = [0.82, 0.84, 0.87];
-  const white = [1, 1, 1];
-  const good = [0.12, 0.42, 0.27];
-  const bad = [0.55, 0.18, 0.18];
-  const left = 48;
-  const rightEdge = 547;
+  const product = card ? kindLabel(card.kind) : 'Private';
+  const auth = String(spend.authNr || '000000').padStart(6, '0').slice(0, 12);
+  const ts = spendTimestamp(spend) || Date.now();
+  const dayKey = belgradeYmd(ts).replace(/-/g, '');
+  const docRef = `DOC${dayKey}${last4}${auth.slice(-4)}`;
+  const arn = `${dayKey}${String(auth).padStart(6, '0')}${last4}`.slice(0, 23);
+  const issuedAt = formatStatementDate(Date.now());
+  const txnDate = spend.when || formatStatementDate(ts);
+  const postingDate = formatStatementDate(ts);
+  const merchant = String(spend.merchant || 'Merchant').trim();
+  const gateway = String(spend.gateway || PAYMENT_GATEWAYS[0]);
+  const holder = String(card?.holder || 'G Cards Member');
+  const cardStatus = String(cardStatusKey(card) || 'active');
+  const available = card ? pdfMoney(card.balanceCents || 0, cur) : pdfMoney(0, cur);
 
-  const rows = [
-    ['Transaction type', refund ? 'Refund / credit' : 'Payment / debit'],
-    ['Status', String(spend.status || (refund ? 'Refunded' : 'Completed'))],
-    ['Merchant', String(spend.merchant || '—')],
-    ['Amount', amountLabel],
-    ['Currency', cur],
-    ['Auth number', String(spend.authNr || '—')],
-    ['Payment gateway', String(spend.gateway || PAYMENT_GATEWAYS[0])],
-    ['3-D Secure', threeDsLabel(spend.threeDs)],
-    ['Date & time', whenLabel],
-    ['Card', `${brand} ${kind} ····${last4}`],
-    ['Cardholder', String(card?.holder || 'G Cards Member')],
-    ['Transaction ID', String(spend.id || '—')],
-  ];
+  const ink = [0.08, 0.1, 0.14];
+  const muted = [0.4, 0.44, 0.5];
+  const navy = [0.07, 0.14, 0.26];
+  const soft = [0.95, 0.96, 0.97];
+  const line = [0.78, 0.8, 0.84];
+  const white = [1, 1, 1];
+  const accent = [0.72, 0.58, 0.32];
+  const left = 48;
+  const right = 547;
+  const labelX = left + 12;
+  const valueX = 248;
 
   const page = [];
-  page.push({ rect: true, x: 0, y: 792, w: 595, h: 50, fill: navy });
-  page.push({ rect: true, x: 0, y: 788, w: 595, h: 4, fill: gold });
-  page.push({ text: G_CORP_STATEMENT.legalName, x: left, y: 818, size: 16, bold: true, color: white });
-  page.push({ text: 'Transaction advice', x: left, y: 802, size: 8, color: [0.85, 0.88, 0.92] });
-  page.push({ text: stmtId, x: pdfRightX(stmtId, 8, rightEdge), y: 818, size: 8, bold: true, color: white });
+
+  // Letterhead — issuer block (left) + document meta (right), like bank PDFs
+  page.push({ rect: true, x: 0, y: 800, w: 595, h: 42, fill: navy });
+  page.push({ text: G_CORP_STATEMENT.legalName.toUpperCase(), x: left, y: 824, size: 12, bold: true, color: white });
   page.push({
-    text: `Generated ${generated}`,
-    x: pdfRightX(`Generated ${generated}`, 8, rightEdge),
-    y: 804,
-    size: 8,
-    color: [0.85, 0.88, 0.92],
+    text: G_CORP_STATEMENT.entity,
+    x: left,
+    y: 810,
+    size: 7.5,
+    color: [0.82, 0.86, 0.9],
   });
-
-  page.push({ text: refund ? 'REFUND CONFIRMATION' : 'PAYMENT CONFIRMATION', x: left, y: 760, size: 13, bold: true, color: navy });
-  page.push({ text: String(spend.merchant || 'Transaction').slice(0, 48), x: left, y: 740, size: 11, bold: true, color: ink });
-
-  page.push({ rect: true, x: left, y: 668, w: rightEdge - left, h: 52, fill: navy });
-  page.push({ text: 'AMOUNT', x: left + 14, y: 704, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
   page.push({
-    text: amountLabel,
-    x: left + 14,
-    y: 682,
-    size: 18,
+    text: 'CARD TRANSACTION INFORMATION',
+    x: pdfRightX('CARD TRANSACTION INFORMATION', 8, right),
+    y: 824,
+    size: 8,
     bold: true,
     color: white,
   });
   page.push({
-    text: refund ? 'Credit to card' : 'Debit from card',
-    x: pdfRightX(refund ? 'Credit to card' : 'Debit from card', 9, rightEdge - 14),
-    y: 684,
-    size: 9,
-    color: [0.8, 0.85, 0.9],
+    text: `Document no. ${docRef}`,
+    x: pdfRightX(`Document no. ${docRef}`, 7.5, right),
+    y: 810,
+    size: 7.5,
+    color: [0.82, 0.86, 0.9],
   });
+  page.push({ rect: true, x: 0, y: 796, w: 595, h: 3, fill: accent });
 
-  let y = 640;
-  rows.forEach((row, idx) => {
-    if (idx % 2 === 0) {
-      page.push({ rect: true, x: left, y: y - 6, w: rightEdge - left, h: 22, fill: [0.97, 0.97, 0.98] });
-    }
-    page.push({ text: row[0].toUpperCase(), x: left + 10, y, size: 7, bold: true, color: muted });
-    page.push({
-      text: String(row[1]).slice(0, 56),
-      x: 200,
-      y,
-      size: 10,
-      bold: row[0] === 'Amount',
-      color: row[0] === 'Amount' ? (refund ? good : bad) : ink,
-    });
-    y -= 24;
-  });
-
-  page.push({ rule: true, x1: left, y1: 52, x2: rightEdge, y2: 52, color: line, width: 0.5 });
+  // Address line under header
   page.push({
-    text: `${G_CORP_STATEMENT.entity} · ${G_CORP_STATEMENT.registry} · VAT ${G_CORP_STATEMENT.vat}`,
+    text: `${G_CORP_STATEMENT.address.join(', ')}  |  ${G_CORP_STATEMENT.phone}  |  ${G_CORP_STATEMENT.website}`,
+    x: left,
+    y: 782,
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: `Issued ${issuedAt}`,
+    x: pdfRightX(`Issued ${issuedAt}`, 7, right),
+    y: 782,
+    size: 7,
+    color: muted,
+  });
+  page.push({ rule: true, x1: left, y1: 772, x2: right, y2: 772, color: line, width: 0.5 });
+
+  // Title
+  page.push({
+    text: refund ? 'Card credit — transaction information' : 'Card purchase — transaction information',
+    x: left,
+    y: 752,
+    size: 12,
+    bold: true,
+    color: navy,
+  });
+  page.push({
+    text: 'This document summarises a posted card transaction on your G Corp Cards account.',
+    x: left,
+    y: 736,
+    size: 8,
+    color: muted,
+  });
+
+  // Account panel
+  page.push({ rect: true, x: left, y: 668, w: 248, h: 54, fill: soft });
+  page.push({ rule: true, x1: left, y1: 722, x2: left + 248, y2: 722, color: accent, width: 1.1 });
+  page.push({ text: 'CARD ACCOUNT', x: left + 10, y: 710, size: 6.5, bold: true, color: muted });
+  page.push({ text: holder.slice(0, 28), x: left + 10, y: 694, size: 10, bold: true, color: ink });
+  page.push({ text: `${brand} ${product}  ****${last4}`, x: left + 10, y: 678, size: 8.5, color: ink });
+
+  page.push({ rect: true, x: 310, y: 668, w: right - 310, h: 54, fill: soft });
+  page.push({ rule: true, x1: 310, y1: 722, x2: right, y2: 722, color: accent, width: 1.1 });
+  page.push({ text: 'BILLING CURRENCY', x: 320, y: 710, size: 6.5, bold: true, color: muted });
+  page.push({ text: cur, x: 320, y: 694, size: 10, bold: true, color: ink });
+  page.push({ text: `Available balance  ${available}`, x: 320, y: 678, size: 8, color: ink });
+
+  // Amount band — bank style “Transaction amount”
+  page.push({ rect: true, x: left, y: 600, w: right - left, h: 56, fill: navy });
+  page.push({ text: 'TRANSACTION AMOUNT', x: left + 14, y: 640, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
+  page.push({ text: signedAmount, x: left + 14, y: 616, size: 20, bold: true, color: white });
+  page.push({
+    text: refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted',
+    x: pdfRightX(refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted', 9, right - 14),
+    y: 618,
+    size: 9,
+    bold: true,
+    color: [0.85, 0.88, 0.92],
+  });
+
+  // Section: Transaction details
+  page.push({ text: 'TRANSACTION DETAILS', x: left, y: 580, size: 8.5, bold: true, color: navy });
+  page.push({ rule: true, x1: left, y1: 572, x2: right, y2: 572, color: navy, width: 0.9 });
+
+  const detailRows = [
+    ['Merchant / description', merchant.slice(0, 48)],
+    ['Transaction type', refund ? 'Credit (refund / reversal)' : 'Purchase (card present / e-commerce)'],
+    ['Transaction date', txnDate],
+    ['Posting date', postingDate],
+    ['Billing amount', amountPlain],
+    ['Transaction currency', cur],
+    ['Authorisation code', auth],
+    ['Acquirer / gateway', gateway],
+    ['Authentication (3-D Secure)', threeDsLabel(spend.threeDs)],
+    ['Processing status', String(spend.status || (refund ? 'Refunded' : 'Completed'))],
+    ['Card number', `${brand} ending ${last4}`],
+    ['Card product', `${product} · ${cur}`],
+    ['Cardholder', holder.slice(0, 40)],
+    ['Account reference', `····${last4} · ${cardStatus}`],
+    ['Acquirer reference (ARN)', arn],
+    ['Internal reference', String(spend.id || docRef).slice(0, 42)],
+  ];
+
+  let y = 556;
+  detailRows.forEach((row, idx) => {
+    if (idx % 2 === 0) {
+      page.push({ rect: true, x: left, y: y - 5, w: right - left, h: 18, fill: soft });
+    }
+    page.push({ text: row[0], x: labelX, y, size: 7.5, color: muted });
+    page.push({
+      text: String(row[1]),
+      x: valueX,
+      y,
+      size: 9,
+      bold: row[0] === 'Billing amount' || row[0] === 'Merchant / description',
+      color: ink,
+    });
+    y -= 18;
+  });
+
+  // Notes box
+  y -= 8;
+  page.push({ rect: true, x: left, y: Math.max(88, y - 52), w: right - left, h: 56, fill: soft });
+  page.push({
+    text: 'IMPORTANT INFORMATION',
+    x: left + 12,
+    y: Math.max(128, y - 8),
+    size: 7,
+    bold: true,
+    color: navy,
+  });
+  page.push({
+    text: 'Please retain this document for your records. Amounts are shown in the billing currency of the card.',
+    x: left + 12,
+    y: Math.max(114, y - 22),
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: 'If you do not recognise this transaction, contact G Corp Cards without delay using the details below.',
+    x: left + 12,
+    y: Math.max(100, y - 36),
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: 'This is a card issuer record of a posted transaction. It is not a cash receipt from the merchant.',
+    x: left + 12,
+    y: Math.max(86, y - 50),
+    size: 7,
+    color: muted,
+  });
+
+  // Footer
+  page.push({ rule: true, x1: left, y1: 64, x2: right, y2: 64, color: line, width: 0.5 });
+  page.push({
+    text: `${G_CORP_STATEMENT.entity}  ·  ${G_CORP_STATEMENT.registry}  ·  VAT ${G_CORP_STATEMENT.vat}`,
+    x: left,
+    y: 50,
+    size: 6.5,
+    color: muted,
+  });
+  page.push({
+    text: `${G_CORP_STATEMENT.support}  ·  ${G_CORP_STATEMENT.phone}  ·  ${G_CORP_STATEMENT.programme}`,
     x: left,
     y: 38,
-    size: 7,
+    size: 6.5,
     color: muted,
   });
   page.push({
-    text: `${G_CORP_STATEMENT.address.join(', ')} · ${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.website}`,
+    text: 'Confidential — for the named cardholder only. Unauthorised copying or distribution is prohibited.',
     x: left,
     y: 26,
-    size: 7,
+    size: 6.5,
     color: muted,
   });
   page.push({
-    text: 'Confidential cardholder advice. For information only — not a regulated bank advice.',
-    x: left,
-    y: 14,
+    text: 'Page 1 of 1',
+    x: pdfRightX('Page 1 of 1', 6.5, right),
+    y: 26,
     size: 6.5,
     color: muted,
   });
@@ -1361,7 +1478,7 @@ function downloadGCorpTransactionPdf(spend) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `G-Corp-Cards-${refund ? 'Refund' : 'Payment'}-${last4}-${String(spend.authNr || 'tx')}.pdf`;
+  a.download = `G-Corp-Cards-Transaction-Information-${last4}-${auth}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2641,7 +2758,7 @@ function spendDetailHtml(spend) {
               <h2>${esc(spend.merchant)}</h2>
             </div>
             <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download PDF</button>
+              <button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download transaction information</button>
               <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
             </div>
           </div>
@@ -3725,7 +3842,7 @@ document.body.addEventListener('click', (event) => {
       downloadGCorpTransactionPdf(spend);
       state.flash = {
         kind: 'ok',
-        text: `PDF downloaded · ${isSpendRefund(spend) ? 'Refund' : 'Payment'} · ${spend.merchant} · Auth ${spend.authNr || '—'}`,
+        text: `Transaction information PDF · ${isSpendRefund(spend) ? 'Credit' : 'Purchase'} · ${spend.merchant} · Auth ${spend.authNr || '—'}`,
       };
     } catch (err) {
       state.flash = { kind: 'error', text: err?.message || 'Could not build transaction PDF.' };
