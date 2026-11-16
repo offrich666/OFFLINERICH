@@ -71,10 +71,15 @@ const GJIRAFA_SPEND_AMOUNT_CENTS = 759_800; // €7,598.00
 const CB_INT_7598_SPEND_ID = 'spend-1794835200000-1955-759800-cb';
 const CB_INT_7598_AUTH = '791033';
 const CB_INT_7598_AMOUNT_CENTS = 759_800; // €7,598.00 — same day as GJIRAFA INC
-const PRIMARY_1955_BALANCE_CENTS = 8_482_481; // €84,824.81 after both €7,598 posts
+const CB_INT_3599_SPEND_ID = 'spend-cb-int-3599-515114';
+const CB_INT_3599_AUTH = '515114';
+const CB_INT_3599_AMOUNT_CENTS = 3_599; // €35.99
+const CB_INT_3599_ORDER = '1676770599066';
+const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
+const PRIMARY_1955_BALANCE_CENTS = 8_478_882; // after €7,598×2 + €35.99
 
-const DESK_BUILD = '20261116u';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v12';
+const DESK_BUILD = '20261116v';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v13';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -324,6 +329,8 @@ function normalizeStoredSpend(row) {
     || (kind === 'refund' ? 'Refunded' : 'Completed');
   const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
   const threeDs = String(row.threeDs || 'not_required').trim() || 'not_required';
+  const paymentId = String(row.paymentId || '').trim();
+  const orderNr = String(row.orderNr || row.orderNumber || '').trim();
   return {
     id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
     when: String(row.when || ''),
@@ -338,6 +345,8 @@ function normalizeStoredSpend(row) {
     gateway,
     authNr,
     threeDs,
+    paymentId,
+    orderNr,
     createdAt: Number(row.createdAt) || Date.now(),
   };
 }
@@ -557,6 +566,46 @@ function ensureCbIntDigital7598Spend(card) {
   } else {
     state.deskSpends = [payload, ...state.deskSpends];
   }
+}
+
+/**
+ * TEB success: CB INT DIGITAL JSC €35.99 — auth 515114 / order 1676770599066.
+ */
+function ensureCbIntDigital3599Spend(card) {
+  if (!card) return;
+  const existing = state.deskSpends.find(
+    (s) =>
+      s.id === CB_INT_3599_SPEND_ID
+      || String(s.authNr || '') === CB_INT_3599_AUTH
+      || String(s.paymentId || '') === CB_INT_3599_PAYMENT_ID
+      || String(s.orderNr || '') === CB_INT_3599_ORDER
+      || (Number(s.amountCents) === CB_INT_3599_AMOUNT_CENTS
+        && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
+  );
+  const whenDate = new Date('2026-11-16T22:12:00+01:00');
+  const payload = {
+    id: CB_INT_3599_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'CB INT DIGITAL JSC',
+    amountCents: CB_INT_3599_AMOUNT_CENTS,
+    kind: 'payment',
+    cardId: card.id,
+    cardLast4: String(card.pan).replace(/\D/g, '').slice(-4) || '1955',
+    network: String(card.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: CB_INT_3599_AUTH,
+    threeDs: 'not_required',
+    paymentId: CB_INT_3599_PAYMENT_ID,
+    orderNr: CB_INT_3599_ORDER,
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
+  }
   if (isPrimary1955(card)) {
     card.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   }
@@ -612,6 +661,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV12 = localStorage.getItem('gcards-desk-ledger-v12');
+    if (rawV12) {
+      applyLedgerPayload(JSON.parse(rawV12));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v12');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV11 = localStorage.getItem('gcards-desk-ledger-v11');
@@ -1674,6 +1734,8 @@ function downloadGCorpTransactionPdf(spend) {
     ['Billing amount', amountPlain],
     ['Transaction currency', cur],
     ['Authorisation code', auth],
+    ['Order number', String(spend.orderNr || '—').slice(0, 28)],
+    ['Payment ID', String(spend.paymentId || '—').slice(0, 36)],
     ['Acquirer / gateway', gateway],
     ['Authentication (3-D Secure)', threeDsLabel(spend.threeDs)],
     ['Processing status', String(spend.status || (refund ? 'Refunded' : 'Completed'))],
@@ -2225,6 +2287,7 @@ function ensureDeskDefaults() {
   ensureIpkoSpend(primary);
   ensureGjirafaSpend(primary);
   ensureCbIntDigital7598Spend(primary);
+  ensureCbIntDigital3599Spend(primary);
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
@@ -3136,6 +3199,8 @@ function spendDetailHtml(spend) {
             <div><dt>Status</dt><dd><span class="pill good">${esc(spend.status || (refund ? 'Refunded' : 'Completed'))}</span></dd></div>
             <div><dt>Payment Gateway</dt><dd>${esc(spend.gateway || PAYMENT_GATEWAYS[0])}</dd></div>
             <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
+            ${spend.orderNr ? `<div><dt>Order Nr</dt><dd class="mono">${esc(spend.orderNr)}</dd></div>` : ''}
+            ${spend.paymentId ? `<div><dt>Payment ID</dt><dd class="mono">${esc(spend.paymentId)}</dd></div>` : ''}
             <div><dt>Amount</dt><dd>${formatSpendAmountHtml(spend, cur)}</dd></div>
             <div><dt>3-D Secure</dt><dd><span class="pill good">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
             <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
@@ -4179,6 +4244,7 @@ document.body.addEventListener('click', (event) => {
     ensureIpkoSpend(primary);
     ensureGjirafaSpend(primary1955);
     ensureCbIntDigital7598Spend(primary1955);
+    ensureCbIntDigital3599Spend(primary1955);
     saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
