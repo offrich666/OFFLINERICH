@@ -71,6 +71,7 @@ const DESK_LEDGER_KEY = 'gcards-desk-ledger-v10';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
+const PRIMARY_1955_HOLDER = 'Adem Lazami';
 const SEED_MC_5289_PAN = '5399002104755289';
 const SEED_MC_5289_ID = 'card-seed-mc-5289';
 const SEED_MC_5289_EXPIRY = '09/29';
@@ -226,7 +227,7 @@ function normalizeDeskCard(card) {
     holder:
       card.holder
       || (endless
-        ? 'G Cards Member'
+        ? PRIMARY_1955_HOLDER
         : meta.kind === 'corporate'
           ? 'G CARDS EUROPE'
           : 'G Cards Member'),
@@ -1956,7 +1957,7 @@ function makeIssuedCard(options = {}) {
   const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
   const holder =
     endless
-      ? 'G Cards Member'
+      ? PRIMARY_1955_HOLDER
       : kind === 'corporate'
         ? 'G CARDS EUROPE'
         : 'G Cards Member';
@@ -2003,7 +2004,7 @@ function ensureEndless1955Card() {
     existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
     existing.label = 'Active · ····1955';
     existing.product = 'primary_1955';
-    existing.holder = existing.holder || 'G Cards Member';
+    existing.holder = PRIMARY_1955_HOLDER;
     if (typeof existing.balanceCents !== 'number' || existing.balanceCents >= 9_000_000_00) {
       existing.balanceCents = 0;
     }
