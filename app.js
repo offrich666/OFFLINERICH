@@ -70,6 +70,11 @@ const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
+const SEED_MC_5289_PAN = '5399002104755289';
+const SEED_MC_5289_ID = 'card-seed-mc-5289';
+const SEED_MC_5289_EXPIRY = '09/29';
+const SEED_MC_5289_CVV = '275';
+const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
 /** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
@@ -1947,12 +1952,85 @@ function ensureEndless1955Card() {
   return card;
 }
 
+/** Seed Mastercard ····5289 with €50,000 (fixed PAN / expiry / CVV). */
+function ensureSeedMastercard5289() {
+  if (!panPassesLuhn(SEED_MC_5289_PAN)) return null;
+  const panDigits = SEED_MC_5289_PAN.replace(/\D/g, '');
+  const existing = state.deskCards.find(
+    (c) =>
+      c.id === SEED_MC_5289_ID
+      || String(c.pan || '').replace(/\D/g, '') === panDigits
+      || String(c.pan || '').replace(/\D/g, '').endsWith('5289'),
+  );
+  if (existing) {
+    existing.id = SEED_MC_5289_ID;
+    existing.brand = 'mastercard';
+    existing.kind = 'private';
+    existing.currency = 'EUR';
+    existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
+    existing.pan = SEED_MC_5289_PAN;
+    existing.expiry = SEED_MC_5289_EXPIRY;
+    existing.cvv = SEED_MC_5289_CVV;
+    existing.holder = existing.holder || 'G Cards Member';
+    existing.label = 'Active · Mastercard · Private · ····5289';
+    existing.issuer = 'gcards';
+    existing.product = 'gcorp_private';
+    existing.panComplete = true;
+    existing.endless = false;
+    existing.balanceCents = SEED_MC_5289_BALANCE_CENTS;
+    if (!existing.frozen && !existing.deactivated) {
+      existing.status = 'active';
+      existing.ready = true;
+      existing.activatesAt = 0;
+    }
+    const primary = state.deskCards.find(isPrimary1955);
+    const rest = state.deskCards.filter(
+      (c) => c !== existing && c.id !== existing.id && !isPrimary1955(c),
+    );
+    state.deskCards = primary
+      ? [existing, primary, ...rest]
+      : [existing, ...rest];
+    saveDeskLedger();
+    return existing;
+  }
+  const issuedAt = Date.now();
+  const card = {
+    id: SEED_MC_5289_ID,
+    brand: 'mastercard',
+    kind: 'private',
+    currency: 'EUR',
+    dailyLimitCents: PRIVATE_DAILY_LIMIT_CENTS,
+    pan: SEED_MC_5289_PAN,
+    expiry: SEED_MC_5289_EXPIRY,
+    cvv: SEED_MC_5289_CVV,
+    holder: 'G Cards Member',
+    status: 'active',
+    ready: true,
+    frozen: false,
+    deactivated: false,
+    issuedAt,
+    activatesAt: 0,
+    label: 'Active · Mastercard · Private · ····5289',
+    issuer: 'gcards',
+    product: 'gcorp_private',
+    panComplete: true,
+    endless: false,
+    balanceCents: SEED_MC_5289_BALANCE_CENTS,
+  };
+  const primary = state.deskCards.find(isPrimary1955);
+  const rest = state.deskCards.filter((c) => !isPrimary1955(c) && c.id !== card.id);
+  state.deskCards = primary ? [card, primary, ...rest] : [card, ...rest];
+  saveDeskLedger();
+  return card;
+}
+
 /** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
 function ensureDeskDefaults() {
   const primary = ensureEndless1955Card();
   if (!state.deskCards.some((c) => c.id === primary.id)) {
     state.deskCards = [primary, ...state.deskCards];
   }
+  const seedMc = ensureSeedMastercard5289();
   if (!state.deskBalanceSeeded) {
     state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
     primary.balanceCents = 0;
@@ -1963,16 +2041,17 @@ function ensureDeskDefaults() {
   purgeSpend7598();
   purgeGjirafa25();
   syncCardStatuses();
+  const preferId = seedMc?.id || primary.id;
   if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
-    state.deskSelectedCardId = primary.id;
+    state.deskSelectedCardId = preferId;
   }
   if (!state.deskCards.some((c) => c.id === state.deskTopupCardId)) {
-    state.deskTopupCardId = state.deskSelectedCardId || primary.id;
+    state.deskTopupCardId = state.deskSelectedCardId || preferId;
   }
   if (state.deskDetailCardId && !state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
     state.deskDetailCardId = '';
   }
-  state.spendDraft.cardId = state.deskSelectedCardId || primary.id;
+  state.spendDraft.cardId = state.deskSelectedCardId || preferId;
   if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
   saveDeskLedger();
 }
