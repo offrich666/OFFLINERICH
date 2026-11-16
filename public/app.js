@@ -78,17 +78,17 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 8_478_882; // after €7,598×2 + €35.99 TEB
 
-const DESK_BUILD = '20261116x';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v15';
+const DESK_BUILD = '20261116y';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v16';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
-const PRIMARY_1955_HOLDER = 'Adem Lazami';
+const PRIMARY_1955_HOLDER = 'Azem Hasanaj';
 const SEED_MC_5289_PAN = '5399002104755289';
 const SEED_MC_5289_ID = 'card-seed-mc-5289';
 const SEED_MC_5289_EXPIRY = '09/29';
 const SEED_MC_5289_CVV = '275';
-const SEED_MC_5289_HOLDER = 'Azem Hasanaj';
+const SEED_MC_5289_HOLDER = 'Adem Hysiqi';
 const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
 /** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
@@ -569,7 +569,7 @@ function ensureCbIntDigital7598Spend(card) {
 }
 
 /**
- * TEB success: CB INT DIGITAL JSC €35.99 on ····1955 (Adem Lazami).
+ * TEB success: CB INT DIGITAL JSC €35.99 on ····1955 (Azem Hasanaj).
  * Auth 515114 / order 1676770599066 / payment id …_58747297.
  */
 function ensureCbIntDigital3599Spend(card) {
@@ -663,6 +663,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV15 = localStorage.getItem('gcards-desk-ledger-v15');
+    if (rawV15) {
+      applyLedgerPayload(JSON.parse(rawV15));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v15');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV14 = localStorage.getItem('gcards-desk-ledger-v14');
@@ -2314,7 +2325,7 @@ function ensureDeskDefaults() {
   ensureCbIntDigital3599Spend(primary);
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
-  // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
+  // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
   if (seedMc) {
     state.deskSelectedCardId = seedMc.id;
     state.deskTopupCardId = seedMc.id;
