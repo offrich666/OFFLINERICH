@@ -74,6 +74,7 @@ const SEED_MC_5289_PAN = '5399002104755289';
 const SEED_MC_5289_ID = 'card-seed-mc-5289';
 const SEED_MC_5289_EXPIRY = '09/29';
 const SEED_MC_5289_CVV = '275';
+const SEED_MC_5289_HOLDER = 'Azem Hasanaj';
 const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
 /** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
@@ -1971,7 +1972,7 @@ function ensureSeedMastercard5289() {
     existing.pan = SEED_MC_5289_PAN;
     existing.expiry = SEED_MC_5289_EXPIRY;
     existing.cvv = SEED_MC_5289_CVV;
-    existing.holder = existing.holder || 'G Cards Member';
+    existing.holder = SEED_MC_5289_HOLDER;
     existing.label = 'Active · Mastercard · Private · ····5289';
     existing.issuer = 'gcards';
     existing.product = 'gcorp_private';
@@ -2003,7 +2004,7 @@ function ensureSeedMastercard5289() {
     pan: SEED_MC_5289_PAN,
     expiry: SEED_MC_5289_EXPIRY,
     cvv: SEED_MC_5289_CVV,
-    holder: 'G Cards Member',
+    holder: SEED_MC_5289_HOLDER,
     status: 'active',
     ready: true,
     frozen: false,
