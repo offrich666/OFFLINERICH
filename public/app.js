@@ -54,6 +54,8 @@ const state = {
   /** USD→EUR FX used to credit desk balance from USDT deposits. */
   usdToEur: 0.92,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS' },
+  issueDraft: { brand: 'visa', kind: 'private' },
+  statementDraft: { cardId: '', from: '', to: '' },
 };
 
 const PAYMENT_GATEWAYS = [
@@ -68,6 +70,16 @@ const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
+/** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
+const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
+const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
+const G_CORP_STATEMENT = {
+  legalName: 'G Corp Cards',
+  entity: 'G Corp Cards EU · Virtual card programme',
+  address: ['Keizerlijke 12', '1000 Brussels', 'Belgium'],
+  support: 'statements@g-cards.eu',
+  programme: 'G Cards EU Issuing Desk',
+};
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
 const SOLANA_RPCS = [
@@ -84,7 +96,8 @@ const ERC20_TRANSFER_TOPIC =
 
 function panPassesLuhn(pan) {
   const digits = String(pan || '').replace(/\D/g, '');
-  if (!/^\d{16}$/.test(digits)) return false;
+  // Visa/MC 16 · Amex 15
+  if (!/^\d{15,16}$/.test(digits)) return false;
   let sum = 0;
   for (let i = digits.length - 1, alt = false; i >= 0; i -= 1) {
     let n = Number(digits[i]);
@@ -96,6 +109,118 @@ function panPassesLuhn(pan) {
     alt = !alt;
   }
   return sum % 10 === 0;
+}
+
+function normalizeBrand(brand) {
+  const b = String(brand || '').toLowerCase().replace(/\s+/g, '');
+  if (b === 'visa') return 'visa';
+  if (b === 'amex' || b === 'americanexpress' || b === 'americanexpress') return 'amex';
+  if (b.startsWith('amex')) return 'amex';
+  return 'mastercard';
+}
+
+function brandLabel(brand) {
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return 'Visa';
+  if (b === 'amex') return 'Amex';
+  return 'Mastercard';
+}
+
+function plasticClass(brand) {
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return 'visa';
+  if (b === 'amex') return 'amex';
+  return 'master';
+}
+
+function normalizeKind(kind) {
+  return String(kind || '').toLowerCase() === 'corporate' ? 'corporate' : 'private';
+}
+
+function kindLabel(kind) {
+  return normalizeKind(kind) === 'corporate' ? 'Corporate' : 'Private';
+}
+
+function cardProductMeta(brand, kind) {
+  const b = normalizeBrand(brand);
+  const k = normalizeKind(kind);
+  return {
+    brand: b,
+    kind: k,
+    currency: b === 'amex' ? 'USD' : 'EUR',
+    dailyLimitCents: k === 'corporate' ? CORPORATE_DAILY_LIMIT_CENTS : PRIVATE_DAILY_LIMIT_CENTS,
+  };
+}
+
+function cardCurrency(card) {
+  if (!card) return 'EUR';
+  if (card.endless) return 'EUR';
+  if (card.currency === 'USD' || card.currency === 'EUR') return card.currency;
+  return normalizeBrand(card.brand) === 'amex' ? 'USD' : 'EUR';
+}
+
+function cardDailyLimitCents(card) {
+  if (typeof card?.dailyLimitCents === 'number' && card.dailyLimitCents > 0) return card.dailyLimitCents;
+  return cardProductMeta(card?.brand, card?.kind).dailyLimitCents;
+}
+
+function belgradeYmd(ms) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms));
+}
+
+function cardSpentOnDayCents(card, dayYmd) {
+  if (!card) return 0;
+  const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
+  return state.deskSpends
+    .filter((s) => {
+      const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
+      if (!match) return false;
+      const ts = spendTimestamp(s);
+      return ts && belgradeYmd(ts) === dayYmd;
+    })
+    .reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+}
+
+function cardSpentTodayCents(card) {
+  return cardSpentOnDayCents(card, belgradeYmd(Date.now()));
+}
+
+function eurCentsToUsdCents(eurCents) {
+  const rate = usdToEurRate();
+  return Math.round(Number(eurCents || 0) / rate);
+}
+
+function usdCentsToEurCents(usdCents) {
+  return Math.round(Number(usdCents || 0) * usdToEurRate());
+}
+
+function normalizeDeskCard(card) {
+  if (!card || typeof card !== 'object') return null;
+  const brand = normalizeBrand(card.brand);
+  const kind = normalizeKind(card.kind || card.productKind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const endless = Boolean(card.endless);
+  return {
+    ...card,
+    brand: endless ? 'mastercard' : meta.brand,
+    kind: endless ? 'private' : meta.kind,
+    currency: endless ? 'EUR' : meta.currency,
+    dailyLimitCents: endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents,
+    balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
+    endless,
+    holder:
+      card.holder
+      || (endless
+        ? 'G Cards Member'
+        : meta.kind === 'corporate'
+          ? 'G CORP CARDS'
+          : 'G Cards Member'),
+  };
 }
 
 function cardsOnCardsCents() {
@@ -110,11 +235,8 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   if (Array.isArray(data.deskCards) && data.deskCards.length) {
     state.deskCards = data.deskCards
       .filter((card) => panPassesLuhn(card?.pan))
-      .map((card) => ({
-        ...card,
-        balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
-        endless: Boolean(card.endless),
-      }));
+      .map((card) => normalizeDeskCard(card))
+      .filter(Boolean);
   }
   if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
   if (typeof data.deskBalanceSeeded === 'boolean') state.deskBalanceSeeded = data.deskBalanceSeeded;
@@ -406,11 +528,8 @@ function reloadStoredSpends() {
     if (Array.isArray(data.deskCards) && data.deskCards.length) {
       state.deskCards = data.deskCards
         .filter((card) => panPassesLuhn(card?.pan))
-        .map((card) => ({
-          ...card,
-          balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
-          endless: Boolean(card.endless),
-        }));
+        .map((card) => normalizeDeskCard(card))
+        .filter(Boolean);
     }
   } catch {
     /* ignore */
@@ -453,8 +572,250 @@ function esc(value) {
   }[char]));
 }
 
-function money(cents) {
-  return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format((cents || 0) / 100);
+function money(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  return new Intl.NumberFormat(cur === 'USD' ? 'en-US' : 'de-DE', {
+    style: 'currency',
+    currency: cur,
+  }).format((cents || 0) / 100);
+}
+
+function cardMoney(card, cents = card?.balanceCents) {
+  return money(cents, cardCurrency(card));
+}
+
+function pdfEscape(text) {
+  return String(text ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)');
+}
+
+function pdfAscii(text) {
+  return String(text ?? '')
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '?');
+}
+
+/** Minimal multi-page PDF writer (Helvetica) for G Corp Cards statements. */
+function buildPdfDocument(pages) {
+  const encoder = new TextEncoder();
+  const objects = [];
+  const add = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const fontRegular = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const fontBold = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  const contentIds = [];
+  const pageIds = [];
+
+  for (const page of pages) {
+    const ops = [];
+    ops.push('0.12 0.16 0.22 RG', '0.6 w');
+    for (const item of page) {
+      if (item.rule) {
+        ops.push(`${item.x1} ${item.y1} m ${item.x2} ${item.y2} l S`);
+      }
+    }
+    ops.push('BT');
+    for (const item of page) {
+      if (item.rule || item.text == null) continue;
+      const size = item.size || 10;
+      const x = item.x ?? 48;
+      const y = item.y ?? 750;
+      ops.push(`/${item.bold ? 'FB' : 'FR'} ${size} Tf`);
+      ops.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
+      ops.push(`(${pdfEscape(pdfAscii(item.text))}) Tj`);
+    }
+    ops.push('ET');
+    const full = ops.join('\n');
+    const bytes = encoder.encode(full);
+    contentIds.push(add(`<< /Length ${bytes.length} >>\nstream\n${full}\nendstream`));
+  }
+
+  for (let i = 0; i < pages.length; i += 1) {
+    pageIds.push(0); // placeholder
+  }
+  const kidsPlaceholder = pageIds.map(() => 'PG').join(' ');
+  // Allocate page objects after we know pagesId… build pages with temporary parent, then fix.
+  const pagesObjIndex = objects.length; // will push next
+  add('<< /Type /Pages /Kids [] /Count 0 >>'); // temporary
+  for (let i = 0; i < pages.length; i += 1) {
+    pageIds[i] = add(
+      `<< /Type /Page /Parent ${pagesObjIndex + 1} 0 R /MediaBox [0 0 595 842] /Contents ${contentIds[i]} 0 R /Resources << /Font << /FR ${fontRegular} 0 R /FB ${fontBold} 0 R >> >> >>`,
+    );
+  }
+  objects[pagesObjIndex] =
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  void kidsPlaceholder;
+  const catalogId = add(`<< /Type /Catalog /Pages ${pagesObjIndex + 1} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let i = 0; i < objects.length; i += 1) {
+    offsets.push(encoder.encode(pdf).length);
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+  const xrefPos = encoder.encode(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+function statementPeriodBounds(fromStr, toStr) {
+  const from = Date.parse(`${fromStr}T00:00:00+01:00`);
+  const to = Date.parse(`${toStr}T23:59:59+01:00`);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+    throw new Error('Choose a valid statement period (from ≤ to).');
+  }
+  return { from, to };
+}
+
+function spendsForCardInPeriod(card, fromMs, toMs) {
+  const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
+  return state.deskSpends
+    .filter((s) => {
+      const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
+      if (!match) return false;
+      const ts = spendTimestamp(s);
+      return ts >= fromMs && ts <= toMs;
+    })
+    .sort((a, b) => spendTimestamp(a) - spendTimestamp(b));
+}
+
+function formatStatementDate(ms) {
+  return new Date(ms).toLocaleString('en-GB', {
+    timeZone: 'Europe/Belgrade',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function downloadGCorpStatementPdf(card, fromStr, toStr) {
+  const { from, to } = statementPeriodBounds(fromStr, toStr);
+  const rows = spendsForCardInPeriod(card, from, to);
+  const cur = cardCurrency(card);
+  const totalSpend = rows.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const stmtId = `GCS-${belgradeYmd(Date.now()).replace(/-/g, '')}-${String(card.pan).slice(-4)}`;
+  const generated = formatStatementDate(Date.now());
+  const brand = brandLabel(card.brand);
+  const kind = kindLabel(card.kind);
+  const last4 = String(card.pan).replace(/\D/g, '').slice(-4);
+
+  const headerBlock = (pageNo, pageCount) => [
+    { text: G_CORP_STATEMENT.legalName, x: 48, y: 800, size: 18, bold: true },
+    { text: G_CORP_STATEMENT.entity, x: 48, y: 782, size: 9 },
+    { text: G_CORP_STATEMENT.address.join(' · '), x: 48, y: 768, size: 8 },
+    { text: `Statement of Account`, x: 48, y: 742, size: 14, bold: true },
+    { text: `Statement ID ${stmtId}`, x: 360, y: 800, size: 8 },
+    { text: `Generated ${generated}`, x: 360, y: 786, size: 8 },
+    { text: `Page ${pageNo} of ${pageCount}`, x: 360, y: 772, size: 8 },
+    { rule: true, x1: 48, y1: 730, x2: 547, y2: 730 },
+  ];
+
+  const metaLines = [
+    { text: `Cardholder: ${card.holder || 'G Cards Member'}`, x: 48, y: 710, size: 10 },
+    { text: `Product: ${brand} ${kind} · ${cur}`, x: 48, y: 694, size: 10 },
+    { text: `Card number: ····${last4}`, x: 48, y: 678, size: 10 },
+    {
+      text: `Daily limit: ${money(cardDailyLimitCents(card), cur)} · Status: ${cardStatusKey(card)}`,
+      x: 48,
+      y: 662,
+      size: 10,
+    },
+    {
+      text: `Period: ${fromStr} → ${toStr} (Europe/Belgrade)`,
+      x: 48,
+      y: 646,
+      size: 10,
+      bold: true,
+    },
+    { text: `Opening note: Available balance ${cardMoney(card)}`, x: 48, y: 630, size: 10 },
+    { text: `Period spend total: ${money(totalSpend, cur)} · ${rows.length} transaction(s)`, x: 48, y: 614, size: 10, bold: true },
+    { text: 'Date / time', x: 48, y: 588, size: 9, bold: true },
+    { text: 'Merchant / auth', x: 160, y: 588, size: 9, bold: true },
+    { text: 'Gateway', x: 360, y: 588, size: 9, bold: true },
+    { text: 'Amount', x: 480, y: 588, size: 9, bold: true },
+    { rule: true, x1: 48, y1: 580, x2: 547, y2: 580 },
+  ];
+
+  const lineItems = rows.length
+    ? rows.map((s) => ({
+        when: formatStatementDate(spendTimestamp(s)),
+        merchant: String(s.merchant || '—').slice(0, 36),
+        auth: `Auth ${s.authNr || '—'}`,
+        gateway: String(s.gateway || '—').slice(0, 22),
+        amount: money(s.amountCents, cur),
+      }))
+    : [
+        {
+          when: '—',
+          merchant: 'No card spend in this period',
+          auth: '',
+          gateway: '',
+          amount: money(0, cur),
+        },
+      ];
+
+  const rowsPerPage = 22;
+  const pageCount = Math.max(1, Math.ceil(lineItems.length / rowsPerPage));
+  const pages = [];
+
+  for (let p = 0; p < pageCount; p += 1) {
+    const slice = lineItems.slice(p * rowsPerPage, (p + 1) * rowsPerPage);
+    const page = [...headerBlock(p + 1, pageCount)];
+    if (p === 0) page.push(...metaLines);
+    let y = p === 0 ? 562 : 700;
+    for (const row of slice) {
+      page.push({ text: row.when, x: 48, y, size: 8 });
+      page.push({ text: row.merchant, x: 160, y, size: 8 });
+      page.push({ text: row.auth, x: 160, y: y - 10, size: 7 });
+      page.push({ text: row.gateway, x: 360, y, size: 8 });
+      page.push({ text: row.amount, x: 470, y, size: 8, bold: true });
+      y -= 22;
+    }
+    page.push({
+      text: 'G Corp Cards · Confidential cardholder statement · Not a bank advice',
+      x: 48,
+      y: 36,
+      size: 7,
+    });
+    page.push({
+      text: `${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.programme}`,
+      x: 48,
+      y: 24,
+      size: 7,
+    });
+    if (p === pageCount - 1) {
+      page.push({
+        text: `Closing available balance: ${cardMoney(card)}`,
+        x: 48,
+        y: Math.max(56, y - 8),
+        size: 10,
+        bold: true,
+      });
+    }
+    pages.push(page);
+  }
+
+  const blob = buildPdfDocument(pages);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `G-Corp-Cards-Statement-${last4}-${fromStr}_${toStr}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
 }
 
 function usdToEurRate() {
@@ -541,10 +902,12 @@ const HOST_CHECK_STEPS = [
 ];
 
 function formatPan(pan) {
-  return String(pan || '')
-    .replace(/\D/g, '')
-    .replace(/(\d{4})(?=\d)/g, '$1 ')
-    .trim();
+  const digits = String(pan || '').replace(/\D/g, '');
+  if (digits.length === 15) {
+    // Amex: 4-6-5
+    return `${digits.slice(0, 4)} ${digits.slice(4, 10)} ${digits.slice(10)}`.trim();
+  }
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
 }
 
 function deskActiveCard() {
@@ -581,8 +944,9 @@ function syncCardStatuses() {
       card.frozen = false;
       card.activatesAt = 0;
       if (card.label && String(card.label).toLowerCase().includes('activating')) {
-        const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
-        card.label = card.endless ? 'Active · ····1955' : `Active · ${brand}`;
+        const brand = brandLabel(card.brand);
+        const kind = kindLabel(card.kind);
+        card.label = card.endless ? 'Active · ····1955' : `Active · ${brand} · ${kind}`;
       }
       changed = true;
     }
@@ -626,16 +990,17 @@ function cardStatusPill(card) {
 }
 
 function deskCardMenuLabel(c) {
-  const brand = String(c.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
-  const bal = money(c.balanceCents || 0);
+  const brand = brandLabel(c.brand);
+  const kind = kindLabel(c.kind);
+  const bal = cardMoney(c);
   const key = cardStatusKey(c);
   const tag = isPrimary1955(c)
     ? '1955'
     : key === 'deactivated'
-      ? `${brand} off`
+      ? `${brand} ${kind} off`
       : key === 'frozen'
-        ? `${brand} frozen`
-        : brand;
+        ? `${brand} ${kind} frozen`
+        : `${brand} ${kind}`;
   return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
@@ -694,56 +1059,89 @@ function randomDigits(count) {
   return out;
 }
 
-function makePanWithBin(bin, last4Wanted) {
+function makePanWithBin(bin, { length = 16, last4Wanted } = {}) {
   const binDigits = String(bin).replace(/\D/g, '');
+  const panLen = length === 15 ? 15 : 16;
+  const bodyBeforeCheck = panLen - 1;
   if (last4Wanted) {
     const want = String(last4Wanted).replace(/\D/g, '').padStart(4, '0').slice(-4);
     for (let attempt = 0; attempt < 4000; attempt += 1) {
-      const midLen = 12 - binDigits.length;
-      const first12 = `${binDigits}${randomDigits(Math.max(0, midLen))}`.slice(0, 12);
-      const pan15 = `${first12}${want.slice(0, 3)}`;
-      const check = luhnCheckDigit(pan15);
-      if (check === want[3]) return `${pan15}${check}`;
+      const midLen = bodyBeforeCheck - 3 - binDigits.length;
+      const head = `${binDigits}${randomDigits(Math.max(0, midLen))}`.slice(0, bodyBeforeCheck - 3);
+      const panWithoutCheck = `${head}${want.slice(0, 3)}`.slice(0, bodyBeforeCheck);
+      const check = luhnCheckDigit(panWithoutCheck);
+      if (check === want[3]) return `${panWithoutCheck}${check}`;
     }
   }
-  const bodyLen = 15 - binDigits.length;
-  const pan15 = `${binDigits}${randomDigits(Math.max(0, bodyLen))}`.slice(0, 15);
-  return `${pan15}${luhnCheckDigit(pan15)}`;
+  const bodyLen = bodyBeforeCheck - binDigits.length;
+  const panWithoutCheck = `${binDigits}${randomDigits(Math.max(0, bodyLen))}`.slice(0, bodyBeforeCheck);
+  return `${panWithoutCheck}${luhnCheckDigit(panWithoutCheck)}`;
 }
 
 function nextBrand() {
-  const masters = state.deskCards.filter((c) => String(c.brand).toLowerCase() === 'mastercard').length;
-  const visas = state.deskCards.filter((c) => String(c.brand).toLowerCase() === 'visa').length;
-  return visas <= masters ? 'visa' : 'mastercard';
+  const counts = { visa: 0, mastercard: 0, amex: 0 };
+  for (const c of state.deskCards) {
+    if (c?.endless) continue;
+    counts[normalizeBrand(c.brand)] += 1;
+  }
+  if (counts.visa <= counts.mastercard && counts.visa <= counts.amex) return 'visa';
+  if (counts.mastercard <= counts.amex) return 'mastercard';
+  return 'amex';
 }
 
-/** Issue Visa or Mastercard (alternating), always Luhn-valid. */
+/** Issue Visa, Mastercard, or Amex (Luhn-valid). Private/Corporate product + daily limit. */
 function makeIssuedCard(options = {}) {
-  const brand = options.brand || nextBrand();
   const endless = Boolean(options.endless);
-  const bin = brand === 'visa' ? '4532' : '545020';
-  const pan = endless ? PRIMARY_1955_PAN : makePanWithBin(bin);
-  const cvv = String(100 + Math.floor(Math.random() * 900));
+  const meta = cardProductMeta(options.brand || nextBrand(), options.kind || 'private');
+  const brand = endless ? 'mastercard' : meta.brand;
+  const kind = endless ? 'private' : meta.kind;
+  const bin = brand === 'visa' ? '4532' : brand === 'amex' ? '378282' : '545020';
+  const pan = endless
+    ? PRIMARY_1955_PAN
+    : makePanWithBin(bin, { length: brand === 'amex' ? 15 : 16 });
+  const cvv =
+    endless
+      ? '195'
+      : brand === 'amex'
+        ? String(1000 + Math.floor(Math.random() * 9000))
+        : String(100 + Math.floor(Math.random() * 900));
   const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
   const year = String(28 + Math.floor(Math.random() * 5));
   const last4 = pan.slice(-4);
   const issuedAt = Date.now();
+  const currency = endless ? 'EUR' : meta.currency;
+  const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  const holder =
+    endless
+      ? 'G Cards Member'
+      : kind === 'corporate'
+        ? 'G CORP CARDS'
+        : 'G Cards Member';
   return {
     id: endless ? 'card-endless-1955' : `card-${issuedAt}-${last4}`,
     brand,
+    kind,
+    currency,
+    dailyLimitCents,
     pan,
     expiry: endless ? '12/35' : `${month}/${year}`,
-    cvv: endless ? '195' : cvv,
-    holder: endless ? 'G Cards Member' : 'G Cards Member',
+    cvv,
+    holder,
     status: 'active',
     ready: true,
     frozen: false,
     deactivated: false,
     issuedAt,
     activatesAt: 0,
-    label: endless ? `Active · ····1955` : `Active · ${brand === 'visa' ? 'Visa' : 'Mastercard'}`,
+    label: endless
+      ? 'Active · ····1955'
+      : `Active · ${brandLabel(brand)} · ${kindLabel(kind)}`,
     issuer: 'gcards',
-    product: endless ? 'primary_1955' : 'website_virtual',
+    product: endless
+      ? 'primary_1955'
+      : kind === 'corporate'
+        ? 'gcorp_corporate'
+        : 'gcorp_private',
     panComplete: true,
     endless,
     balanceCents: 0,
@@ -757,6 +1155,9 @@ function ensureEndless1955Card() {
     existing.endless = true;
     existing.pan = PRIMARY_1955_PAN;
     existing.brand = 'mastercard';
+    existing.kind = 'private';
+    existing.currency = 'EUR';
+    existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
     existing.label = 'Active · ····1955';
     existing.product = 'primary_1955';
     existing.holder = existing.holder || 'G Cards Member';
@@ -1128,8 +1529,10 @@ function deskCardSelectOptions(selectedId, { excludeId = '', emptyLabel = 'Choos
   if (!rows.length) return `<option value="">${esc(emptyLabel)}</option>`;
   return rows
     .map((c) => {
-      const brand = c.endless ? '1955' : c.brand === 'visa' ? 'Visa' : 'Mastercard';
-      const label = `${brand} ····${String(c.pan).slice(-4)} · ${money(c.balanceCents || 0)}`;
+      const brand = c.endless
+        ? '1955'
+        : `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+      const label = `${brand} ····${String(c.pan).slice(-4)} · ${cardMoney(c)}`;
       return `<option value="${esc(c.id)}" ${c.id === selectedId ? 'selected' : ''}>${esc(label)}</option>`;
     })
     .join('');
@@ -1137,13 +1540,15 @@ function deskCardSelectOptions(selectedId, { excludeId = '', emptyLabel = 'Choos
 
 function deskCardPickerHtml(selectedId) {
   if (!state.deskCards.length) {
-    return '<p class="muted desk-empty-cards">No cards yet — create Visa or Mastercard below.</p>';
+    return '<p class="muted desk-empty-cards">No cards yet — issue Visa, Mastercard, or Amex below.</p>';
   }
   return state.deskCards
     .map((c) => {
       const on = c.id === selectedId ? 'on' : '';
       const key = cardStatusKey(c);
-      const brandTag = c.endless ? 'Primary 1955' : c.brand === 'visa' ? 'Visa' : 'Mastercard';
+      const brandTag = c.endless
+        ? 'Primary 1955'
+        : `${brandLabel(c.brand)} · ${kindLabel(c.kind)}`;
       const statusLabel =
         key === 'deactivated' ? 'Off' : key === 'frozen' ? 'Frozen' : 'Active';
       return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}">
@@ -1152,10 +1557,66 @@ function deskCardPickerHtml(selectedId) {
             <span class="desk-chip-status">${esc(statusLabel)}</span>
           </span>
           <strong class="desk-card-pick-pan">····${esc(String(c.pan).slice(-4))}</strong>
-          <span class="desk-card-pick-bal">${esc(money(c.balanceCents || 0))}</span>
+          <span class="desk-card-pick-bal">${esc(cardMoney(c))}</span>
         </button>`;
     })
     .join('');
+}
+
+function deskIssuePanelHtml() {
+  const brand = normalizeBrand(state.issueDraft?.brand || 'visa');
+  const kind = normalizeKind(state.issueDraft?.kind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const limitTxt = money(meta.dailyLimitCents, meta.currency);
+  const brandBtns = [
+    ['visa', 'Visa'],
+    ['mastercard', 'Mastercard'],
+    ['amex', 'Amex'],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}">${label}</button>`,
+    )
+    .join('');
+  const kindBtns = [
+    ['private', 'Private'],
+    ['corporate', 'Corporate'],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="desk-seg ${kind === id ? 'on' : ''}" data-action="desk-issue-kind" data-kind="${id}">${label}</button>`,
+    )
+    .join('');
+  return `
+        <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Issue</p>
+              <h2>New card</h2>
+              <p class="muted desk-panel-help">Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.</p>
+            </div>
+          </div>
+          <div class="desk-issue-grid">
+            <div>
+              <p class="desk-issue-label">Network</p>
+              <div class="desk-seg-row">${brandBtns}</div>
+            </div>
+            <div>
+              <p class="desk-issue-label">Product</p>
+              <div class="desk-seg-row">${kindBtns}</div>
+            </div>
+          </div>
+          <div class="desk-issue-meta">
+            <div><small>Daily spend limit</small><strong>${esc(limitTxt)}</strong></div>
+            <div><small>Billing currency</small><strong>${esc(meta.currency)}</strong></div>
+            <div><small>Programme</small><strong>G Corp Cards</strong></div>
+          </div>
+          <div class="active-actions">
+            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
+              state.deskIssuing ? 'Issuing…' : `Issue ${brandLabel(brand)} ${kindLabel(kind)}`
+            }</button>
+          </div>
+        </section>`;
 }
 
 function deskHomeHtml() {
@@ -1207,7 +1668,11 @@ function deskHomeHtml() {
   ).join('');
 
   const selectedLabel = hasCard
-    ? `${isPrimary1955(card) ? 'Primary 1955' : card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)}`
+    ? `${
+        isPrimary1955(card)
+          ? 'Primary 1955'
+          : `${brandLabel(card.brand)} ${kindLabel(card.kind)}`
+      } ····${String(card.pan).slice(-4)}`
     : 'No card selected';
 
   return `
@@ -1218,24 +1683,25 @@ function deskHomeHtml() {
             <p class="lede desk-home-lede">1) Tap a card to select it · 2) Move money (desk → card or card → card) · 3) Pay / History for spending.</p>
             <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
-              <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${state.deskIssuing ? 'Creating…' : 'Create card'}</button>
-              <button class="ghost" type="button" data-action="desk-issue-new" data-brand="visa" ${state.deskIssuing ? 'disabled' : ''}>Visa</button>
-              <button class="ghost" type="button" data-action="desk-issue-new" data-brand="mastercard" ${state.deskIssuing ? 'disabled' : ''}>Mastercard</button>
+              <a class="primary" href="#desk-issue">Issue card</a>
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>` : ''}
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(card.id)}">Statement PDF</button>` : ''}
             </div>
           </div>
-          <article class="plastic ${cardBrand === 'visa' ? 'visa' : 'master'} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
-            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(cardBrand)}</div>
+          <article class="plastic ${plasticClass(cardBrand)} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
+            <div class="plastic-top"><span>${hasCard && normalizeKind(card.kind) === 'corporate' ? 'G Corp Cards' : 'G Cards EU'}</span>${schemeMark(cardBrand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
               <div><small>Expires</small><strong>${esc(hasCard ? card.expiry : '••/••')}</strong></div>
-              <div><small>Balance</small><strong>${esc(hasCard ? money(card.balanceCents || 0) : money(0))}</strong></div>
+              <div><small>Balance</small><strong>${esc(hasCard ? cardMoney(card) : money(0))}</strong></div>
             </div>
             <p class="desk-card-status">${hasCard ? `${cardStatusPill(card)} · tap for PAN / CVV` : '<span class="pill">Not issued</span>'}</p>
           </article>
         </section>
+
+        ${deskIssuePanelHtml()}
 
         <section class="desk-balance-menu desk-card-picker-panel" aria-label="Choose a card">
           <div class="panel-head-inline">
@@ -1377,12 +1843,26 @@ function deskCardDetailHtml() {
   state.deskView = 'card';
   state.deskSelectedCardId = card.id;
   state.deskTopupCardId = card.id;
-  const brand = String(card.brand || 'mastercard').toLowerCase();
+  const brand = normalizeBrand(card.brand || 'mastercard');
   const panShown = state.deskRevealSecrets
     ? formatPan(card.pan)
-    : `•••• •••• •••• ${String(card.pan).slice(-4)}`;
-  const cvvShown = state.deskRevealSecrets ? card.cvv : '•••';
+    : brand === 'amex'
+      ? `•••• •••••• •${String(card.pan).slice(-4)}`
+      : `•••• •••• •••• ${String(card.pan).slice(-4)}`;
+  const cvvShown = state.deskRevealSecrets ? card.cvv : brand === 'amex' ? '••••' : '•••';
   const last4 = String(card.pan).slice(-4);
+  const spentToday = cardSpentTodayCents(card);
+  const dailyLimit = cardDailyLimitCents(card);
+  const cur = cardCurrency(card);
+  if (!state.statementDraft) state.statementDraft = { cardId: '', from: '', to: '' };
+  if (!state.statementDraft.cardId) state.statementDraft.cardId = card.id;
+  if (!state.statementDraft.from || !state.statementDraft.to) {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - 30);
+    state.statementDraft.from = from.toISOString().slice(0, 10);
+    state.statementDraft.to = to.toISOString().slice(0, 10);
+  }
   const fundAmountNum = Number(state.deskCardFundAmount);
   const fundCents =
     Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
@@ -1424,7 +1904,7 @@ function deskCardDetailHtml() {
         ? '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
         : isPrimary1955(card)
           ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then use Pay / History.</p>'
-          : `<p class="muted desk-control-note"><strong>${esc(brand === 'visa' ? 'Visa' : 'Mastercard')} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
+          : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
@@ -1435,17 +1915,17 @@ function deskCardDetailHtml() {
             </select>
           </label>
         </section>
-        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, bank Pay shortcuts, and recent funds onto this card.</p>
+        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, bank Pay shortcuts, and recent funds onto this card.</p>
 
         <section class="desk-home-hero desk-detail-hero">
-          <article class="plastic ${brand === 'visa' ? 'visa' : 'master'} desk-live-card" aria-label="Card details">
-            <div class="plastic-top"><span>G Cards EU</span>${schemeMark(brand)}</div>
+          <article class="plastic ${plasticClass(brand)} desk-live-card" aria-label="Card details">
+            <div class="plastic-top"><span>${normalizeKind(card.kind) === 'corporate' ? 'G Corp Cards' : 'G Cards EU'}</span>${schemeMark(brand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
               <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
-              <div><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
+              <div><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
             </div>
             <p class="desk-card-status">${cardStatusPill(card)} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
           </article>
@@ -1455,9 +1935,12 @@ function deskCardDetailHtml() {
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button></div>
               <div class="wallet-field"><small>Expiry</small><strong>${esc(card.expiry)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
-              <div class="wallet-field"><small>CVV</small><strong>${esc(cvvShown)}</strong>
+              <div class="wallet-field"><small>${brand === 'amex' ? 'CID' : 'CVV'}</small><strong>${esc(cvvShown)}</strong>
                 <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
-              <div class="wallet-field"><small>Balance</small><strong>${esc(money(card.balanceCents || 0))}</strong></div>
+              <div class="wallet-field"><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
+              <div class="wallet-field"><small>Product</small><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
+              <div class="wallet-field"><small>Daily limit</small><strong>${esc(money(dailyLimit, cur))}</strong>
+                <span class="muted desk-limit-used">Used today ${esc(money(spentToday, cur))}</span></div>
               <div class="wallet-field"><small>Status</small><strong>${esc(
                 statusKey === 'deactivated' ? 'Deactivated' : statusKey === 'frozen' ? 'Frozen' : 'Active',
               )}</strong></div>
@@ -1507,13 +1990,20 @@ function deskCardDetailHtml() {
           }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
-            <label>Amount (EUR)
+            <label>Amount (EUR from desk)
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required ${canFund ? '' : 'disabled'} />
             </label>
             <div class="desk-credit-preview">
               <small>Left on desk</small>
               <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
             </div>
+            ${
+              cur === 'USD'
+                ? `<p class="muted desk-fx-note">Amex credits in USD · ≈ ${esc(
+                    money(eurCentsToUsdCents(fundCents || 0), 'USD'),
+                  )} at current desk FX</p>`
+                : ''
+            }
             <button class="primary" type="submit" ${canFund ? '' : 'disabled'}>Fund card</button>
           </form>
           <div class="table-wrap" style="margin-top:14px">
@@ -1522,6 +2012,26 @@ function deskCardDetailHtml() {
               <tbody>${transferRows}</tbody>
             </table>
           </div>
+        </section>
+
+        <section class="desk-statement-panel" id="desk-statement">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">G Corp Cards</p>
+              <h2>Card statement</h2>
+              <p class="muted desk-panel-help">Download a professional PDF statement for a selected period. Includes spends, auth numbers, and card product details.</p>
+            </div>
+          </div>
+          <form id="desk-statement-form" class="desk-statement-form">
+            <input type="hidden" name="cardId" value="${esc(card.id)}" />
+            <label>From
+              <input name="from" type="date" value="${esc(state.statementDraft.from)}" required />
+            </label>
+            <label>To
+              <input name="to" type="date" value="${esc(state.statementDraft.to)}" required />
+            </label>
+            <button class="primary" type="submit">Download PDF</button>
+          </form>
         </section>`;
 }
 
@@ -1569,7 +2079,7 @@ function deskPaymentsHtml() {
             <label>Payment gateway
               <select name="gateway">${gatewayOptions}</select>
             </label>
-            <label>Amount (EUR)
+            <label>Amount (${esc(card ? cardCurrency(card) : 'EUR')})
               <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
             </label>
             <label>Date &amp; time
@@ -1629,7 +2139,7 @@ function deskHistoryHtml() {
     `<button type="button" class="desk-filter-chip ${!state.spendFilterCardId ? 'on' : ''}" data-action="desk-filter-card" data-id="">All cards</button>`,
     ...state.deskCards.map((c) => {
       const last4 = String(c.pan).slice(-4);
-      const brand = c.endless ? '1955' : c.brand === 'visa' ? 'Visa' : 'MC';
+      const brand = c.endless ? '1955' : brandLabel(c.brand);
       const on = c.id === state.spendFilterCardId ? 'on' : '';
       return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-card" data-id="${esc(c.id)}">${esc(brand)} ····${esc(last4)}</button>`;
     }),
@@ -1702,9 +2212,16 @@ function deskHistoryHtml() {
               <p class="eyebrow">${storedSpends.length} of ${state.deskSpends.length} ${state.deskSpends.length === 1 ? 'entry' : 'entries'}</p>
               <h2>Transactions</h2>
             </div>
-            <div class="desk-balance-chip">
-              <small>${filtersOn ? 'Filtered total' : 'Total'}</small>
-              <strong>${esc(money(storedTotal))}</strong>
+            <div class="active-actions desk-history-actions">
+              <div class="desk-balance-chip">
+                <small>${filtersOn ? 'Filtered total' : 'Total'}</small>
+                <strong>${esc(money(storedTotal))}</strong>
+              </div>
+              ${
+                state.spendFilterCardId
+                  ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(state.spendFilterCardId)}">Statement PDF</button>`
+                  : `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(deskActiveCard()?.id || '')}">Statement PDF</button>`
+              }
             </div>
           </div>
 
@@ -1784,14 +2301,15 @@ function tokenButton(token) {
 }
 
 function schemeMark(brand) {
-  if (brand === 'visa') return '<span class="scheme visa-word">VISA</span>';
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return '<span class="scheme visa-word">VISA</span>';
+  if (b === 'amex') return '<span class="scheme amex-word">AMEX</span>';
   return '<span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>';
 }
 
 function plasticCard({ brand, pan, holder, expiry, balance, note }) {
-  const visa = brand === 'visa';
-  return `<article class="plastic ${visa ? 'visa' : 'master'}">
-      <div class="plastic-top"><span>GG Card</span>${schemeMark(brand)}</div>
+  return `<article class="plastic ${plasticClass(brand)}">
+      <div class="plastic-top"><span>G Corp Cards</span>${schemeMark(brand)}</div>
       <div class="chip"></div>
       <p class="pan">${esc(pan)}</p>
       <div class="plastic-bottom">
@@ -1803,7 +2321,7 @@ function plasticCard({ brand, pan, holder, expiry, balance, note }) {
 }
 
 function issuedBrand(card) {
-  return String(card?.brand || '').toLowerCase().includes('visa') ? 'visa' : 'mastercard';
+  return normalizeBrand(card?.brand);
 }
 
 function showcaseCards(me) {
@@ -2442,24 +2960,58 @@ document.body.addEventListener('click', (event) => {
     }
     return;
   }
+  if (action === 'desk-issue-brand') {
+    const brand = normalizeBrand(button.dataset.brand || 'visa');
+    state.issueDraft = { ...(state.issueDraft || {}), brand, kind: normalizeKind(state.issueDraft?.kind) };
+    render();
+    document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-issue-kind') {
+    const kind = normalizeKind(button.dataset.kind || 'private');
+    state.issueDraft = { ...(state.issueDraft || {}), brand: normalizeBrand(state.issueDraft?.brand), kind };
+    render();
+    document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-open-statement') {
+    const id = button.dataset.id || '';
+    const card = state.deskCards.find((c) => c.id === id) || deskActiveCard();
+    if (!card) return;
+    state.deskDetailCardId = card.id;
+    state.deskSelectedCardId = card.id;
+    state.deskView = 'card';
+    state.statementDraft = {
+      ...(state.statementDraft || {}),
+      cardId: card.id,
+      from: state.statementDraft?.from || '',
+      to: state.statementDraft?.to || '',
+    };
+    render();
+    setTimeout(() => {
+      document.getElementById('desk-statement')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return;
+  }
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
-    const brandHint = String(button.dataset.brand || '').toLowerCase();
+    const brandHint = normalizeBrand(
+      button.dataset.brand || state.issueDraft?.brand || 'visa',
+    );
+    const kindHint = normalizeKind(button.dataset.kind || state.issueDraft?.kind || 'private');
     run(async () => {
       state.deskIssuing = true;
-      state.flash = { kind: 'ok', text: 'Creating card…' };
+      state.flash = { kind: 'ok', text: 'Issuing card…' };
       render();
       ensureEndless1955Card();
       await wait(280);
-      const card = makeIssuedCard(
-        brandHint === 'visa' || brandHint === 'mastercard' ? { brand: brandHint } : {},
-      );
+      const card = makeIssuedCard({ brand: brandHint, kind: kindHint });
       const primary = state.deskCards.find((c) => c.endless) || ensureEndless1955Card();
       state.deskCards = [
         primary,
         card,
         ...state.deskCards.filter((c) => c.id !== primary.id && c.id !== card.id),
-      ];
+      ].map((c) => normalizeDeskCard(c));
       state.deskIssuing = false;
       state.deskTopupCardId = card.id;
       state.deskSelectedCardId = card.id;
@@ -2467,10 +3019,11 @@ document.body.addEventListener('click', (event) => {
       state.deskView = 'card';
       state.deskRevealSecrets = true;
       state.spendDraft.cardId = card.id;
+      state.issueDraft = { brand: brandHint, kind: kindHint };
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Created ${card.brand === 'visa' ? 'Visa' : 'Mastercard'} ····${String(card.pan).slice(-4)} · active now · balance €0 · fund from desk`,
+        text: `Issued ${brandLabel(card.brand)} ${kindLabel(card.kind)} ····${String(card.pan).slice(-4)} · ${cardCurrency(card)} · daily limit ${money(cardDailyLimitCents(card), cardCurrency(card))} · active now`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -2533,8 +3086,8 @@ document.body.addEventListener('click', (event) => {
     card.frozen = false;
     card.status = 'deactivated';
     card.ready = false;
-    const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
-    card.label = card.endless ? 'Deactivated · ····1955' : `Deactivated · ${brand}`;
+    const brand = brandLabel(card.brand);
+    card.label = card.endless ? 'Deactivated · ····1955' : `Deactivated · ${brand} · ${kindLabel(card.kind)}`;
     saveDeskLedger();
     state.flash = {
       kind: 'ok',
@@ -2551,8 +3104,9 @@ document.body.addEventListener('click', (event) => {
     card.status = 'active';
     card.ready = true;
     card.activatesAt = 0;
-    const brand = String(card.brand || '').toLowerCase() === 'visa' ? 'Visa' : 'Mastercard';
-    card.label = card.endless ? 'Active · ····1955' : `Active · ${brand}`;
+    card.label = card.endless
+      ? 'Active · ····1955'
+      : `Active · ${brandLabel(card.brand)} · ${kindLabel(card.kind)}`;
     syncCardStatuses();
     saveDeskLedger();
     state.flash = {
@@ -3009,23 +3563,27 @@ document.body.addEventListener('submit', (event) => {
       if (!card) throw new Error('Choose a card to fund.');
       const amount = Number(data.amount || state.deskCardFundAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
-      const amountCents = Math.round(amount * 100);
+      const deskEurCents = Math.round(amount * 100);
       if (cardStatusKey(card) === 'deactivated') {
         throw new Error('Card is deactivated. Reactivate it before funding.');
       }
       if (cardStatusKey(card) === 'frozen') {
         throw new Error('Card is frozen. Unfreeze it before funding.');
       }
-      if (state.deskBalanceCents < amountCents) {
+      if (state.deskBalanceCents < deskEurCents) {
         throw new Error(`Desk balance is only ${money(state.deskBalanceCents)}. Top up balance first.`);
       }
-      state.deskBalanceCents -= amountCents;
-      card.balanceCents = Number(card.balanceCents || 0) + amountCents;
+      const cur = cardCurrency(card);
+      const creditCents = cur === 'USD' ? eurCentsToUsdCents(deskEurCents) : deskEurCents;
+      state.deskBalanceCents -= deskEurCents;
+      card.balanceCents = Number(card.balanceCents || 0) + creditCents;
       state.deskTopupCardId = card.id;
       state.deskSelectedCardId = card.id;
       const transfer = {
         when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
-        amountCents,
+        amountCents: creditCents,
+        deskEurCents,
+        currency: cur,
         cardId: card.id,
         cardLast4: String(card.pan).slice(-4),
         status: 'On card',
@@ -3040,12 +3598,12 @@ document.body.addEventListener('submit', (event) => {
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · matching on-chain USDT TX…`,
+        text: `Funded ${money(creditCents, cur)} → ····${String(card.pan).slice(-4)} · desk −${money(deskEurCents)} · matching on-chain USDT TX…`,
       };
       render();
-      const match = await findMatchingChainTx(amountCents / 100, state.deskDepositToken);
+      const match = await findMatchingChainTx(deskEurCents / 100, state.deskDepositToken);
       const row = state.deskTransfers.find(
-        (t) => t === transfer || (t.cardLast4 === transfer.cardLast4 && t.amountCents === amountCents && !t.txHash),
+        (t) => t === transfer || (t.cardLast4 === transfer.cardLast4 && t.amountCents === creditCents && !t.txHash),
       );
       if (match?.ok && row) {
         row.txHash = match.hash;
@@ -3056,14 +3614,31 @@ document.body.addEventListener('submit', (event) => {
         saveDeskLedger();
         state.flash = {
           kind: 'ok',
-          text: `Funded ${money(amountCents)} · matched ${match.symbol} ${match.chain} TX ${String(match.hash).slice(0, 10)}… (${match.amount.toFixed(4)})`,
+          text: `Funded ${money(creditCents, cur)} · matched ${match.symbol} ${match.chain} TX ${String(match.hash).slice(0, 10)}… (${match.amount.toFixed(4)})`,
         };
       } else {
         state.flash = {
           kind: 'error',
-          text: `Funded ${money(amountCents)} → ····${String(card.pan).slice(-4)} · no TX match: ${match?.reason || 'RPC unavailable'}`,
+          text: `Funded ${money(creditCents, cur)} → ····${String(card.pan).slice(-4)} · no TX match: ${match?.reason || 'RPC unavailable'}`,
         };
       }
+      render();
+    });
+  }
+  if (form.id === 'desk-statement-form') {
+    run(async () => {
+      const cardId = String(data.cardId || state.statementDraft?.cardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card for the statement.');
+      const from = String(data.from || state.statementDraft?.from || '').trim();
+      const to = String(data.to || state.statementDraft?.to || '').trim();
+      if (!from || !to) throw new Error('Choose statement From and To dates.');
+      state.statementDraft = { cardId: card.id, from, to };
+      downloadGCorpStatementPdf(card, from, to);
+      state.flash = {
+        kind: 'ok',
+        text: `G Corp Cards statement PDF downloaded · ····${String(card.pan).slice(-4)} · ${from} → ${to}`,
+      };
       render();
     });
   }
@@ -3082,15 +3657,26 @@ document.body.addEventListener('submit', (event) => {
       if (cardStatusKey(to) === 'frozen') throw new Error('To card is frozen. Unfreeze it first.');
       const amount = Number(data.amount || state.deskMoveAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
+      const fromCur = cardCurrency(from);
+      const toCur = cardCurrency(to);
       const amountCents = Math.round(amount * 100);
       const fromBal = Number(from.balanceCents || 0);
       if (fromBal < amountCents) {
         throw new Error(
-          `····${String(from.pan).slice(-4)} only has ${money(fromBal)}. Fund it or choose another card.`,
+          `····${String(from.pan).slice(-4)} only has ${money(fromBal, fromCur)}. Fund it or choose another card.`,
         );
       }
+      let creditCents = amountCents;
+      if (fromCur !== toCur) {
+        creditCents =
+          fromCur === 'EUR' && toCur === 'USD'
+            ? eurCentsToUsdCents(amountCents)
+            : fromCur === 'USD' && toCur === 'EUR'
+              ? usdCentsToEurCents(amountCents)
+              : amountCents;
+      }
       from.balanceCents = fromBal - amountCents;
-      to.balanceCents = Number(to.balanceCents || 0) + amountCents;
+      to.balanceCents = Number(to.balanceCents || 0) + creditCents;
       const whenMs = Date.now();
       const when = new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
       state.deskTransfers = [
@@ -3098,7 +3684,10 @@ document.body.addEventListener('submit', (event) => {
           when,
           whenIso: new Date(whenMs).toISOString(),
           createdAt: whenMs,
-          amountCents,
+          amountCents: creditCents,
+          fromAmountCents: amountCents,
+          currency: toCur,
+          fromCurrency: fromCur,
           cardId: to.id,
           cardLast4: String(to.pan).slice(-4),
           fromCardId: from.id,
@@ -3120,7 +3709,7 @@ document.body.addEventListener('submit', (event) => {
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Transferred ${money(amountCents)} · ····${String(from.pan).slice(-4)} → ····${String(to.pan).slice(-4)}`,
+        text: `Transferred ${money(amountCents, fromCur)} → ${money(creditCents, toCur)} · ····${String(from.pan).slice(-4)} → ····${String(to.pan).slice(-4)}`,
       };
       render();
       document.getElementById('desk-card-move')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3140,6 +3729,17 @@ document.body.addEventListener('submit', (event) => {
       const whenRaw = String(data.when || '').trim();
       if (!whenRaw) throw new Error('Enter the payment date and time.');
       const amountCents = Math.round(amount * 100);
+      const cur = cardCurrency(card);
+      const whenDatePreview = new Date(whenRaw);
+      const whenMsPreview = Number.isNaN(whenDatePreview.getTime()) ? Date.now() : whenDatePreview.getTime();
+      const dayYmd = belgradeYmd(whenMsPreview);
+      const spentThatDay = cardSpentOnDayCents(card, dayYmd);
+      const dailyLimit = cardDailyLimitCents(card);
+      if (spentThatDay + amountCents > dailyLimit) {
+        throw new Error(
+          `Daily ${kindLabel(card.kind)} limit ${money(dailyLimit, cur)} exceeded for ${dayYmd}. Already spent ${money(spentThatDay, cur)}.`,
+        );
+      }
       {
         const bal = Number(card.balanceCents || 0);
         if (bal < amountCents) {
