@@ -75,13 +75,13 @@ const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
 const G_CORP_STATEMENT = {
   legalName: 'G Corp Cards',
-  entity: 'G Corp Cards EU S.A.',
+  entity: 'G Corp Cards Oy',
   tagline: 'Card issuing · Account statements & transaction information',
-  address: ['Keizerlijke 12', '1000 Brussels', 'Belgium'],
-  registry: 'BCE / KBO 0789.456.321',
-  vat: 'BE0789456321',
+  address: ['Aleksanterinkatu 52 B', '00100 Helsinki', 'Finland'],
+  registry: 'Business ID 3234567-8',
+  vat: 'FI32345678',
   support: 'statements@g-cards.eu',
-  phone: '+32 2 555 0190',
+  phone: '+358 9 4245 1900',
   programme: 'G Cards EU Issuing Desk',
   website: 'g-cards.eu',
 };
@@ -789,9 +789,92 @@ function pdfRightX(text, size, rightEdge) {
   return rightEdge - pdfTextWidth(text, size);
 }
 
+function pdfCircleOps(cx, cy, r, fillRgb, { multiply = false } = {}) {
+  const k = 0.5522847498 * r;
+  const ops = [];
+  if (multiply) ops.push('/GS1 gs');
+  ops.push(`${pdfColor(fillRgb)} rg`);
+  ops.push(`${(cx - r).toFixed(2)} ${cy.toFixed(2)} m`);
+  ops.push(
+    `${(cx - r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx - k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + r).toFixed(2)} ${cy.toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx + r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy - r).toFixed(2)} ${cx.toFixed(2)} ${(cy - r).toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx - k).toFixed(2)} ${(cy - r).toFixed(2)} ${(cx - r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx - r).toFixed(2)} ${cy.toFixed(2)} c`,
+  );
+  ops.push('h f');
+  if (multiply) ops.push('/GS0 gs');
+  return ops;
+}
+
+/** Official-style network marks for Visa / Mastercard / Amex on PDF pages. */
+function pdfNetworkLogoItems(brand, x, y, { compact = false, onDark = false } = {}) {
+  const b = normalizeBrand(brand);
+  const items = [];
+  if (b === 'visa') {
+    // Visa blue wordmark + gold wing bar (statement-style)
+    const visaBlue = onDark ? [1, 1, 1] : [0.102, 0.122, 0.443]; // #1A1F71
+    const visaGold = [0.953, 0.647, 0.227]; // #F3A53A
+    items.push({
+      text: 'VISA',
+      x,
+      y: y + (compact ? 2 : 4),
+      size: compact ? 14 : 18,
+      italic: true,
+      bold: true,
+      color: visaBlue,
+    });
+    items.push({
+      rect: true,
+      x,
+      y: y - (compact ? 4 : 6),
+      w: compact ? 42 : 54,
+      h: compact ? 2.2 : 2.8,
+      fill: visaGold,
+    });
+    return items;
+  }
+  if (b === 'amex') {
+    const amexBlue = [0.004, 0.435, 0.816]; // #016FD0
+    const w = compact ? 52 : 72;
+    const h = compact ? 18 : 24;
+    items.push({ rect: true, x, y: y - 2, w, h, fill: onDark ? [1, 1, 1] : amexBlue });
+    items.push({
+      text: compact ? 'AMEX' : 'AMERICAN EXPRESS',
+      x: x + (compact ? 10 : 6),
+      y: y + (compact ? 4 : 6),
+      size: compact ? 9 : 8,
+      bold: true,
+      color: onDark ? amexBlue : [1, 1, 1],
+    });
+    return items;
+  }
+  // Mastercard interlocking circles (official mark colours)
+  const r = compact ? 9 : 11;
+  const cy = y + r - 2;
+  items.push({ circle: true, cx: x + r, cy, r, fill: [0.922, 0.0, 0.106], multiply: false }); // #EB001B
+  items.push({ circle: true, cx: x + r * 1.85, cy, r, fill: [0.969, 0.62, 0.106], multiply: true }); // #F79E1B
+  if (!compact) {
+    items.push({
+      text: 'mastercard',
+      x: x + 1,
+      y: y - 12,
+      size: 7,
+      bold: true,
+      color: onDark ? [1, 1, 1] : [0.15, 0.15, 0.15],
+    });
+  }
+  return items;
+}
+
 /**
  * Multi-page PDF writer for G Corp Cards statements.
- * Page items: {text,x,y,size,bold,color} | {rect,x,y,w,h,fill} | {rule,x1,y1,x2,y2,color,width}
+ * Page items: {text,x,y,size,bold,italic,color} | {rect} | {circle} | {rule}
  */
 function buildPdfDocument(pages) {
   const encoder = new TextEncoder();
@@ -806,6 +889,14 @@ function buildPdfDocument(pages) {
   const fontBold = add(
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
   );
+  const fontItalic = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>',
+  );
+  const fontBoldItalic = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-BoldOblique /Encoding /WinAnsiEncoding >>',
+  );
+  const gsNormal = add('<< /Type /ExtGState /BM /Normal /ca 1 >>');
+  const gsMultiply = add('<< /Type /ExtGState /BM /Multiply /ca 1 >>');
   const contentIds = [];
   const pageIds = [];
 
@@ -817,6 +908,14 @@ function buildPdfDocument(pages) {
         ops.push(`${item.x} ${item.y} ${item.w} ${item.h} re f`);
         continue;
       }
+      if (item.circle) {
+        ops.push(
+          ...pdfCircleOps(item.cx, item.cy, item.r, item.fill || [0.2, 0.2, 0.2], {
+            multiply: Boolean(item.multiply),
+          }),
+        );
+        continue;
+      }
       if (item.rule) {
         ops.push(`${pdfColor(item.color || [0.75, 0.78, 0.82])} RG`);
         ops.push(`${Number(item.width || 0.6).toFixed(2)} w`);
@@ -825,12 +924,16 @@ function buildPdfDocument(pages) {
     }
     ops.push('BT');
     for (const item of page) {
-      if (item.rect || item.rule || item.text == null) continue;
+      if (item.rect || item.rule || item.circle || item.text == null) continue;
       const size = item.size || 10;
       const x = item.x ?? 48;
       const y = item.y ?? 750;
+      let font = 'FR';
+      if (item.bold && item.italic) font = 'FBI';
+      else if (item.bold) font = 'FB';
+      else if (item.italic) font = 'FI';
       ops.push(`${pdfColor(item.color || [0.12, 0.16, 0.22])} rg`);
-      ops.push(`/${item.bold ? 'FB' : 'FR'} ${size} Tf`);
+      ops.push(`/${font} ${size} Tf`);
       ops.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
       ops.push(`(${pdfLiteral(item.text)}) Tj`);
     }
@@ -842,9 +945,12 @@ function buildPdfDocument(pages) {
 
   const pagesObjIndex = objects.length;
   add('<< /Type /Pages /Kids [] /Count 0 >>');
+  const resources =
+    `/Font << /FR ${fontRegular} 0 R /FB ${fontBold} 0 R /FI ${fontItalic} 0 R /FBI ${fontBoldItalic} 0 R >> `
+    + `/ExtGState << /GS0 ${gsNormal} 0 R /GS1 ${gsMultiply} 0 R >>`;
   for (let i = 0; i < pages.length; i += 1) {
     pageIds[i] = add(
-      `<< /Type /Page /Parent ${pagesObjIndex + 1} 0 R /MediaBox [0 0 595 842] /Contents ${contentIds[i]} 0 R /Resources << /Font << /FR ${fontRegular} 0 R /FB ${fontBold} 0 R >> >> >>`,
+      `<< /Type /Page /Parent ${pagesObjIndex + 1} 0 R /MediaBox [0 0 595 842] /Contents ${contentIds[i]} 0 R /Resources << ${resources} >> >>`,
     );
   }
   objects[pagesObjIndex] =
@@ -1033,11 +1139,13 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
     page.push({ text: stmtId, x: pdfRightX(stmtId, 8, rightEdge), y: 818, size: 8, bold: true, color: white });
     page.push({
       text: `Page ${pageNo} of ${pageCount}`,
-      x: pdfRightX(`Page ${pageNo} of ${pageCount}`, 8, rightEdge),
+      x: pdfRightX(`Page ${pageNo} of ${pageCount}`, 8, rightEdge - 86),
       y: 804,
       size: 8,
       color: [0.85, 0.88, 0.92],
     });
+    // Official network mark on letterhead (Visa / Mastercard / Amex)
+    page.push(...pdfNetworkLogoItems(brand, rightEdge - 72, 808, { compact: true, onDark: true }));
   };
 
   const drawFooter = (page) => {
@@ -1152,6 +1260,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       page.push({ text: `${brand} · ${kind}`, x: left + 10, y: 680, size: 9, color: ink });
       page.push({ text: `Card ····${last4}`, x: left + 10, y: 664, size: 9, color: ink });
       page.push({ text: `Status ${statusLabel}`, x: left + 10, y: 650, size: 8, color: muted });
+      page.push(...pdfNetworkLogoItems(brand, left + 168, 688, { compact: true }));
 
       // Account box
       page.push({ rect: true, x: 310, y: 648, w: rightEdge - 310, h: 78, fill: [0.96, 0.97, 0.98] });
@@ -1283,7 +1392,7 @@ function downloadGCorpTransactionPdf(spend) {
 
   const page = [];
 
-  // Letterhead — issuer block (left) + document meta (right), like bank PDFs
+  // Letterhead — issuer (Finland) + network logo (Visa / Mastercard / Amex)
   page.push({ rect: true, x: 0, y: 800, w: 595, h: 42, fill: navy });
   page.push({ text: G_CORP_STATEMENT.legalName.toUpperCase(), x: left, y: 824, size: 12, bold: true, color: white });
   page.push({
@@ -1293,24 +1402,9 @@ function downloadGCorpTransactionPdf(spend) {
     size: 7.5,
     color: [0.82, 0.86, 0.9],
   });
-  page.push({
-    text: 'CARD TRANSACTION INFORMATION',
-    x: pdfRightX('CARD TRANSACTION INFORMATION', 8, right),
-    y: 824,
-    size: 8,
-    bold: true,
-    color: white,
-  });
-  page.push({
-    text: `Document no. ${docRef}`,
-    x: pdfRightX(`Document no. ${docRef}`, 7.5, right),
-    y: 810,
-    size: 7.5,
-    color: [0.82, 0.86, 0.9],
-  });
+  page.push(...pdfNetworkLogoItems(brand, right - 72, 812, { compact: true, onDark: true }));
   page.push({ rect: true, x: 0, y: 796, w: 595, h: 3, fill: accent });
 
-  // Address line under header
   page.push({
     text: `${G_CORP_STATEMENT.address.join(', ')}  |  ${G_CORP_STATEMENT.phone}  |  ${G_CORP_STATEMENT.website}`,
     x: left,
@@ -1319,60 +1413,68 @@ function downloadGCorpTransactionPdf(spend) {
     color: muted,
   });
   page.push({
-    text: `Issued ${issuedAt}`,
-    x: pdfRightX(`Issued ${issuedAt}`, 7, right),
+    text: `Document no. ${docRef}`,
+    x: pdfRightX(`Document no. ${docRef}`, 7, right),
     y: 782,
     size: 7,
     color: muted,
   });
-  page.push({ rule: true, x1: left, y1: 772, x2: right, y2: 772, color: line, width: 0.5 });
+  page.push({
+    text: `Issued ${issuedAt}`,
+    x: pdfRightX(`Issued ${issuedAt}`, 7, right),
+    y: 770,
+    size: 7,
+    color: muted,
+  });
+  page.push({ rule: true, x1: left, y1: 762, x2: right, y2: 762, color: line, width: 0.5 });
 
   // Title
   page.push({
-    text: refund ? 'Card credit — transaction information' : 'Card purchase — transaction information',
+    text: 'CARD TRANSACTION INFORMATION',
     x: left,
-    y: 752,
-    size: 12,
+    y: 744,
+    size: 11,
     bold: true,
     color: navy,
   });
   page.push({
-    text: 'This document summarises a posted card transaction on your G Corp Cards account.',
+    text: refund ? 'Card credit (posted)' : 'Card purchase (posted)',
     x: left,
-    y: 736,
-    size: 8,
+    y: 728,
+    size: 9,
     color: muted,
   });
 
-  // Account panel
-  page.push({ rect: true, x: left, y: 668, w: 248, h: 54, fill: soft });
-  page.push({ rule: true, x1: left, y1: 722, x2: left + 248, y2: 722, color: accent, width: 1.1 });
-  page.push({ text: 'CARD ACCOUNT', x: left + 10, y: 710, size: 6.5, bold: true, color: muted });
-  page.push({ text: holder.slice(0, 28), x: left + 10, y: 694, size: 10, bold: true, color: ink });
-  page.push({ text: `${brand} ${product}  ****${last4}`, x: left + 10, y: 678, size: 8.5, color: ink });
+  // Account panel + second network mark
+  page.push({ rect: true, x: left, y: 660, w: 248, h: 54, fill: soft });
+  page.push({ rule: true, x1: left, y1: 714, x2: left + 248, y2: 714, color: accent, width: 1.1 });
+  page.push({ text: 'CARD ACCOUNT', x: left + 10, y: 702, size: 6.5, bold: true, color: muted });
+  page.push({ text: holder.slice(0, 28), x: left + 10, y: 686, size: 10, bold: true, color: ink });
+  page.push({ text: `${brand} ${product}  ****${last4}`, x: left + 10, y: 670, size: 8.5, color: ink });
 
-  page.push({ rect: true, x: 310, y: 668, w: right - 310, h: 54, fill: soft });
-  page.push({ rule: true, x1: 310, y1: 722, x2: right, y2: 722, color: accent, width: 1.1 });
-  page.push({ text: 'BILLING CURRENCY', x: 320, y: 710, size: 6.5, bold: true, color: muted });
-  page.push({ text: cur, x: 320, y: 694, size: 10, bold: true, color: ink });
-  page.push({ text: `Available balance  ${available}`, x: 320, y: 678, size: 8, color: ink });
+  page.push({ rect: true, x: 310, y: 660, w: right - 310, h: 54, fill: soft });
+  page.push({ rule: true, x1: 310, y1: 714, x2: right, y2: 714, color: accent, width: 1.1 });
+  page.push({ text: 'BILLING CURRENCY', x: 320, y: 702, size: 6.5, bold: true, color: muted });
+  page.push({ text: cur, x: 320, y: 686, size: 10, bold: true, color: ink });
+  page.push({ text: `Available balance  ${available}`, x: 320, y: 670, size: 8, color: ink });
+  page.push(...pdfNetworkLogoItems(brand, 430, 688, { compact: true }));
 
-  // Amount band — bank style “Transaction amount”
-  page.push({ rect: true, x: left, y: 600, w: right - left, h: 56, fill: navy });
-  page.push({ text: 'TRANSACTION AMOUNT', x: left + 14, y: 640, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
-  page.push({ text: signedAmount, x: left + 14, y: 616, size: 20, bold: true, color: white });
+  // Amount band
+  page.push({ rect: true, x: left, y: 592, w: right - left, h: 56, fill: navy });
+  page.push({ text: 'TRANSACTION AMOUNT', x: left + 14, y: 632, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
+  page.push({ text: signedAmount, x: left + 14, y: 608, size: 20, bold: true, color: white });
   page.push({
     text: refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted',
     x: pdfRightX(refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted', 9, right - 14),
-    y: 618,
+    y: 610,
     size: 9,
     bold: true,
     color: [0.85, 0.88, 0.92],
   });
 
   // Section: Transaction details
-  page.push({ text: 'TRANSACTION DETAILS', x: left, y: 580, size: 8.5, bold: true, color: navy });
-  page.push({ rule: true, x1: left, y1: 572, x2: right, y2: 572, color: navy, width: 0.9 });
+  page.push({ text: 'TRANSACTION DETAILS', x: left, y: 572, size: 8.5, bold: true, color: navy });
+  page.push({ rule: true, x1: left, y1: 564, x2: right, y2: 564, color: navy, width: 0.9 });
 
   const detailRows = [
     ['Merchant / description', merchant.slice(0, 48)],
@@ -1393,7 +1495,7 @@ function downloadGCorpTransactionPdf(spend) {
     ['Internal reference', String(spend.id || docRef).slice(0, 42)],
   ];
 
-  let y = 556;
+  let y = 548;
   detailRows.forEach((row, idx) => {
     if (idx % 2 === 0) {
       page.push({ rect: true, x: left, y: y - 5, w: right - left, h: 18, fill: soft });
