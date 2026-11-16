@@ -1023,12 +1023,48 @@ function formatStatementDate(ms) {
 function formatStatementDay(isoDate) {
   const ms = Date.parse(`${isoDate}T12:00:00+01:00`);
   if (!Number.isFinite(ms)) return isoDate;
-  return new Date(ms).toLocaleDateString('en-GB', {
+  return new Date(ms).toLocaleDateString('en-US', {
     timeZone: 'Europe/Belgrade',
-    day: '2-digit',
-    month: 'long',
+    month: 'short',
+    day: 'numeric',
     year: 'numeric',
   });
+}
+
+/** SolCard-style day label, e.g. "Sep 24, 2026". */
+function formatSolcardDay(ms) {
+  const t = Number(ms);
+  if (!Number.isFinite(t)) return '—';
+  return new Date(t).toLocaleDateString('en-US', {
+    timeZone: 'Europe/Belgrade',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** Amount as "12.34 EUR" / "12.34 USD" (SolCard statement style). */
+function pdfMoneyCode(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  const amount = (Number(cents) || 0) / 100;
+  const num = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(amount));
+  return `${num} ${cur}`;
+}
+
+function pdfSignedMoneyCode(cents, currency = 'EUR') {
+  const n = Number(cents) || 0;
+  const body = pdfMoneyCode(Math.abs(n), currency);
+  if (n > 0) return `+${body}`;
+  if (n < 0) return `-${body}`;
+  return body;
+}
+
+function makeStatementId() {
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${hex()}${hex()}-${hex()}-${hex()}-${hex()}-${hex()}${hex()}${hex()}`;
 }
 
 function ensureStatementDraft(cardId = '') {
@@ -1063,7 +1099,7 @@ function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 
             <div>
               <p class="eyebrow">G Cards</p>
               <h2>Download statement</h2>
-              <p class="muted desk-panel-help">Bank-style card account statement — cardholder details, period summary, and itemised transactions.</p>
+              <p class="muted desk-panel-help">Clean card statement PDF — summary, cardholder, and itemised transactions (SolCard-style).</p>
             </div>
           </div>
           <form id="${esc(formId)}" class="desk-statement-form ${embedCardSelect ? 'desk-statement-form-wide' : ''}">
@@ -1081,156 +1117,143 @@ function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 
 
 function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const { from, to } = statementPeriodBounds(fromStr, toStr);
-  const rows = spendsForCardInPeriod(card, from, to);
+  const spends = spendsForCardInPeriod(card, from, to);
   const cur = cardCurrency(card);
-  const payments = rows.filter((s) => !isSpendRefund(s));
-  const refunds = rows.filter((s) => isSpendRefund(s));
-  const paymentTotal = payments.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
-  const refundTotal = refunds.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
-  const netTotal = refundTotal - paymentTotal;
-  const stmtId = `GCS-${belgradeYmd(Date.now()).replace(/-/g, '')}-${String(card.pan).slice(-4)}`;
-  const generated = formatStatementDate(Date.now());
-  const brand = brandLabel(card.brand);
-  const kind = kindLabel(card.kind);
   const last4 = String(card.pan).replace(/\D/g, '').slice(-4);
-  const statusLabel = String(cardStatusKey(card) || 'active').replace(/^\w/, (c) => c.toUpperCase());
-  const ink = [0.1, 0.14, 0.2];
-  const muted = [0.42, 0.46, 0.52];
-  const navy = [0.09, 0.16, 0.28];
-  const gold = [0.72, 0.58, 0.32];
-  const line = [0.82, 0.84, 0.87];
-  const rowAlt = [0.97, 0.97, 0.98];
-  const white = [1, 1, 1];
-  const good = [0.12, 0.42, 0.27];
-  const bad = [0.55, 0.18, 0.18];
-  const rightEdge = 547;
+  const brand = brandLabel(card.brand);
+  const holder = String(card.holder || 'Cardholder').toUpperCase();
+  const statusKey = cardStatusKey(card);
+  const statusLabel =
+    statusKey === 'deactivated' ? 'Off' : statusKey === 'frozen' ? 'Frozen' : 'Normal';
+  const stmtId = makeStatementId();
+  const generated = formatSolcardDay(Date.now());
+  const periodLabel = `${formatStatementDay(fromStr)} – ${formatStatementDay(toStr)}`;
+
+  const payments = spends.filter((s) => !isSpendRefund(s));
+  const refunds = spends.filter((s) => isSpendRefund(s));
+  const spendTotal = payments.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const refundTotal = refunds.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+
+  const last4Match = (t) =>
+    (t.cardId && t.cardId === card.id)
+    || (last4 && String(t.cardLast4 || '').replace(/\D/g, '').slice(-4) === last4);
+
+  const transfersInPeriod = (state.deskTransfers || []).filter((t) => {
+    if (!last4Match(t)) return false;
+    const ts = Date.parse(t.whenIso || t.createdAt || t.when || '') || 0;
+    if (!ts) return true;
+    return ts >= from && ts <= to;
+  });
+  const depositTotal = transfersInPeriod.reduce((sum, t) => sum + Number(t.amountCents || 0), 0);
+  const closing = Number(card.balanceCents || 0);
+  const opening = closing - depositTotal - refundTotal + spendTotal;
+
+  const ink = [0.07, 0.08, 0.1];
+  const muted = [0.45, 0.47, 0.5];
+  const soft = [0.96, 0.96, 0.97];
+  const line = [0.88, 0.89, 0.91];
   const left = 48;
+  const right = 547;
 
-  const signedMoney = (cents) => {
-    const n = Number(cents || 0);
-    if (n > 0) return `+${pdfMoney(n, cur)}`;
-    if (n < 0) return `-${pdfMoney(Math.abs(n), cur)}`;
-    return pdfMoney(0, cur);
-  };
+  const lineItems = [];
+  for (const t of transfersInPeriod) {
+    const ts = Date.parse(t.whenIso || t.createdAt || t.when || '') || Date.now();
+    const token = String(t.tokenId || '').includes('BSC') ? 'USDT on BSC' : 'Desk funding';
+    lineItems.push({
+      ts,
+      date: formatSolcardDay(ts),
+      title: 'Top-up',
+      detail: token,
+      status: 'Completed',
+      amount: pdfSignedMoneyCode(Number(t.amountCents || 0), cur),
+      credit: true,
+    });
+  }
+  for (const s of spends) {
+    const refund = isSpendRefund(s);
+    const ts = spendTimestamp(s);
+    const merchant = String(s.merchant || 'Purchase').slice(0, 42);
+    const billed = `Billed as ${merchant.toUpperCase()}`;
+    lineItems.push({
+      ts,
+      date: formatSolcardDay(ts),
+      title: merchant,
+      detail: `${refund ? 'Refund' : 'Purchase'}  ${billed}`,
+      status: refund ? 'Refunded' : String(s.status || 'Completed'),
+      amount: pdfSignedMoneyCode(refund ? Number(s.amountCents || 0) : -Number(s.amountCents || 0), cur),
+      credit: refund,
+    });
+  }
+  lineItems.sort((a, b) => a.ts - b.ts);
+  if (!lineItems.length) {
+    lineItems.push({
+      ts: 0,
+      date: '—',
+      title: 'No transactions',
+      detail: 'No posted activity in this statement period',
+      status: '—',
+      amount: pdfMoneyCode(0, cur),
+      credit: false,
+    });
+  }
 
-  const lineItems = rows.length
-    ? rows.map((s) => {
-        const refund = isSpendRefund(s);
-        return {
-          when: formatStatementDate(spendTimestamp(s)),
-          type: refund ? 'Refund' : 'Payment',
-          merchant: String(s.merchant || '—').slice(0, 34),
-          auth: String(s.authNr || '—'),
-          gateway: String(s.gateway || '—').split(' ')[0].slice(0, 12),
-          amount: `${refund ? '+' : '-'}${pdfMoney(Math.abs(Number(s.amountCents || 0)), cur)}`,
-          refund,
-        };
-      })
-    : [
-        {
-          when: '—',
-          type: '—',
-          merchant: 'No posted transactions in this period',
-          auth: '—',
-          gateway: '—',
-          amount: pdfMoney(0, cur),
-          refund: false,
-        },
-      ];
-
-  const firstPageRows = 14;
-  const nextPageRows = 22;
+  const firstPageRows = 6;
+  const nextPageRows = 14;
   const pageCount =
     lineItems.length <= firstPageRows
       ? 1
       : 1 + Math.ceil((lineItems.length - firstPageRows) / nextPageRows);
 
-  const drawHeader = (page, pageNo) => {
-    page.push({ rect: true, x: 0, y: 792, w: 595, h: 50, fill: navy });
-    page.push({ rect: true, x: 0, y: 788, w: 595, h: 4, fill: gold });
-    page.push({ text: G_CORP_STATEMENT.legalName, x: left, y: 818, size: 16, bold: true, color: white });
-    page.push({ text: G_CORP_STATEMENT.tagline, x: left, y: 802, size: 8, color: [0.85, 0.88, 0.92] });
-    page.push({ text: stmtId, x: pdfRightX(stmtId, 8, rightEdge), y: 818, size: 8, bold: true, color: white });
-    page.push({
-      text: `Page ${pageNo} of ${pageCount}`,
-      x: pdfRightX(`Page ${pageNo} of ${pageCount}`, 8, rightEdge - 86),
-      y: 804,
-      size: 8,
-      color: [0.85, 0.88, 0.92],
-    });
-    // Official network mark on letterhead (Visa / Mastercard / Amex)
-    page.push(...pdfNetworkLogoItems(brand, rightEdge - 72, 808, { compact: true, onDark: true }));
+  const drawBrandMark = (page, x, y) => {
+    // Small diamond mark + gcards wordmark (SolCard-style header)
+    page.push({ rect: true, x, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ rect: true, x: x + 5, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ rect: true, x: x + 10, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ text: 'gcards', x: x + 18, y, size: 14, bold: true, color: ink });
   };
 
-  const drawFooter = (page) => {
-    page.push({ rule: true, x1: left, y1: 52, x2: rightEdge, y2: 52, color: line, width: 0.5 });
+  const drawFooter = (page, pageNo) => {
     page.push({
-      text: `${G_CORP_STATEMENT.legalName}  ·  ${G_CORP_STATEMENT.entity}`,
+      text: `G Cards · Statement ${stmtId} · Page ${pageNo} of ${pageCount}`,
       x: left,
-      y: 38,
-      size: 7,
-      color: muted,
-    });
-    page.push({
-      text: G_CORP_STATEMENT.address.join(', '),
-      x: left,
-      y: 26,
-      size: 7,
-      color: muted,
-    });
-    page.push({
-      text: 'Confidential — for the named cardholder. Please retain for your records.',
-      x: left,
-      y: 14,
-      size: 6.5,
+      y: 28,
+      size: 7.5,
       color: muted,
     });
   };
 
   const drawTableHeader = (page, y) => {
-    page.push({ rect: true, x: left, y: y - 4, w: rightEdge - left, h: 18, fill: [0.93, 0.94, 0.96] });
-    page.push({ text: 'Date / time', x: left + 4, y, size: 8, bold: true, color: muted });
-    page.push({ text: 'Type', x: 138, y, size: 8, bold: true, color: muted });
-    page.push({ text: 'Merchant / Auth', x: 178, y, size: 8, bold: true, color: muted });
-    page.push({ text: 'Gateway', x: 360, y, size: 8, bold: true, color: muted });
+    page.push({ text: 'DATE', x: left, y, size: 7.5, bold: true, color: muted });
+    page.push({ text: 'DESCRIPTION', x: 130, y, size: 7.5, bold: true, color: muted });
+    page.push({ text: 'STATUS', x: 390, y, size: 7.5, bold: true, color: muted });
     page.push({
-      text: 'Amount',
-      x: pdfRightX('Amount', 8, rightEdge - 4),
+      text: 'AMOUNT',
+      x: pdfRightX('AMOUNT', 7.5, right),
       y,
-      size: 8,
+      size: 7.5,
       bold: true,
       color: muted,
     });
-    return y - 22;
+    page.push({ rule: true, x1: left, y1: y - 8, x2: right, y2: y - 8, color: line, width: 0.6 });
+    return y - 28;
   };
 
   const drawRows = (page, slice, startY) => {
     let y = startY;
-    slice.forEach((row, idx) => {
-      if (idx % 2 === 1) {
-        page.push({ rect: true, x: left, y: y - 6, w: rightEdge - left, h: 20, fill: rowAlt });
-      }
-      page.push({ text: row.when, x: left + 4, y, size: 7.5, color: ink });
-      page.push({
-        text: row.type,
-        x: 138,
-        y,
-        size: 7.5,
-        bold: true,
-        color: row.refund ? good : bad,
-      });
-      page.push({ text: row.merchant, x: 178, y, size: 7.5, color: ink });
-      page.push({ text: `Auth ${row.auth}`, x: 178, y: y - 9, size: 6.5, color: muted });
-      page.push({ text: row.gateway, x: 360, y, size: 7.5, color: ink });
+    slice.forEach((row) => {
+      page.push({ text: row.date, x: left, y, size: 9, color: ink });
+      page.push({ text: row.title.slice(0, 36), x: 130, y, size: 9.5, bold: true, color: ink });
+      page.push({ text: row.detail.slice(0, 58), x: 130, y: y - 12, size: 7.5, color: muted });
+      page.push({ text: row.status, x: 390, y, size: 9, color: ink });
       page.push({
         text: row.amount,
-        x: pdfRightX(row.amount, 8, rightEdge - 4),
+        x: pdfRightX(row.amount, 9.5, right),
         y,
-        size: 8,
-        bold: true,
-        color: row.refund ? good : bad,
+        size: 9.5,
+        color: ink,
       });
-      y -= 22;
+      page.push({ rule: true, x1: left, y1: y - 22, x2: right, y2: y - 22, color: line, width: 0.45 });
+      y -= 36;
     });
     return y;
   };
@@ -1239,109 +1262,112 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   let cursor = 0;
   for (let p = 0; p < pageCount; p += 1) {
     const page = [];
-    drawHeader(page, p + 1);
-    drawFooter(page);
+    drawFooter(page, p + 1);
 
     if (p === 0) {
-      page.push({ text: 'CARD ACCOUNT STATEMENT', x: left, y: 768, size: 13, bold: true, color: navy });
+      drawBrandMark(page, left, 800);
       page.push({
-        text: `Statement period  ${formatStatementDay(fromStr)}  —  ${formatStatementDay(toStr)}`,
-        x: left,
-        y: 752,
-        size: 9,
-        color: ink,
+        text: `Generated ${generated}`,
+        x: pdfRightX(`Generated ${generated}`, 8, right),
+        y: 808,
+        size: 8,
+        color: muted,
       });
       page.push({
-        text: `Issued ${generated}`,
-        x: left,
-        y: 738,
+        text: `Statement ${stmtId}`,
+        x: pdfRightX(`Statement ${stmtId}`, 8, right),
+        y: 794,
         size: 8,
         color: muted,
       });
 
-      // Cardholder box
-      page.push({ rect: true, x: left, y: 648, w: 248, h: 78, fill: [0.96, 0.97, 0.98] });
-      page.push({ rule: true, x1: left, y1: 726, x2: left + 248, y2: 726, color: gold, width: 1.2 });
-      page.push({ text: 'CARDHOLDER', x: left + 10, y: 712, size: 7, bold: true, color: muted });
-      page.push({
-        text: String(card.holder || 'G Cards Member').slice(0, 28),
-        x: left + 10,
-        y: 696,
-        size: 11,
-        bold: true,
-        color: ink,
-      });
-      page.push({ text: `${brand} · ${kind}`, x: left + 10, y: 680, size: 9, color: ink });
-      page.push({ text: `Card ····${last4}`, x: left + 10, y: 664, size: 9, color: ink });
-      page.push({ text: `Status ${statusLabel}`, x: left + 10, y: 650, size: 8, color: muted });
-      page.push(...pdfNetworkLogoItems(brand, left + 168, 688, { compact: true }));
+      page.push({ text: 'Card Statement', x: left, y: 760, size: 22, bold: true, color: ink });
+      page.push({ text: periodLabel, x: left, y: 738, size: 11, color: ink });
+      page.push({ rule: true, x1: left, y1: 724, x2: right, y2: 724, color: line, width: 0.7 });
 
-      // Account box
-      page.push({ rect: true, x: 310, y: 648, w: rightEdge - 310, h: 78, fill: [0.96, 0.97, 0.98] });
-      page.push({ rule: true, x1: 310, y1: 726, x2: rightEdge, y2: 726, color: gold, width: 1.2 });
-      page.push({ text: 'ACCOUNT SUMMARY', x: 320, y: 712, size: 7, bold: true, color: muted });
-      page.push({ text: `Currency ${cur}`, x: 320, y: 696, size: 9, color: ink });
+      // Soft info panel — cardholder / card / status (no email, no VAT)
+      page.push({ rect: true, x: left, y: 638, w: right - left, h: 72, fill: soft });
+      page.push({ text: 'Cardholder', x: left + 14, y: 692, size: 8, color: muted });
+      page.push({ text: holder.slice(0, 32), x: left + 14, y: 676, size: 11, bold: true, color: ink });
+      page.push({ text: 'Card', x: left + 14, y: 656, size: 8, color: muted });
       page.push({
-        text: `Daily limit ${pdfMoney(cardDailyLimitCents(card), cur)}`,
-        x: 320,
-        y: 680,
-        size: 9,
-        color: ink,
-      });
-      page.push({
-        text: `Available ${pdfMoney(card.balanceCents || 0, cur)}`,
-        x: 320,
-        y: 664,
+        text: `${brand} .... ${last4}`,
+        x: left + 14,
+        y: 640,
         size: 10,
-        bold: true,
-        color: navy,
+        color: ink,
       });
-      page.push({ text: G_CORP_STATEMENT.entity, x: 320, y: 650, size: 7.5, color: muted });
+      page.push({ text: 'Status', x: 360, y: 692, size: 8, color: muted });
+      page.push({ text: statusLabel, x: 360, y: 676, size: 11, color: ink });
+      page.push({ text: 'Issuer', x: 360, y: 656, size: 8, color: muted });
+      page.push({ text: G_CORP_STATEMENT.legalName, x: 360, y: 640, size: 10, color: ink });
 
-      // Totals strip
-      page.push({ rect: true, x: left, y: 575, w: rightEdge - left, h: 56, fill: navy });
-      const colW = (rightEdge - left) / 4;
-      const totals = [
-        ['Payments', `-${pdfMoney(paymentTotal, cur)}`, String(payments.length)],
-        ['Refunds', `+${pdfMoney(refundTotal, cur)}`, String(refunds.length)],
-        ['Net movement', signedMoney(netTotal), `${rows.length} txn`],
-        ['Closing available', pdfMoney(card.balanceCents || 0, cur), cur],
+      // Summary (SolCard-style stacked rows)
+      page.push({ text: 'Summary', x: left, y: 612, size: 13, bold: true, color: ink });
+      const summaryRows = [
+        ['Opening balance', pdfMoneyCode(opening, cur), false],
+        ['Deposits', pdfMoneyCode(depositTotal, cur), false],
+        ['Refunds', pdfMoneyCode(refundTotal, cur), false],
+        ['Spend', pdfMoneyCode(spendTotal, cur), false],
+        ['Closing balance', pdfMoneyCode(closing, cur), true],
       ];
-      totals.forEach((t, i) => {
-        const x = left + 10 + i * colW;
-        page.push({ text: t[0].toUpperCase(), x, y: 616, size: 6.5, bold: true, color: [0.7, 0.75, 0.82] });
-        page.push({ text: t[1], x, y: 598, size: 10, bold: true, color: white });
-        page.push({ text: t[2], x, y: 584, size: 7, color: [0.75, 0.8, 0.86] });
+      let sy = 588;
+      summaryRows.forEach((row) => {
+        if (row[2]) {
+          page.push({ rule: true, x1: left, y1: sy + 14, x2: right, y2: sy + 14, color: line, width: 0.8 });
+        }
+        page.push({ text: row[0], x: left, y: sy, size: 10, bold: row[2], color: ink });
+        page.push({
+          text: row[1],
+          x: pdfRightX(row[1], 10, right),
+          y: sy,
+          size: 10,
+          bold: row[2],
+          color: ink,
+        });
+        sy -= 22;
       });
 
-      page.push({ text: 'TRANSACTION HISTORY', x: left, y: 558, size: 9, bold: true, color: navy });
-      let y = drawTableHeader(page, 540);
+      page.push({ text: 'Transactions', x: left, y: sy - 4, size: 13, bold: true, color: ink });
+      let y = drawTableHeader(page, sy - 24);
       const slice = lineItems.slice(0, firstPageRows);
       cursor = slice.length;
       y = drawRows(page, slice, y);
+
       if (pageCount === 1) {
         page.push({
-          text: 'End of statement',
+          text: 'Transaction statuses reflect their state at the time this statement was generated; balances reflect the statement period.',
           x: left,
-          y: Math.max(68, y - 8),
-          size: 8,
-          bold: true,
+          y: Math.max(56, y - 8),
+          size: 7.5,
+          color: muted,
+        });
+        page.push({
+          text: 'This statement was generated electronically and is valid without signature.',
+          x: left,
+          y: Math.max(42, y - 22),
+          size: 7.5,
           color: muted,
         });
       }
     } else {
-      page.push({ text: 'TRANSACTION HISTORY (continued)', x: left, y: 768, size: 9, bold: true, color: navy });
-      let y = drawTableHeader(page, 748);
+      let y = drawTableHeader(page, 800);
       const slice = lineItems.slice(cursor, cursor + nextPageRows);
       cursor += slice.length;
       y = drawRows(page, slice, y);
       if (p === pageCount - 1) {
         page.push({
-          text: 'End of statement',
+          text: 'Transaction statuses reflect their state at the time this statement was generated; balances reflect the statement period.',
           x: left,
-          y: Math.max(68, y - 8),
-          size: 8,
-          bold: true,
+          y: Math.max(56, y - 10),
+          size: 7.5,
+          color: muted,
+        });
+        page.push({
+          text: 'This statement was generated electronically and is valid without signature.',
+          x: left,
+          y: Math.max(42, y - 24),
+          size: 7.5,
           color: muted,
         });
       }
@@ -1354,7 +1380,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `G-Cards-Statement-${last4}-${fromStr}_${toStr}.pdf`;
+  a.download = `gcards-statement-${stmtId}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
