@@ -80,10 +80,7 @@ const G_CORP_STATEMENT = {
   address: ['Aleksanterinkatu 52 B', '00100 Helsinki', 'Finland'],
   registry: 'Business ID 3234567-8',
   vat: 'FI32345678',
-  support: 'statements@g-cards.eu',
-  phone: '+358 9 4245 1900',
   programme: 'G Cards EU Issuing Desk',
-  website: 'g-cards.eu',
 };
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
@@ -1158,7 +1155,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       color: muted,
     });
     page.push({
-      text: `${G_CORP_STATEMENT.address.join(', ')} · ${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.phone}`,
+      text: G_CORP_STATEMENT.address.join(', '),
       x: left,
       y: 26,
       size: 7,
@@ -1238,7 +1235,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
         color: ink,
       });
       page.push({
-        text: `Issued ${generated} · Europe/Belgrade · ${G_CORP_STATEMENT.website}`,
+        text: `Issued ${generated}`,
         x: left,
         y: 738,
         size: 8,
@@ -1406,7 +1403,7 @@ function downloadGCorpTransactionPdf(spend) {
   page.push({ rect: true, x: 0, y: 796, w: 595, h: 3, fill: accent });
 
   page.push({
-    text: `${G_CORP_STATEMENT.address.join(', ')}  |  ${G_CORP_STATEMENT.phone}  |  ${G_CORP_STATEMENT.website}`,
+    text: G_CORP_STATEMENT.address.join(', '),
     x: left,
     y: 782,
     size: 7,
@@ -1555,7 +1552,7 @@ function downloadGCorpTransactionPdf(spend) {
     color: muted,
   });
   page.push({
-    text: `${G_CORP_STATEMENT.support}  ·  ${G_CORP_STATEMENT.phone}  ·  ${G_CORP_STATEMENT.programme}`,
+    text: G_CORP_STATEMENT.address.join(', '),
     x: left,
     y: 38,
     size: 6.5,
