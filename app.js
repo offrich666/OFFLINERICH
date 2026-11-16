@@ -66,7 +66,7 @@ const PAYMENT_GATEWAYS = [
 const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
 const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
 
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v9';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v10';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -528,9 +528,20 @@ function loadDeskLedger() {
     } catch {
       /* ignore */
     }
-    const rawV9 = localStorage.getItem(DESK_LEDGER_KEY);
+    const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
+    if (rawCurrent) {
+      applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV9 = localStorage.getItem('gcards-desk-ledger-v9');
     if (rawV9) {
       applyLedgerPayload(JSON.parse(rawV9));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v9');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV8 = localStorage.getItem('gcards-desk-ledger-v8');
@@ -1766,6 +1777,7 @@ function deskCardMenuLabel(c) {
   const kind = kindLabel(c.kind);
   const bal = cardMoney(c);
   const key = cardStatusKey(c);
+  const holder = String(c.holder || '').trim();
   const tag = isPrimary1955(c)
     ? '1955'
     : key === 'deactivated'
@@ -1773,7 +1785,8 @@ function deskCardMenuLabel(c) {
       : key === 'frozen'
         ? `${brand} ${kind} frozen`
         : `${brand} ${kind}`;
-  return `${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
+  const who = holder ? `${holder} · ` : '';
+  return `${who}${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
 function deskShellHtml(mainHtml) {
@@ -2043,7 +2056,11 @@ function ensureDeskDefaults() {
   purgeGjirafa25();
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
-  if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
+  // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
+  if (seedMc) {
+    state.deskSelectedCardId = seedMc.id;
+    state.deskTopupCardId = seedMc.id;
+  } else if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
     state.deskSelectedCardId = preferId;
   }
   if (!state.deskCards.some((c) => c.id === state.deskTopupCardId)) {
@@ -2399,12 +2416,14 @@ function deskCardPickerHtml(selectedId) {
         : `${brandLabel(c.brand)} · ${kindLabel(c.kind)}`;
       const statusLabel =
         key === 'deactivated' ? 'Off' : key === 'frozen' ? 'Frozen' : 'Active';
+      const holder = String(c.holder || '').trim() || 'Cardholder';
       return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}">
           <span class="desk-card-pick-top">
             <small>${esc(brandTag)}</small>
             <span class="desk-chip-status">${esc(statusLabel)}</span>
           </span>
           <strong class="desk-card-pick-pan">····${esc(String(c.pan).slice(-4))}</strong>
+          <span class="desk-card-pick-holder">${esc(holder)}</span>
           <span class="desk-card-pick-bal">${esc(cardMoney(c))}</span>
         </button>`;
     })
@@ -4368,16 +4387,26 @@ document.body.addEventListener('submit', (event) => {
       ensureDeskDefaults();
       await refreshTokenPrices();
       state.deskRevealSecrets = true;
-      state.deskTopupCardId = state.deskCards.find((c) => c.endless)?.id || state.deskCards[0]?.id || '';
-      state.deskSelectedCardId = state.deskTopupCardId;
+      {
+        const seedMc =
+          state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+          || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
+        const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
+        state.deskTopupCardId = pick?.id || '';
+        state.deskSelectedCardId = pick?.id || '';
+      }
       if (!state.spendDraft.when) {
         const now = new Date();
         now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
         state.spendDraft.when = now.toISOString().slice(0, 16);
       }
+      const selected = state.deskCards.find((c) => c.id === state.deskSelectedCardId);
+      const selectedTag = selected
+        ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
+        : 'no card';
       state.flash = {
         kind: 'ok',
-        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · ····1955 ready · Create card for Visa/MC`,
+        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · ${selectedTag}`,
       };
       render();
     });
@@ -4944,8 +4973,14 @@ async function boot() {
     ensureDeskDefaults();
     await refreshTokenPrices();
     state.deskRevealSecrets = true;
-    state.deskTopupCardId = state.deskCards.find((c) => c.endless)?.id || state.deskCards[0]?.id || '';
-    state.deskSelectedCardId = state.deskTopupCardId;
+    {
+      const seedMc =
+        state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+        || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
+      const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
+      state.deskTopupCardId = pick?.id || '';
+      state.deskSelectedCardId = pick?.id || '';
+    }
   } catch {
     state.admin = null;
   }
