@@ -76,10 +76,10 @@ const CB_INT_3599_AUTH = '515114';
 const CB_INT_3599_AMOUNT_CENTS = 3_599; // €35.99
 const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
-const PRIMARY_1955_BALANCE_CENTS = 8_478_882; // after €7,598×2 + €35.99
+const PRIMARY_1955_BALANCE_CENTS = 8_482_481; // after GJIRAFA + CB INT €7,598 posts
 
-const DESK_BUILD = '20261116v';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v13';
+const DESK_BUILD = '20261116w';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v14';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -89,7 +89,7 @@ const SEED_MC_5289_ID = 'card-seed-mc-5289';
 const SEED_MC_5289_EXPIRY = '09/29';
 const SEED_MC_5289_CVV = '275';
 const SEED_MC_5289_HOLDER = 'Azem Hasanaj';
-const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
+const SEED_MC_5289_BALANCE_CENTS = 4_996_401; // €50,000 − €35.99 TEB CB INT
 /** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
@@ -569,7 +569,8 @@ function ensureCbIntDigital7598Spend(card) {
 }
 
 /**
- * TEB success: CB INT DIGITAL JSC €35.99 — auth 515114 / order 1676770599066.
+ * TEB success: CB INT DIGITAL JSC €35.99 on ····5289 (Azem Hasanaj).
+ * Auth 515114 / order 1676770599066 / payment id …_58747297.
  */
 function ensureCbIntDigital3599Spend(card) {
   if (!card) return;
@@ -583,6 +584,7 @@ function ensureCbIntDigital3599Spend(card) {
         && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
   );
   const whenDate = new Date('2026-11-16T22:12:00+01:00');
+  const last4 = String(card.pan).replace(/\D/g, '').slice(-4) || '5289';
   const payload = {
     id: CB_INT_3599_SPEND_ID,
     when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
@@ -591,7 +593,7 @@ function ensureCbIntDigital3599Spend(card) {
     amountCents: CB_INT_3599_AMOUNT_CENTS,
     kind: 'payment',
     cardId: card.id,
-    cardLast4: String(card.pan).replace(/\D/g, '').slice(-4) || '1955',
+    cardLast4: last4,
     network: String(card.brand || 'mastercard'),
     status: 'Completed',
     gateway: 'TEB BNP PARIBAS',
@@ -606,9 +608,7 @@ function ensureCbIntDigital3599Spend(card) {
   } else {
     state.deskSpends = [payload, ...state.deskSpends];
   }
-  if (isPrimary1955(card)) {
-    card.balanceCents = PRIMARY_1955_BALANCE_CENTS;
-  }
+  card.balanceCents = SEED_MC_5289_BALANCE_CENTS;
 }
 
 /** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
@@ -661,6 +661,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV13 = localStorage.getItem('gcards-desk-ledger-v13');
+    if (rawV13) {
+      applyLedgerPayload(JSON.parse(rawV13));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v13');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV12 = localStorage.getItem('gcards-desk-ledger-v12');
@@ -2287,7 +2298,7 @@ function ensureDeskDefaults() {
   ensureIpkoSpend(primary);
   ensureGjirafaSpend(primary);
   ensureCbIntDigital7598Spend(primary);
-  ensureCbIntDigital3599Spend(primary);
+  ensureCbIntDigital3599Spend(seedMc || primary);
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
@@ -4240,11 +4251,14 @@ document.body.addEventListener('click', (event) => {
     reloadStoredSpends();
     const primary = deskActiveCard();
     const primary1955 = state.deskCards.find(isPrimary1955) || primary;
+    const seedMc =
+      state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+      || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
     ensureExampleSpend(primary);
     ensureIpkoSpend(primary);
     ensureGjirafaSpend(primary1955);
     ensureCbIntDigital7598Spend(primary1955);
-    ensureCbIntDigital3599Spend(primary1955);
+    ensureCbIntDigital3599Spend(seedMc || primary1955);
     saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
