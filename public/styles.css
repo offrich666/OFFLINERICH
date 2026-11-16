@@ -1094,7 +1094,21 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
 .desk-tx-amount {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
+.desk-tx-amount .desk-tx-out,
+.desk-tx-out {
+  color: var(--bad);
+  font-weight: 700;
+}
+.desk-tx-amount .desk-tx-in,
+.desk-tx-in {
+  color: var(--good);
+  font-weight: 700;
+}
+.pill.bad { background: #f0d5d5; color: var(--bad); }
+.desk-tx-row.is-payment .desk-tx-merchant { color: inherit; }
+.desk-tx-row.is-refund .desk-tx-merchant { color: var(--good); }
 .desk-tx-when {
   white-space: nowrap;
   font-size: 13px;

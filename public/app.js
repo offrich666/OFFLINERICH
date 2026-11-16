@@ -53,7 +53,7 @@ const state = {
   tokenPriceUpdatedAt: 0,
   /** USD→EUR FX used to credit desk balance from USDT deposits. */
   usdToEur: 0.92,
-  spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS' },
+  spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS', kind: 'payment' },
   issueDraft: { brand: 'visa', kind: 'private' },
   statementDraft: { cardId: '', from: '', to: '' },
 };
@@ -178,6 +178,7 @@ function cardSpentOnDayCents(card, dayYmd) {
   const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
   return state.deskSpends
     .filter((s) => {
+      if (isSpendRefund(s)) return false;
       const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
       if (!match) return false;
       const ts = spendTimestamp(s);
@@ -258,16 +259,52 @@ function makeAuthNr() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+function normalizeSpendKind(row) {
+  const raw = String(row?.kind || row?.direction || row?.entryType || row?.status || '')
+    .toLowerCase()
+    .trim();
+  if (
+    raw === 'refund'
+    || raw === 'credit'
+    || raw === 'in'
+    || raw.includes('refund')
+    || raw.includes('credit')
+  ) {
+    return 'refund';
+  }
+  return 'payment';
+}
+
+function isSpendRefund(spend) {
+  return normalizeSpendKind(spend) === 'refund';
+}
+
+/** Signed amount for totals: payments − · refunds +. */
+function spendSignedCents(spend) {
+  const amount = Math.abs(Number(spend?.amountCents || 0));
+  return isSpendRefund(spend) ? amount : -amount;
+}
+
+function formatSpendAmountHtml(spend, currency = 'EUR') {
+  const amount = Math.abs(Number(spend?.amountCents || 0));
+  const refund = isSpendRefund(spend);
+  const cls = refund ? 'desk-tx-in plus' : 'desk-tx-out minus';
+  const sign = refund ? '+' : '−';
+  return `<strong class="${cls}">${sign}${esc(money(amount, currency))}</strong>`;
+}
+
 function normalizeStoredSpend(row) {
   if (!row || typeof row !== 'object') return null;
-  const amountCents = Number(row.amountCents);
+  const amountCents = Math.abs(Number(row.amountCents));
   if (!Number.isFinite(amountCents) || amountCents <= 0) return null;
   const merchant = String(row.merchant || '').trim();
   if (!merchant) return null;
   const cardLast4 = String(row.cardLast4 || '').replace(/\D/g, '').slice(-4);
   const whenIso = row.whenIso || row.createdAt || '';
   const gateway = String(row.gateway || PAYMENT_GATEWAYS[0]).trim() || PAYMENT_GATEWAYS[0];
-  const status = String(row.status || 'Completed').trim() || 'Completed';
+  const kind = normalizeSpendKind(row);
+  const status = String(row.status || (kind === 'refund' ? 'Refunded' : 'Completed')).trim()
+    || (kind === 'refund' ? 'Refunded' : 'Completed');
   const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
   const threeDs = String(row.threeDs || 'not_required').trim() || 'not_required';
   return {
@@ -276,6 +313,7 @@ function normalizeStoredSpend(row) {
     whenIso: whenIso ? String(whenIso) : '',
     merchant,
     amountCents,
+    kind,
     cardId: String(row.cardId || ''),
     cardLast4,
     network: String(row.network || 'card'),
@@ -382,6 +420,7 @@ function ensureExampleSpend(primary) {
       whenIso: whenDate.toISOString(),
       merchant: 'CB INT DIGITAL JSC',
       amountCents: 3798,
+      kind: 'payment',
       cardId: primary.id,
       cardLast4: String(primary.pan).slice(-4),
       network: String(primary.brand || 'mastercard'),
@@ -459,6 +498,7 @@ function ensureIpkoSpend(primary) {
       whenIso: whenDate.toISOString(),
       merchant: 'IPKO E-COMMERCE',
       amountCents,
+      kind: 'payment',
       cardId: primary.id,
       cardLast4: String(primary.pan).slice(-4) || '1955',
       network: String(primary.brand || 'mastercard'),
@@ -743,7 +783,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const { from, to } = statementPeriodBounds(fromStr, toStr);
   const rows = spendsForCardInPeriod(card, from, to);
   const cur = cardCurrency(card);
-  const totalSpend = rows.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const totalSpend = rows.reduce((sum, s) => sum + spendSignedCents(s), 0);
   const stmtId = `GCS-${belgradeYmd(Date.now()).replace(/-/g, '')}-${String(card.pan).slice(-4)}`;
   const generated = formatStatementDate(Date.now());
   const brand = brandLabel(card.brand);
@@ -779,7 +819,13 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       bold: true,
     },
     { text: `Opening note: Available balance ${cardMoney(card)}`, x: 48, y: 630, size: 10 },
-    { text: `Period spend total: ${money(totalSpend, cur)} · ${rows.length} transaction(s)`, x: 48, y: 614, size: 10, bold: true },
+    {
+      text: `Period net: ${totalSpend > 0 ? '+' : totalSpend < 0 ? '-' : ''}${money(Math.abs(totalSpend), cur)} · ${rows.length} transaction(s)`,
+      x: 48,
+      y: 614,
+      size: 10,
+      bold: true,
+    },
     { text: 'Date / time', x: 48, y: 588, size: 9, bold: true },
     { text: 'Merchant / auth', x: 160, y: 588, size: 9, bold: true },
     { text: 'Gateway', x: 360, y: 588, size: 9, bold: true },
@@ -790,10 +836,10 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const lineItems = rows.length
     ? rows.map((s) => ({
         when: formatStatementDate(spendTimestamp(s)),
-        merchant: String(s.merchant || '—').slice(0, 36),
+        merchant: `${isSpendRefund(s) ? 'REFUND · ' : ''}${String(s.merchant || '—')}`.slice(0, 36),
         auth: `Auth ${s.authNr || '—'}`,
         gateway: String(s.gateway || '—').slice(0, 22),
-        amount: money(s.amountCents, cur),
+        amount: `${isSpendRefund(s) ? '+' : '-'}${money(Math.abs(Number(s.amountCents || 0)), cur)}`,
       }))
     : [
         {
@@ -2087,6 +2133,8 @@ function deskPaymentsHtml() {
     state.spendDraft.when = now.toISOString().slice(0, 16);
   }
   if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
+  if (!state.spendDraft.kind) state.spendDraft.kind = 'payment';
+  const entryKind = normalizeSpendKind({ kind: state.spendDraft.kind });
   const cardOptions = state.deskCards
     .map(
       (c) =>
@@ -2104,11 +2152,17 @@ function deskPaymentsHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Pay</p>
           <h1>Record a payment</h1>
-          <p class="lede desk-home-lede">Enter the card, merchant, amount, and time. Saved entries appear under History — tap a row for payment details.</p>
+          <p class="lede desk-home-lede">Payments show red (−). Refunds / returned funds show green (+). Saved rows appear under History.</p>
         </section>
 
         <section class="desk-deposit desk-page-panel" id="desk-spend">
           <form id="desk-spend-form" class="desk-deposit-form desk-spend-form desk-pay-form">
+            <label>Type
+              <select name="kind">
+                <option value="payment" ${entryKind === 'payment' ? 'selected' : ''}>Payment (outgoing −)</option>
+                <option value="refund" ${entryKind === 'refund' ? 'selected' : ''}>Refund (credit +)</option>
+              </select>
+            </label>
             <label>Card
               <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
                 ${cardOptions || '<option value="">Issue a card first</option>'}
@@ -2127,7 +2181,9 @@ function deskPaymentsHtml() {
               <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
             </label>
             <div class="desk-pay-actions">
-              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>Save</button>
+              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>${
+                entryKind === 'refund' ? 'Save refund' : 'Save payment'
+              }</button>
             </div>
           </form>
         </section>`;
@@ -2135,24 +2191,24 @@ function deskPaymentsHtml() {
 
 function spendDetailHtml(spend) {
   if (!spend) return '';
-  const amountPlain = new Intl.NumberFormat('de-DE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format((spend.amountCents || 0) / 100);
+  const refund = isSpendRefund(spend);
+  const card = state.deskCards.find((c) => c.id === spend.cardId);
+  const cur = card ? cardCurrency(card) : 'EUR';
   return `
         <section class="desk-deposit desk-page-panel desk-tx-detail" id="desk-tx-detail">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">Payment details</p>
+              <p class="eyebrow">${refund ? 'Refund details' : 'Payment details'}</p>
               <h2>${esc(spend.merchant)}</h2>
             </div>
             <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
           </div>
           <dl class="desk-tx-detail-list">
-            <div><dt>Payment Status</dt><dd><span class="pill good">${esc(spend.status || 'Completed')}</span></dd></div>
+            <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${refund ? 'Refund' : 'Payment'}</span></dd></div>
+            <div><dt>Status</dt><dd><span class="pill good">${esc(spend.status || (refund ? 'Refunded' : 'Completed'))}</span></dd></div>
             <div><dt>Payment Gateway</dt><dd>${esc(spend.gateway || PAYMENT_GATEWAYS[0])}</dd></div>
             <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
-            <div><dt>Amount</dt><dd><strong>${esc(amountPlain)}</strong></dd></div>
+            <div><dt>Amount</dt><dd>${formatSpendAmountHtml(spend, cur)}</dd></div>
             <div><dt>3-D Secure</dt><dd><span class="pill good">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
             <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
             <div><dt>Card</dt><dd>${esc(spend.cardLast4 ? `····${spend.cardLast4}` : '—')}</dd></div>
@@ -2163,7 +2219,7 @@ function spendDetailHtml(spend) {
 function deskHistoryHtml() {
   reloadStoredSpends();
   const storedSpends = filteredDeskSpends();
-  const storedTotal = storedSpends.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const storedTotal = storedSpends.reduce((sum, s) => sum + spendSignedCents(s), 0);
   const selected =
     storedSpends.find((s) => s.id === state.spendDetailId)
     || state.deskSpends.find((s) => s.id === state.spendDetailId)
@@ -2222,15 +2278,18 @@ function deskHistoryHtml() {
         .map((s) => {
           const on = s.id === state.spendDetailId ? 'is-open' : '';
           const gatewayShort = String(s.gateway || '').split(' ')[0] || '—';
-          return `<tr class="desk-tx-row ${on}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
+          const refund = isSpendRefund(s);
+          const card = state.deskCards.find((c) => c.id === s.cardId);
+          const cur = card ? cardCurrency(card) : 'EUR';
+          return `<tr class="desk-tx-row ${on} ${refund ? 'is-refund' : 'is-payment'}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
             <td class="desk-tx-when">${esc(s.when)}</td>
             <td>
               <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
-              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')}</small>
+              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')} · ${refund ? 'Refund' : 'Payment'}</small>
             </td>
-            <td class="desk-tx-amount"><strong>${esc(money(s.amountCents))}</strong></td>
+            <td class="desk-tx-amount">${formatSpendAmountHtml(s, cur)}</td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill good">${esc(s.status || 'Completed')}</span></td>
+            <td><span class="pill ${refund ? 'good' : ''}">${esc(s.status || (refund ? 'Refunded' : 'Completed'))}</span></td>
           </tr>`;
         })
         .join('')
@@ -2255,8 +2314,10 @@ function deskHistoryHtml() {
             </div>
             <div class="active-actions desk-history-actions">
               <div class="desk-balance-chip">
-                <small>${filtersOn ? 'Filtered total' : 'Total'}</small>
-                <strong>${esc(money(storedTotal))}</strong>
+                <small>${filtersOn ? 'Filtered net' : 'Net'}</small>
+                <strong class="${storedTotal >= 0 ? 'plus' : 'minus'}">${
+                  storedTotal > 0 ? '+' : storedTotal < 0 ? '−' : ''
+                }${esc(money(Math.abs(storedTotal)))}</strong>
               </div>
               ${
                 state.spendFilterCardId
@@ -3763,25 +3824,26 @@ document.body.addEventListener('submit', (event) => {
       if (!card) throw new Error('Choose a card for this payment.');
       if (cardStatusKey(card) === 'deactivated') throw new Error('Card is deactivated. Reactivate it first.');
       if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
+      const entryKind = normalizeSpendKind({ kind: data.kind || state.spendDraft.kind || 'payment' });
       const amount = Number(data.amount);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a spend amount greater than zero.');
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
       const merchant = String(data.merchant || '').trim();
-      if (!merchant) throw new Error('Enter where you paid.');
+      if (!merchant) throw new Error(entryKind === 'refund' ? 'Enter the refund merchant.' : 'Enter where you paid.');
       const whenRaw = String(data.when || '').trim();
       if (!whenRaw) throw new Error('Enter the payment date and time.');
       const amountCents = Math.round(amount * 100);
       const cur = cardCurrency(card);
-      const whenDatePreview = new Date(whenRaw);
-      const whenMsPreview = Number.isNaN(whenDatePreview.getTime()) ? Date.now() : whenDatePreview.getTime();
-      const dayYmd = belgradeYmd(whenMsPreview);
-      const spentThatDay = cardSpentOnDayCents(card, dayYmd);
-      const dailyLimit = cardDailyLimitCents(card);
-      if (spentThatDay + amountCents > dailyLimit) {
-        throw new Error(
-          `Daily ${kindLabel(card.kind)} limit ${money(dailyLimit, cur)} exceeded for ${dayYmd}. Already spent ${money(spentThatDay, cur)}.`,
-        );
-      }
-      {
+      if (entryKind === 'payment') {
+        const whenDatePreview = new Date(whenRaw);
+        const whenMsPreview = Number.isNaN(whenDatePreview.getTime()) ? Date.now() : whenDatePreview.getTime();
+        const dayYmd = belgradeYmd(whenMsPreview);
+        const spentThatDay = cardSpentOnDayCents(card, dayYmd);
+        const dailyLimit = cardDailyLimitCents(card);
+        if (spentThatDay + amountCents > dailyLimit) {
+          throw new Error(
+            `Daily ${kindLabel(card.kind)} limit ${money(dailyLimit, cur)} exceeded for ${dayYmd}. Already spent ${money(spentThatDay, cur)}.`,
+          );
+        }
         const bal = Number(card.balanceCents || 0);
         if (bal < amountCents) {
           throw new Error(
@@ -3789,6 +3851,8 @@ document.body.addEventListener('submit', (event) => {
           );
         }
         card.balanceCents = bal - amountCents;
+      } else {
+        card.balanceCents = Number(card.balanceCents || 0) + amountCents;
       }
       const whenDate = new Date(whenRaw);
       const whenMs = Number.isNaN(whenDate.getTime()) ? Date.now() : whenDate.getTime();
@@ -3798,15 +3862,16 @@ document.body.addEventListener('submit', (event) => {
         || PAYMENT_GATEWAYS[0];
       const authNr = makeAuthNr();
       const entry = {
-        id: `spend-${whenMs}-${String(card.pan).slice(-4)}-${amountCents}`,
+        id: `${entryKind === 'refund' ? 'refund' : 'spend'}-${whenMs}-${String(card.pan).slice(-4)}-${amountCents}`,
         when,
         whenIso,
         merchant,
         amountCents,
+        kind: entryKind,
         cardId: card.id,
         cardLast4: String(card.pan).slice(-4),
         network: String(card.brand || 'card'),
-        status: 'Completed',
+        status: entryKind === 'refund' ? 'Refunded' : 'Completed',
         gateway,
         authNr,
         threeDs: 'not_required',
@@ -3819,6 +3884,7 @@ document.body.addEventListener('submit', (event) => {
         amount: '',
         when: state.spendDraft.when || '',
         gateway,
+        kind: entryKind,
       };
       state.deskSelectedCardId = card.id;
       state.spendFilterCardId = '';
@@ -3828,7 +3894,7 @@ document.body.addEventListener('submit', (event) => {
       reloadStoredSpends();
       state.flash = {
         kind: 'ok',
-        text: `Stored ${money(amountCents)} at ${merchant} · Auth ${authNr} · ${gateway} · open details in History`,
+        text: `${entryKind === 'refund' ? 'Refund' : 'Payment'} ${entryKind === 'refund' ? '+' : '−'}${money(amountCents, cur)} at ${merchant} · Auth ${authNr} · ${gateway} · open details in History`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
