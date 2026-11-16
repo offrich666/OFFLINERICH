@@ -668,17 +668,111 @@ function cardMoney(card, cents = card?.balanceCents) {
   return money(cents, cardCurrency(card));
 }
 
-function pdfEscape(text) {
-  return String(text ?? '')
-    .replace(/\\/g, '\\\\')
-    .replace(/\(/g, '\\(')
-    .replace(/\)/g, '\\)');
+/** WinAnsi code points we need in Helvetica (incl. euro at 0x80). */
+const PDF_WINANSI_EXTRA = {
+  '€': 0x80,
+  '‚': 0x82,
+  'ƒ': 0x83,
+  '„': 0x84,
+  '…': 0x85,
+  '†': 0x86,
+  '‡': 0x87,
+  'ˆ': 0x88,
+  '‰': 0x89,
+  'Š': 0x8a,
+  '‹': 0x8b,
+  'Œ': 0x8c,
+  'Ž': 0x8e,
+  '‘': 0x91,
+  '’': 0x92,
+  '“': 0x93,
+  '”': 0x94,
+  '•': 0x95,
+  '–': 0x96,
+  '—': 0x97,
+  '˜': 0x98,
+  '™': 0x99,
+  'š': 0x9a,
+  '›': 0x9b,
+  'œ': 0x9c,
+  'ž': 0x9e,
+  'Ÿ': 0x9f,
+  '¡': 0xa1,
+  '¢': 0xa2,
+  '£': 0xa3,
+  '¤': 0xa4,
+  '¥': 0xa5,
+  '¦': 0xa6,
+  '§': 0xa7,
+  '¨': 0xa8,
+  '©': 0xa9,
+  'ª': 0xaa,
+  '«': 0xab,
+  '¬': 0xac,
+  '®': 0xae,
+  '¯': 0xaf,
+  '°': 0xb0,
+  '±': 0xb1,
+  '²': 0xb2,
+  '³': 0xb3,
+  '´': 0xb4,
+  'µ': 0xb5,
+  '¶': 0xb6,
+  '·': 0xb7,
+  '¸': 0xb8,
+  '¹': 0xb9,
+  'º': 0xba,
+  '»': 0xbb,
+  '¼': 0xbc,
+  '½': 0xbd,
+  '¾': 0xbe,
+  '¿': 0xbf,
+  '×': 0xd7,
+  '÷': 0xf7,
+};
+
+function pdfLiteral(text) {
+  let out = '';
+  const raw = String(text ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[−–—]/g, '-')
+    .replace(/[•·]/g, '.')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"');
+  for (const ch of raw) {
+    const code = ch.codePointAt(0);
+    if (ch === '\\' || ch === '(' || ch === ')') {
+      out += `\\${ch}`;
+      continue;
+    }
+    if (code >= 0x20 && code <= 0x7e) {
+      out += ch;
+      continue;
+    }
+    const mapped = PDF_WINANSI_EXTRA[ch];
+    if (typeof mapped === 'number') {
+      out += `\\${mapped.toString(8).padStart(3, '0')}`;
+      continue;
+    }
+    // Latin-1 range maps 1:1 in WinAnsi for most letters (À-ÿ except gaps).
+    if (code >= 0xa0 && code <= 0xff) {
+      out += `\\${code.toString(8).padStart(3, '0')}`;
+      continue;
+    }
+    out += '?';
+  }
+  return out;
 }
 
-function pdfAscii(text) {
-  return String(text ?? '')
-    .normalize('NFKD')
-    .replace(/[^\x20-\x7E]/g, '?');
+function pdfMoney(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  const amount = (Number(cents) || 0) / 100;
+  const num = new Intl.NumberFormat(cur === 'USD' ? 'en-US' : 'de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  // Keep the real currency glyph — WinAnsi encodes € as \200.
+  return cur === 'USD' ? `$${num}` : `€${num}`;
 }
 
 function pdfColor(rgb = [0.12, 0.16, 0.22]) {
@@ -706,8 +800,12 @@ function buildPdfDocument(pages) {
     objects.push(body);
     return objects.length;
   };
-  const fontRegular = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
-  const fontBold = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  const fontRegular = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  );
+  const fontBold = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+  );
   const contentIds = [];
   const pageIds = [];
 
@@ -734,7 +832,7 @@ function buildPdfDocument(pages) {
       ops.push(`${pdfColor(item.color || [0.12, 0.16, 0.22])} rg`);
       ops.push(`/${item.bold ? 'FB' : 'FR'} ${size} Tf`);
       ops.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
-      ops.push(`(${pdfEscape(pdfAscii(item.text))}) Tj`);
+      ops.push(`(${pdfLiteral(item.text)}) Tj`);
     }
     ops.push('ET');
     const full = ops.join('\n');
@@ -890,9 +988,9 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
 
   const signedMoney = (cents) => {
     const n = Number(cents || 0);
-    if (n > 0) return `+${money(n, cur)}`;
-    if (n < 0) return `-${money(Math.abs(n), cur)}`;
-    return money(0, cur);
+    if (n > 0) return `+${pdfMoney(n, cur)}`;
+    if (n < 0) return `-${pdfMoney(Math.abs(n), cur)}`;
+    return pdfMoney(0, cur);
   };
 
   const lineItems = rows.length
@@ -904,7 +1002,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
           merchant: String(s.merchant || '—').slice(0, 34),
           auth: String(s.authNr || '—'),
           gateway: String(s.gateway || '—').split(' ')[0].slice(0, 12),
-          amount: `${refund ? '+' : '-'}${money(Math.abs(Number(s.amountCents || 0)), cur)}`,
+          amount: `${refund ? '+' : '-'}${pdfMoney(Math.abs(Number(s.amountCents || 0)), cur)}`,
           refund,
         };
       })
@@ -915,7 +1013,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
           merchant: 'No posted transactions in this period',
           auth: '—',
           gateway: '—',
-          amount: money(0, cur),
+          amount: pdfMoney(0, cur),
           refund: false,
         },
       ];
@@ -1061,14 +1159,14 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       page.push({ text: 'ACCOUNT SUMMARY', x: 320, y: 712, size: 7, bold: true, color: muted });
       page.push({ text: `Currency ${cur}`, x: 320, y: 696, size: 9, color: ink });
       page.push({
-        text: `Daily limit ${money(cardDailyLimitCents(card), cur)}`,
+        text: `Daily limit ${pdfMoney(cardDailyLimitCents(card), cur)}`,
         x: 320,
         y: 680,
         size: 9,
         color: ink,
       });
       page.push({
-        text: `Available ${cardMoney(card)}`,
+        text: `Available ${pdfMoney(card.balanceCents || 0, cur)}`,
         x: 320,
         y: 664,
         size: 10,
@@ -1081,10 +1179,10 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       page.push({ rect: true, x: left, y: 575, w: rightEdge - left, h: 56, fill: navy });
       const colW = (rightEdge - left) / 4;
       const totals = [
-        ['Payments', `-${money(paymentTotal, cur)}`, String(payments.length)],
-        ['Refunds', `+${money(refundTotal, cur)}`, String(refunds.length)],
+        ['Payments', `-${pdfMoney(paymentTotal, cur)}`, String(payments.length)],
+        ['Refunds', `+${pdfMoney(refundTotal, cur)}`, String(refunds.length)],
         ['Net movement', signedMoney(netTotal), `${rows.length} txn`],
-        ['Closing available', cardMoney(card), cur],
+        ['Closing available', pdfMoney(card.balanceCents || 0, cur), cur],
       ];
       totals.forEach((t, i) => {
         const x = left + 10 + i * colW;
@@ -1134,6 +1232,136 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `G-Corp-Cards-Statement-${last4}-${fromStr}_${toStr}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2500);
+}
+
+/** One-page professional PDF for a single History transaction. */
+function downloadGCorpTransactionPdf(spend) {
+  if (!spend) throw new Error('Choose a transaction to download.');
+  const card =
+    state.deskCards.find((c) => c.id === spend.cardId)
+    || state.deskCards.find(
+      (c) => String(c.pan).replace(/\D/g, '').slice(-4) === String(spend.cardLast4 || ''),
+    )
+    || deskActiveCard();
+  const cur = card ? cardCurrency(card) : 'EUR';
+  const refund = isSpendRefund(spend);
+  const amountLabel = `${refund ? '+' : '-'}${pdfMoney(Math.abs(Number(spend.amountCents || 0)), cur)}`;
+  const last4 = String(spend.cardLast4 || (card ? String(card.pan).slice(-4) : '') || '----');
+  const brand = card ? brandLabel(card.brand) : String(spend.network || 'Card');
+  const kind = card ? kindLabel(card.kind) : 'Private';
+  const stmtId = `GCTX-${belgradeYmd(Date.now()).replace(/-/g, '')}-${last4}-${String(spend.authNr || '000000')}`;
+  const generated = formatStatementDate(Date.now());
+  const whenLabel = spend.when || formatStatementDate(spendTimestamp(spend));
+  const ink = [0.1, 0.14, 0.2];
+  const muted = [0.42, 0.46, 0.52];
+  const navy = [0.09, 0.16, 0.28];
+  const gold = [0.72, 0.58, 0.32];
+  const line = [0.82, 0.84, 0.87];
+  const white = [1, 1, 1];
+  const good = [0.12, 0.42, 0.27];
+  const bad = [0.55, 0.18, 0.18];
+  const left = 48;
+  const rightEdge = 547;
+
+  const rows = [
+    ['Transaction type', refund ? 'Refund / credit' : 'Payment / debit'],
+    ['Status', String(spend.status || (refund ? 'Refunded' : 'Completed'))],
+    ['Merchant', String(spend.merchant || '—')],
+    ['Amount', amountLabel],
+    ['Currency', cur],
+    ['Auth number', String(spend.authNr || '—')],
+    ['Payment gateway', String(spend.gateway || PAYMENT_GATEWAYS[0])],
+    ['3-D Secure', threeDsLabel(spend.threeDs)],
+    ['Date & time', whenLabel],
+    ['Card', `${brand} ${kind} ····${last4}`],
+    ['Cardholder', String(card?.holder || 'G Cards Member')],
+    ['Transaction ID', String(spend.id || '—')],
+  ];
+
+  const page = [];
+  page.push({ rect: true, x: 0, y: 792, w: 595, h: 50, fill: navy });
+  page.push({ rect: true, x: 0, y: 788, w: 595, h: 4, fill: gold });
+  page.push({ text: G_CORP_STATEMENT.legalName, x: left, y: 818, size: 16, bold: true, color: white });
+  page.push({ text: 'Transaction advice', x: left, y: 802, size: 8, color: [0.85, 0.88, 0.92] });
+  page.push({ text: stmtId, x: pdfRightX(stmtId, 8, rightEdge), y: 818, size: 8, bold: true, color: white });
+  page.push({
+    text: `Generated ${generated}`,
+    x: pdfRightX(`Generated ${generated}`, 8, rightEdge),
+    y: 804,
+    size: 8,
+    color: [0.85, 0.88, 0.92],
+  });
+
+  page.push({ text: refund ? 'REFUND CONFIRMATION' : 'PAYMENT CONFIRMATION', x: left, y: 760, size: 13, bold: true, color: navy });
+  page.push({ text: String(spend.merchant || 'Transaction').slice(0, 48), x: left, y: 740, size: 11, bold: true, color: ink });
+
+  page.push({ rect: true, x: left, y: 668, w: rightEdge - left, h: 52, fill: navy });
+  page.push({ text: 'AMOUNT', x: left + 14, y: 704, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
+  page.push({
+    text: amountLabel,
+    x: left + 14,
+    y: 682,
+    size: 18,
+    bold: true,
+    color: white,
+  });
+  page.push({
+    text: refund ? 'Credit to card' : 'Debit from card',
+    x: pdfRightX(refund ? 'Credit to card' : 'Debit from card', 9, rightEdge - 14),
+    y: 684,
+    size: 9,
+    color: [0.8, 0.85, 0.9],
+  });
+
+  let y = 640;
+  rows.forEach((row, idx) => {
+    if (idx % 2 === 0) {
+      page.push({ rect: true, x: left, y: y - 6, w: rightEdge - left, h: 22, fill: [0.97, 0.97, 0.98] });
+    }
+    page.push({ text: row[0].toUpperCase(), x: left + 10, y, size: 7, bold: true, color: muted });
+    page.push({
+      text: String(row[1]).slice(0, 56),
+      x: 200,
+      y,
+      size: 10,
+      bold: row[0] === 'Amount',
+      color: row[0] === 'Amount' ? (refund ? good : bad) : ink,
+    });
+    y -= 24;
+  });
+
+  page.push({ rule: true, x1: left, y1: 52, x2: rightEdge, y2: 52, color: line, width: 0.5 });
+  page.push({
+    text: `${G_CORP_STATEMENT.entity} · ${G_CORP_STATEMENT.registry} · VAT ${G_CORP_STATEMENT.vat}`,
+    x: left,
+    y: 38,
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: `${G_CORP_STATEMENT.address.join(', ')} · ${G_CORP_STATEMENT.support} · ${G_CORP_STATEMENT.website}`,
+    x: left,
+    y: 26,
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: 'Confidential cardholder advice. For information only — not a regulated bank advice.',
+    x: left,
+    y: 14,
+    size: 6.5,
+    color: muted,
+  });
+
+  const blob = buildPdfDocument([page]);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `G-Corp-Cards-${refund ? 'Refund' : 'Payment'}-${last4}-${String(spend.authNr || 'tx')}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -2412,7 +2640,10 @@ function spendDetailHtml(spend) {
               <p class="eyebrow">${refund ? 'Refund details' : 'Payment details'}</p>
               <h2>${esc(spend.merchant)}</h2>
             </div>
-            <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
+            <div class="active-actions">
+              <button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download PDF</button>
+              <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
+            </div>
           </div>
           <dl class="desk-tx-detail-list">
             <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${refund ? 'Refund' : 'Payment'}</span></dd></div>
@@ -3477,6 +3708,28 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'desk-close-spend-detail') {
     state.spendDetailId = '';
+    render();
+    return;
+  }
+  if (action === 'desk-download-spend-pdf') {
+    const id = button.dataset.id || state.spendDetailId || '';
+    const spend =
+      state.deskSpends.find((s) => s.id === id)
+      || filteredDeskSpends().find((s) => s.id === id);
+    if (!spend) {
+      state.flash = { kind: 'error', text: 'Transaction not found for PDF download.' };
+      render();
+      return;
+    }
+    try {
+      downloadGCorpTransactionPdf(spend);
+      state.flash = {
+        kind: 'ok',
+        text: `PDF downloaded · ${isSpendRefund(spend) ? 'Refund' : 'Payment'} · ${spend.merchant} · Auth ${spend.authNr || '—'}`,
+      };
+    } catch (err) {
+      state.flash = { kind: 'error', text: err?.message || 'Could not build transaction PDF.' };
+    }
     render();
     return;
   }
