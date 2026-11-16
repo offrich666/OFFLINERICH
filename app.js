@@ -65,6 +65,7 @@ const PAYMENT_GATEWAYS = [
 ];
 const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
 const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
+const GJIRAFA_SPEND_ID = 'spend-gjirafa50-25';
 
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v10';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
@@ -472,13 +473,44 @@ function purgeSpend7598() {
   return refundAndDropSpends((s) => Number(s.amountCents) === 759_800);
 }
 
-/** Drop the €25.00 Gjirafa spend; refund the card once. */
-function purgeGjirafa25() {
-  return refundAndDropSpends(
-    (s) =>
-      Number(s.amountCents) === 2500
-      && String(s.merchant || '').toLowerCase().includes('gjirafa'),
-  );
+/** Restore Gjirafa50 €25.00 (was purged earlier at the user’s request). */
+function ensureGjirafaSpend(card) {
+  if (!card) return;
+  if (
+    state.deskSpends.some(
+      (s) =>
+        s.id === GJIRAFA_SPEND_ID
+        || (Number(s.amountCents) === 2500
+          && String(s.merchant || '').toLowerCase().includes('gjirafa')),
+    )
+  ) {
+    return;
+  }
+  const whenDate = new Date('2026-11-14T15:22:00+01:00');
+  const amountCents = 2500;
+  const bal = Number(card.balanceCents || 0);
+  if (bal >= amountCents) {
+    card.balanceCents = bal - amountCents;
+  }
+  state.deskSpends = [
+    {
+      id: GJIRAFA_SPEND_ID,
+      when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+      whenIso: whenDate.toISOString(),
+      merchant: 'Gjirafa50',
+      amountCents,
+      kind: 'payment',
+      cardId: card.id,
+      cardLast4: String(card.pan).replace(/\D/g, '').slice(-4),
+      network: String(card.brand || 'mastercard'),
+      status: 'Completed',
+      gateway: 'TEB BNP PARIBAS',
+      authNr: '401882',
+      threeDs: 'not_required',
+      createdAt: whenDate.getTime(),
+    },
+    ...state.deskSpends,
+  ];
 }
 
 /** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
@@ -2078,8 +2110,8 @@ function ensureDeskDefaults() {
   }
   ensureExampleSpend(primary);
   ensureIpkoSpend(primary);
+  ensureGjirafaSpend(seedMc || primary);
   purgeSpend7598();
-  purgeGjirafa25();
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Azem Hasanaj ····5289 selected so the hero plastic shows the right name.
@@ -4029,8 +4061,12 @@ document.body.addEventListener('click', (event) => {
     state.deskDetailCardId = '';
     reloadStoredSpends();
     const primary = deskActiveCard();
+    const seedMc =
+      state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+      || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
     ensureExampleSpend(primary);
     ensureIpkoSpend(primary);
+    ensureGjirafaSpend(seedMc || primary);
     saveDeskLedger();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
