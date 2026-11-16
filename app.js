@@ -80,13 +80,13 @@ const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
 const G_CORP_STATEMENT = {
-  legalName: 'G Corp Cards',
-  entity: 'G Corp Cards Oy',
-  tagline: 'Card issuing · Account statements & transaction information',
+  /** Issuer brand shown on PDF letterheads and plastic. */
+  legalName: 'G Cards',
+  /** Legal entity line (no registry / VAT on customer PDFs). */
+  entity: 'G Cards Europe Oy',
+  tagline: 'Card account statements and transaction information',
   address: ['Aleksanterinkatu 52 B', '00100 Helsinki', 'Finland'],
-  registry: 'Business ID 3234567-8',
-  vat: 'FI32345678',
-  programme: 'G Cards EU Issuing Desk',
+  programme: 'Europe Card Issuing',
 };
 const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
@@ -227,7 +227,7 @@ function normalizeDeskCard(card) {
       || (endless
         ? 'G Cards Member'
         : meta.kind === 'corporate'
-          ? 'G CORP CARDS'
+          ? 'G CARDS EUROPE'
           : 'G Cards Member'),
   };
 }
@@ -887,7 +887,7 @@ function pdfNetworkLogoItems(brand, x, y, { compact = false, onDark = false } = 
 }
 
 /**
- * Multi-page PDF writer for G Corp Cards statements.
+ * Multi-page PDF writer for G Cards statements.
  * Page items: {text,x,y,size,bold,italic,color} | {rect} | {circle} | {rule}
  */
 function buildPdfDocument(pages) {
@@ -1061,7 +1061,7 @@ function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 
         <section class="desk-statement-panel" id="desk-statement">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">G Corp Cards</p>
+              <p class="eyebrow">G Cards</p>
               <h2>Download statement</h2>
               <p class="muted desk-panel-help">Bank-style card account statement — cardholder details, period summary, and itemised transactions.</p>
             </div>
@@ -1165,7 +1165,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const drawFooter = (page) => {
     page.push({ rule: true, x1: left, y1: 52, x2: rightEdge, y2: 52, color: line, width: 0.5 });
     page.push({
-      text: `${G_CORP_STATEMENT.entity} · ${G_CORP_STATEMENT.registry} · VAT ${G_CORP_STATEMENT.vat}`,
+      text: `${G_CORP_STATEMENT.legalName}  ·  ${G_CORP_STATEMENT.entity}`,
       x: left,
       y: 38,
       size: 7,
@@ -1179,7 +1179,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
       color: muted,
     });
     page.push({
-      text: 'Confidential card account statement for the named cardholder. Please retain for your records.',
+      text: 'Confidential — for the named cardholder. Please retain for your records.',
       x: left,
       y: 14,
       size: 6.5,
@@ -1296,7 +1296,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
         bold: true,
         color: navy,
       });
-      page.push({ text: G_CORP_STATEMENT.programme, x: 320, y: 650, size: 7.5, color: muted });
+      page.push({ text: G_CORP_STATEMENT.entity, x: 320, y: 650, size: 7.5, color: muted });
 
       // Totals strip
       page.push({ rect: true, x: left, y: 575, w: rightEdge - left, h: 56, fill: navy });
@@ -1354,7 +1354,7 @@ function downloadGCorpStatementPdf(card, fromStr, toStr) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `G-Corp-Cards-Statement-${last4}-${fromStr}_${toStr}.pdf`;
+  a.download = `G-Cards-Statement-${last4}-${fromStr}_${toStr}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1545,24 +1545,24 @@ function downloadGCorpTransactionPdf(spend) {
     color: muted,
   });
   page.push({
-    text: 'If you do not recognise this transaction, contact G Corp Cards without delay using the details below.',
+    text: 'If you do not recognise this transaction, notify G Cards without delay.',
     x: left + 12,
     y: Math.max(100, y - 36),
     size: 7,
     color: muted,
   });
   page.push({
-    text: 'This is a card issuer record of a posted transaction. It is not a cash receipt from the merchant.',
+    text: 'This is an issuer record of a posted card transaction. It is not a merchant cash receipt.',
     x: left + 12,
     y: Math.max(86, y - 50),
     size: 7,
     color: muted,
   });
 
-  // Footer
+  // Footer — issuer name and address only (no VAT / business ID)
   page.push({ rule: true, x1: left, y1: 64, x2: right, y2: 64, color: line, width: 0.5 });
   page.push({
-    text: `${G_CORP_STATEMENT.entity}  ·  ${G_CORP_STATEMENT.registry}  ·  VAT ${G_CORP_STATEMENT.vat}`,
+    text: `${G_CORP_STATEMENT.legalName}  ·  ${G_CORP_STATEMENT.entity}`,
     x: left,
     y: 50,
     size: 6.5,
@@ -1594,7 +1594,7 @@ function downloadGCorpTransactionPdf(spend) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `G-Corp-Cards-Transaction-Information-${last4}-${auth}.pdf`;
+  a.download = `G-Cards-Transaction-Information-${last4}-${auth}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1900,7 +1900,7 @@ function makeIssuedCard(options = {}) {
     endless
       ? 'G Cards Member'
       : kind === 'corporate'
-        ? 'G CORP CARDS'
+        ? 'G CARDS EUROPE'
         : 'G Cards Member';
   return {
     id: endless ? 'card-endless-1955' : `card-${issuedAt}-${last4}`,
@@ -2476,7 +2476,7 @@ function deskIssuePanelHtml() {
           <div class="desk-issue-meta">
             <div><small>Daily spend limit</small><strong>${esc(limitTxt)}</strong></div>
             <div><small>Billing currency</small><strong>${esc(meta.currency)}</strong></div>
-            <div><small>Programme</small><strong>G Corp Cards</strong></div>
+            <div><small>Issuer</small><strong>G Cards</strong></div>
           </div>
           <div class="active-actions">
             <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
@@ -2556,7 +2556,7 @@ function deskHomeHtml() {
             </div>
           </div>
           <article class="plastic ${plasticClass(cardBrand)} desk-live-card${hasCard ? ' is-clickable' : ''}" ${hasCard ? `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"` : ''} aria-label="Selected card">
-            <div class="plastic-top"><span>${hasCard && normalizeKind(card.kind) === 'corporate' ? 'G Corp Cards' : 'G Cards EU'}</span>${schemeMark(cardBrand)}</div>
+            <div class="plastic-top"><span>${hasCard && normalizeKind(card.kind) === 'corporate' ? 'G Cards Europe' : 'G Cards'}</span>${schemeMark(cardBrand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
@@ -2778,7 +2778,7 @@ function deskCardDetailHtml() {
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${plasticClass(brand)} desk-live-card" aria-label="Card details">
-            <div class="plastic-top"><span>${normalizeKind(card.kind) === 'corporate' ? 'G Corp Cards' : 'G Cards EU'}</span>${schemeMark(brand)}</div>
+            <div class="plastic-top"><span>${normalizeKind(card.kind) === 'corporate' ? 'G Cards Europe' : 'G Cards'}</span>${schemeMark(brand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
@@ -3058,7 +3058,7 @@ function deskHistoryHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Search and filter payments. Download a G Corp Cards PDF statement for any card and period below.</p>
+          <p class="lede desk-home-lede">Search and filter payments. Download a G Cards PDF statement for any card and period below.</p>
         </section>
 
         ${selected ? spendDetailHtml(selected) : ''}
@@ -3169,7 +3169,7 @@ function schemeMark(brand) {
 
 function plasticCard({ brand, pan, holder, expiry, balance, note }) {
   return `<article class="plastic ${plasticClass(brand)}">
-      <div class="plastic-top"><span>G Corp Cards</span>${schemeMark(brand)}</div>
+      <div class="plastic-top"><span>G Cards</span>${schemeMark(brand)}</div>
       <div class="chip"></div>
       <p class="pan">${esc(pan)}</p>
       <div class="plastic-bottom">
@@ -4527,7 +4527,7 @@ document.body.addEventListener('submit', (event) => {
       downloadGCorpStatementPdf(card, from, to);
       state.flash = {
         kind: 'ok',
-        text: `G Corp Cards statement PDF downloaded · ····${String(card.pan).slice(-4)} · ${from} → ${to}`,
+        text: `G Cards statement PDF downloaded · ····${String(card.pan).slice(-4)} · ${from} → ${to}`,
       };
       render();
     });
