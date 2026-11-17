@@ -250,7 +250,7 @@ button.ghost.light:hover { background: rgba(255, 255, 255, 0.1); }
 .login-card h1 { font-family: Fraunces, Georgia, serif; font-weight: 560; letter-spacing: -0.03em; margin: 0 0 4px; color: var(--navy); font-size: 34px; }
 .wide { width: 100%; padding: 13px 16px; }
 
-/* desk host gate after password — loading shimmer → 404 server down */
+/* desk host gate after password — short loading shimmer, then open desk */
 .login { position: relative; }
 .login-shimmer {
   display: none;
