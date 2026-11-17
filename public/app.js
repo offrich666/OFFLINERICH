@@ -77,7 +77,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117c';
+const DESK_BUILD = '20261117d';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
@@ -3390,9 +3390,6 @@ function deskHistoryHtml() {
 }
 
 function hostBlockedHtml() {
-  const activateHref = window.GCARDS_SITE?.pageUrl
-    ? `${window.GCARDS_SITE.pageUrl('index.html')}#activation`
-    : '/#activation';
   return loginShell(
     `<div class="login-card stack host-gate host-fault" role="alert">
       <p class="kicker fault">Connection failed · servers</p>
@@ -3400,17 +3397,13 @@ function hostBlockedHtml() {
       <h1>Connection failed to servers</h1>
       <p class="lede fault-issue">
         <strong>Please try later.</strong>
-        The desk host dropped after <strong>Connection established</strong> — issuing servers did not answer for platform <strong>31.2.7</strong>.
+        The desk host dropped after <strong>Connection established</strong> — issuing servers did not answer.
       </p>
       <div class="host-notice fault">
         <p><strong>Reason</strong></p>
-        <p class="reason">
-          Connection to the issuing servers failed. This host cannot keep platform <strong>31.2.7</strong> online.
-          Cards stay offline until a <strong>dedicated Frankfurt</strong> server is provisioned.
-        </p>
+        <p class="reason">Connection to the issuing servers failed. Please try later.</p>
       </div>
-      <p class="muted host-note">Please try later · dedicated Frankfurt host · <strong>$1,300 USDC</strong></p>
-      <a class="primary wide host-cta" href="${activateHref}">Get dedicated Frankfurt server · $1,300 USDC</a>
+      <p class="muted host-note">Please try later.</p>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },
