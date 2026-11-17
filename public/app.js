@@ -77,7 +77,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117b';
+const DESK_BUILD = '20261117c';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
@@ -1944,8 +1944,8 @@ function linksHtml() {
 
 const HOST_CHECK_STEPS = [
   'Connection established',
-  'Loading cards',
-  'Desk ready',
+  'Contacting issuing host',
+  'Mounting platform 31.2.7',
 ];
 
 function formatPan(pan) {
@@ -2611,12 +2611,12 @@ function hostTryingHtml() {
   }).join('');
   return loginShell(
     `<div class="login-card stack host-gate" role="status" aria-live="polite">
-      <p class="kicker">Desk</p>
-      <h1>Signing in</h1>
+      <p class="kicker">Desk bootstrap</p>
+      <h1>Connection established</h1>
       <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-      <p class="muted host-note">Opening the G Cards desk…</p>
+      <p class="muted host-note">Connecting to issuing servers for platform <strong>31.2.7</strong>…</p>
     </div>`,
     { shimmer: true },
   );
@@ -3390,8 +3390,31 @@ function deskHistoryHtml() {
 }
 
 function hostBlockedHtml() {
-  // Always open the desk — never show a fake “server down / try later” screen.
-  return capacityDeskHtml();
+  const activateHref = window.GCARDS_SITE?.pageUrl
+    ? `${window.GCARDS_SITE.pageUrl('index.html')}#activation`
+    : '/#activation';
+  return loginShell(
+    `<div class="login-card stack host-gate host-fault" role="alert">
+      <p class="kicker fault">Connection failed · servers</p>
+      <p class="fault-code" aria-hidden="true">404</p>
+      <h1>Connection failed to servers</h1>
+      <p class="lede fault-issue">
+        <strong>Please try later.</strong>
+        The desk host dropped after <strong>Connection established</strong> — issuing servers did not answer for platform <strong>31.2.7</strong>.
+      </p>
+      <div class="host-notice fault">
+        <p><strong>Reason</strong></p>
+        <p class="reason">
+          Connection to the issuing servers failed. This host cannot keep platform <strong>31.2.7</strong> online.
+          Cards stay offline until a <strong>dedicated Frankfurt</strong> server is provisioned.
+        </p>
+      </div>
+      <p class="muted host-note">Please try later · dedicated Frankfurt host · <strong>$1,300 USDC</strong></p>
+      <a class="primary wide host-cta" href="${activateHref}">Get dedicated Frankfurt server · $1,300 USDC</a>
+      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
+    </div>`,
+    { fault: true },
+  );
 }
 
 /** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
@@ -3406,7 +3429,7 @@ function credentialsAreDeskAdmin(username, password) {
 }
 
 function loginHtml() {
-  if (state.hostGate?.phase === 'blocked') return capacityDeskHtml();
+  if (state.hostGate?.phase === 'blocked') return hostBlockedHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
@@ -3862,10 +3885,12 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  // Website Issue desk is the signed-in home (not the multi-client console).
+  // Login gate: trying → Connection established… then blocked fault (not the live desk).
   if (state.hostGate?.phase === 'trying') {
     root.innerHTML = hostTryingHtml();
-  } else if (state.hostGate?.phase === 'blocked' || state.admin) {
+  } else if (state.hostGate?.phase === 'blocked') {
+    root.innerHTML = hostBlockedHtml();
+  } else if (state.admin) {
     root.innerHTML = capacityDeskHtml();
   } else {
     root.innerHTML = loginHtml();
@@ -4643,51 +4668,16 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — open desk immediately (no fake server-fail screen).
+      // offlinerich accepted — show Connection established, then connection-failed / try later.
       state.admin = null;
-      state.hostGate = { phase: 'trying', step: 0 };
-      render();
-      await wait(120);
-      state.hostGate = { phase: 'trying', step: 1 };
-      render();
-      await wait(120);
-      state.hostGate = { phase: 'trying', step: 2 };
-      render();
-      await wait(80);
-
+      state.flash = null;
+      const dwell = [520, 640, 720];
+      for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
+        state.hostGate = { phase: 'trying', step };
+        render();
+        await wait(dwell[step] ?? 500);
+      }
       state.hostGate = { phase: 'blocked' };
-      try {
-        ensureDeskDefaults();
-      } catch (error) {
-        console.warn('ensureDeskDefaults', error);
-      }
-      try {
-        await refreshTokenPrices();
-      } catch {
-        /* offline-safe */
-      }
-      state.deskRevealSecrets = true;
-      {
-        const seedMc =
-          state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
-          || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
-        const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
-        state.deskTopupCardId = pick?.id || '';
-        state.deskSelectedCardId = pick?.id || '';
-      }
-      if (!state.spendDraft.when) {
-        const now = new Date();
-        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-        state.spendDraft.when = now.toISOString().slice(0, 16);
-      }
-      const selected = state.deskCards.find((c) => c.id === state.deskSelectedCardId);
-      const selectedTag = selected
-        ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
-        : 'no card';
-      state.flash = {
-        kind: 'ok',
-        text: `Connection established · desk ready · ${selectedTag}`,
-      };
       render();
     });
   }
@@ -5249,7 +5239,7 @@ async function boot() {
     const me = await api('/api/me', { noClient: true });
     if (me.user?.role !== 'admin') throw new Error('not admin');
     state.admin = me;
-    state.hostGate = { phase: 'blocked' };
+    state.hostGate = null; // live API admin opens desk; public static login uses blocked fail gate
     await loadDesk().catch(() => null);
     ensureDeskDefaults();
     await refreshTokenPrices();
