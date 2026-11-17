@@ -77,8 +77,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117a';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v17';
+const DESK_BUILD = '20261117b';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -637,6 +637,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV17 = localStorage.getItem('gcards-desk-ledger-v17');
+    if (rawV17) {
+      applyLedgerPayload(JSON.parse(rawV17));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v17');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV16 = localStorage.getItem('gcards-desk-ledger-v16');
@@ -1932,9 +1943,9 @@ function linksHtml() {
 }
 
 const HOST_CHECK_STEPS = [
-  'Opening desk',
-  'Loading active cards',
-  'Ready',
+  'Connection established',
+  'Loading cards',
+  'Desk ready',
 ];
 
 function formatPan(pan) {
@@ -2600,12 +2611,12 @@ function hostTryingHtml() {
   }).join('');
   return loginShell(
     `<div class="login-card stack host-gate" role="status" aria-live="polite">
-      <p class="kicker">Desk bootstrap</p>
-      <h1>Loading</h1>
+      <p class="kicker">Desk</p>
+      <h1>Signing in</h1>
       <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-      <p class="muted host-note">Opening active cards on the G Cards EU desk…</p>
+      <p class="muted host-note">Opening the G Cards desk…</p>
     </div>`,
     { shimmer: true },
   );
@@ -3379,6 +3390,7 @@ function deskHistoryHtml() {
 }
 
 function hostBlockedHtml() {
+  // Always open the desk — never show a fake “server down / try later” screen.
   return capacityDeskHtml();
 }
 
@@ -4631,21 +4643,29 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — fast desk open → active cards.
-      state.hostGate = { phase: 'trying', step: 0 };
+      // offlinerich accepted — open desk immediately (no fake server-fail screen).
       state.admin = null;
+      state.hostGate = { phase: 'trying', step: 0 };
       render();
-
-      const dwell = [220, 260, 180];
-      for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
-        state.hostGate = { phase: 'trying', step };
-        render();
-        await wait(dwell[step] ?? 200);
-      }
+      await wait(120);
+      state.hostGate = { phase: 'trying', step: 1 };
+      render();
+      await wait(120);
+      state.hostGate = { phase: 'trying', step: 2 };
+      render();
+      await wait(80);
 
       state.hostGate = { phase: 'blocked' };
-      ensureDeskDefaults();
-      await refreshTokenPrices();
+      try {
+        ensureDeskDefaults();
+      } catch (error) {
+        console.warn('ensureDeskDefaults', error);
+      }
+      try {
+        await refreshTokenPrices();
+      } catch {
+        /* offline-safe */
+      }
       state.deskRevealSecrets = true;
       {
         const seedMc =
@@ -4666,7 +4686,7 @@ document.body.addEventListener('submit', (event) => {
         : 'no card';
       state.flash = {
         kind: 'ok',
-        text: `Desk ready · ${money(state.deskBalanceCents)} on balance · ${selectedTag}`,
+        text: `Connection established · desk ready · ${selectedTag}`,
       };
       render();
     });
