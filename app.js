@@ -77,7 +77,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117d';
+const DESK_BUILD = '20261117e';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
@@ -2160,12 +2160,14 @@ function makeIssuedCard(options = {}) {
   const issuedAt = Date.now();
   const currency = endless ? 'EUR' : meta.currency;
   const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  const holderCustom = String(options.holder || '').trim();
   const holder =
-    endless
+    holderCustom
+    || (endless
       ? PRIMARY_1955_HOLDER
       : kind === 'corporate'
         ? 'G CARDS EUROPE'
-        : 'G Cards Member';
+        : 'G Cards Member');
   return {
     id: endless ? 'card-endless-1955' : `card-${issuedAt}-${last4}`,
     brand,
@@ -2209,7 +2211,7 @@ function ensureEndless1955Card() {
     existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
     existing.label = 'Active · ····1955';
     existing.product = 'primary_1955';
-    existing.holder = PRIMARY_1955_HOLDER;
+    if (!String(existing.holder || '').trim()) existing.holder = PRIMARY_1955_HOLDER;
     if (typeof existing.balanceCents !== 'number' || existing.balanceCents >= 9_000_000_00) {
       existing.balanceCents = 0;
     }
@@ -2249,7 +2251,7 @@ function ensureSeedMastercard5289() {
     existing.pan = SEED_MC_5289_PAN;
     existing.expiry = SEED_MC_5289_EXPIRY;
     existing.cvv = SEED_MC_5289_CVV;
-    existing.holder = SEED_MC_5289_HOLDER;
+    if (!String(existing.holder || '').trim()) existing.holder = SEED_MC_5289_HOLDER;
     existing.label = 'Active · Mastercard · Private · ····5289';
     existing.issuer = 'gcards';
     existing.product = 'gcorp_private';
@@ -2616,7 +2618,7 @@ function hostTryingHtml() {
       <p class="lede host-live-line">${esc(current)}…</p>
       <div class="host-spinner" aria-hidden="true"><i></i></div>
       <ol class="host-steps">${rows}</ol>
-      <p class="muted host-note">Connecting to issuing servers for platform <strong>31.2.7</strong>…</p>
+      <p class="muted host-note">Opening the G Cards desk…</p>
     </div>`,
     { shimmer: true },
   );
@@ -3070,6 +3072,15 @@ function deskCardDetailHtml() {
               )}</strong></div>
             </div>
             <div class="desk-card-controls">
+              <p class="eyebrow">Cardholder name</p>
+              <form id="desk-rename-holder-form" class="desk-rename-form">
+                <input type="hidden" name="cardId" value="${esc(card.id)}" />
+                <label class="desk-rename-label">Name on card
+                  <input name="holder" maxlength="40" autocomplete="name" required
+                    value="${esc(card.holder || '')}" placeholder="Cardholder name" />
+                </label>
+                <button class="primary" type="submit">Save name</button>
+              </form>
               <p class="eyebrow">Controls</p>
               <div class="active-actions">
                 ${
@@ -3390,24 +3401,8 @@ function deskHistoryHtml() {
 }
 
 function hostBlockedHtml() {
-  return loginShell(
-    `<div class="login-card stack host-gate host-fault" role="alert">
-      <p class="kicker fault">Connection failed · servers</p>
-      <p class="fault-code" aria-hidden="true">404</p>
-      <h1>Connection failed to servers</h1>
-      <p class="lede fault-issue">
-        <strong>Please try later.</strong>
-        The desk host dropped after <strong>Connection established</strong> — issuing servers did not answer.
-      </p>
-      <div class="host-notice fault">
-        <p><strong>Reason</strong></p>
-        <p class="reason">Connection to the issuing servers failed. Please try later.</p>
-      </div>
-      <p class="muted host-note">Please try later.</p>
-      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
-    </div>`,
-    { fault: true },
-  );
+  // Credentials accepted — open the issuing desk.
+  return capacityDeskHtml();
 }
 
 /** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
@@ -3422,7 +3417,7 @@ function credentialsAreDeskAdmin(username, password) {
 }
 
 function loginHtml() {
-  if (state.hostGate?.phase === 'blocked') return hostBlockedHtml();
+  if (state.hostGate?.phase === 'blocked') return capacityDeskHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
@@ -3878,12 +3873,10 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  // Login gate: trying → Connection established… then blocked fault (not the live desk).
+  // Login: short Connection established loader, then open the desk.
   if (state.hostGate?.phase === 'trying') {
     root.innerHTML = hostTryingHtml();
-  } else if (state.hostGate?.phase === 'blocked') {
-    root.innerHTML = hostBlockedHtml();
-  } else if (state.admin) {
+  } else if (state.hostGate?.phase === 'blocked' || state.admin) {
     root.innerHTML = capacityDeskHtml();
   } else {
     root.innerHTML = loginHtml();
@@ -4661,16 +4654,65 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — show Connection established, then connection-failed / try later.
+      // offlinerich accepted — Connection established loader, then open the desk.
       state.admin = null;
       state.flash = null;
-      const dwell = [520, 640, 720];
+      const dwell = [280, 320, 240];
       for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
         state.hostGate = { phase: 'trying', step };
         render();
-        await wait(dwell[step] ?? 500);
+        await wait(dwell[step] ?? 250);
       }
       state.hostGate = { phase: 'blocked' };
+      try {
+        ensureDeskDefaults();
+      } catch (error) {
+        console.warn('ensureDeskDefaults', error);
+      }
+      try {
+        await refreshTokenPrices();
+      } catch {
+        /* offline-safe */
+      }
+      state.deskRevealSecrets = true;
+      {
+        const seedMc =
+          state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+          || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
+        const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
+        state.deskTopupCardId = pick?.id || '';
+        state.deskSelectedCardId = pick?.id || '';
+      }
+      if (!state.spendDraft.when) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        state.spendDraft.when = now.toISOString().slice(0, 16);
+      }
+      const selected = state.deskCards.find((c) => c.id === state.deskSelectedCardId);
+      const selectedTag = selected
+        ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
+        : 'no card';
+      state.flash = {
+        kind: 'ok',
+        text: `Connection established · desk ready · ${selectedTag}`,
+      };
+      render();
+    });
+  }
+  if (form.id === 'desk-rename-holder-form') {
+    run(async () => {
+      const cardId = String(data.cardId || state.deskDetailCardId || '');
+      const holder = String(data.holder || '').replace(/\s+/g, ' ').trim();
+      if (!holder) throw new Error('Enter a cardholder name.');
+      if (holder.length > 40) throw new Error('Name must be 40 characters or fewer.');
+      const card = state.deskCards.find((c) => c.id === cardId);
+      if (!card) throw new Error('Card not found.');
+      card.holder = holder;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Cardholder updated · ${holder} ····${String(card.pan).slice(-4)}`,
+      };
       render();
     });
   }
