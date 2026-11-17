@@ -70,16 +70,15 @@ const GJIRAFA_SPEND_AUTH = '790924';
 const GJIRAFA_SPEND_AMOUNT_CENTS = 759_800; // €7,598.00
 const CB_INT_7598_SPEND_ID = 'spend-1794835200000-1955-759800-cb';
 const CB_INT_7598_AUTH = '791033';
-const CB_INT_7598_AMOUNT_CENTS = 759_800; // €7,598.00 — same day as GJIRAFA INC
 const CB_INT_3599_SPEND_ID = 'spend-cb-int-3599-515114';
 const CB_INT_3599_AUTH = '515114';
 const CB_INT_3599_AMOUNT_CENTS = 3_599; // €35.99
 const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
-const PRIMARY_1955_BALANCE_CENTS = 8_478_882; // after €7,598×2 + €35.99 TEB
+const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261116y';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v16';
+const DESK_BUILD = '20261117a';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v17';
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -532,40 +531,15 @@ function ensureGjirafaSpend(card) {
   }
 }
 
-/**
- * Keep CB INT DIGITAL JSC €7,598.00 on ····1955 (same day / amount as GJIRAFA INC).
- */
-function ensureCbIntDigital7598Spend(card) {
-  if (!card) return;
-  const existing = state.deskSpends.find(
+/** Drop CB INT DIGITAL JSC €7,598 auth 791033 (user asked to remove). */
+function purgeCbIntDigital7598() {
+  return refundAndDropSpends(
     (s) =>
       s.id === CB_INT_7598_SPEND_ID
       || String(s.authNr || '') === CB_INT_7598_AUTH
-      || (Number(s.amountCents) === CB_INT_7598_AMOUNT_CENTS
+      || (Number(s.amountCents) === 759_800
         && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
   );
-  const whenDate = new Date('2026-11-16T14:28:00+01:00');
-  const payload = {
-    id: CB_INT_7598_SPEND_ID,
-    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
-    whenIso: whenDate.toISOString(),
-    merchant: 'CB INT DIGITAL JSC',
-    amountCents: CB_INT_7598_AMOUNT_CENTS,
-    kind: 'payment',
-    cardId: card.id,
-    cardLast4: String(card.pan).replace(/\D/g, '').slice(-4) || '1955',
-    network: String(card.brand || 'mastercard'),
-    status: 'Completed',
-    gateway: 'TEB BNP PARIBAS',
-    authNr: CB_INT_7598_AUTH,
-    threeDs: 'not_required',
-    createdAt: whenDate.getTime(),
-  };
-  if (existing) {
-    Object.assign(existing, payload);
-  } else {
-    state.deskSpends = [payload, ...state.deskSpends];
-  }
 }
 
 /**
@@ -663,6 +637,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV16 = localStorage.getItem('gcards-desk-ledger-v16');
+    if (rawV16) {
+      applyLedgerPayload(JSON.parse(rawV16));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v16');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV15 = localStorage.getItem('gcards-desk-ledger-v15');
@@ -2321,7 +2306,7 @@ function ensureDeskDefaults() {
   ensureExampleSpend(primary);
   ensureIpkoSpend(primary);
   ensureGjirafaSpend(primary);
-  ensureCbIntDigital7598Spend(primary);
+  purgeCbIntDigital7598();
   ensureCbIntDigital3599Spend(primary);
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
@@ -4278,7 +4263,7 @@ document.body.addEventListener('click', (event) => {
     ensureExampleSpend(primary);
     ensureIpkoSpend(primary);
     ensureGjirafaSpend(primary1955);
-    ensureCbIntDigital7598Spend(primary1955);
+    purgeCbIntDigital7598();
     ensureCbIntDigital3599Spend(primary1955);
     saveDeskLedger();
     render();
