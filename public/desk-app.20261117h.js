@@ -4531,7 +4531,7 @@ document.body.addEventListener('click', (event) => {
       return;
     }
     if (!panPassesLuhn(card.pan)) {
-      state.flash = { kind: 'error', text: 'This PAN fails Luhn. Issue a new card, then pay via TEB/RBKO/NLB.' };
+      state.flash = { kind: 'error', text: 'This PAN fails Luhn. Issue a new card from Cards.' };
       render();
       return;
     }
