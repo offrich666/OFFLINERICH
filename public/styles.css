@@ -1201,6 +1201,44 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   opacity: 0.72;
   border-style: dashed;
 }
+.desk-card-pick.is-locked {
+  cursor: not-allowed;
+  opacity: 0.82;
+  pointer-events: none;
+  border-style: dashed;
+  background: color-mix(in srgb, var(--panel) 88%, #8a1f1f 12%);
+}
+.desk-live-card.is-frozen-locked {
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+  opacity: 0.92;
+}
+.desk-security-banner {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, #8a1f1f 45%, var(--line));
+  background: color-mix(in srgb, #8a1f1f 12%, var(--panel));
+  color: var(--text);
+}
+.desk-security-banner strong {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.desk-security-banner span,
+.desk-security-banner-soft span {
+  font-size: 14px;
+  color: var(--muted);
+}
+.desk-security-banner-soft {
+  border-color: color-mix(in srgb, #8a5a1f 40%, var(--line));
+  background: color-mix(in srgb, #8a5a1f 10%, var(--panel));
+}
+.desk-history-frozen .host-notice {
+  margin: 12px 0;
+}
 .desk-card-pick-top {
   display: flex;
   justify-content: space-between;
