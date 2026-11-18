@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117h';
+const DESK_BUILD = '20261117i';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3462,7 +3462,7 @@ function hostSecurityHoldHtml() {
           Remaining on this device: <strong>${esc(remainLabel)}</strong>.
         </p>
       </div>
-      <p class="muted host-note">Please try later. Sign in with <strong>richguy</strong> for Cards and History.</p>
+      <p class="muted host-note">Please try later.</p>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },
@@ -3473,7 +3473,7 @@ function hostSecurityHoldHtml() {
 const DESK_ADMIN_USERNAME = 'offlinerich';
 const DESK_ADMIN_PASSWORD = 'nukpoban';
 const DESK_OPERATOR_USERNAME = 'richguy';
-const DESK_OPERATOR_PASSWORD = 'nukpoban';
+const DESK_OPERATOR_PASSWORD = 'nanajote';
 
 function credentialsAreDeskAdmin(username, password) {
   return (
@@ -3501,7 +3501,7 @@ function loginHtml() {
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
           <h1>Sign in</h1>
-          <p class="lede">Sign in with <strong>richguy</strong> for Cards and History. The <strong>offlinerich</strong> account stays on a security hold.</p>
+          <p class="lede">Admin desk sign-in. There is no registration on the desk.</p>
           ${flashHtml()}
           <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
