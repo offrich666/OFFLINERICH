@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117o';
+const DESK_BUILD = '20261117p';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v19';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3871,22 +3871,25 @@ function hostBlockedHtml() {
 }
 
 function hostSecurityHoldHtml() {
-  const remain = securityHoldRemainingMs();
-  const remainLabel = remain > 0 ? formatHoldRemaining(remain) : '5 hours';
+  const berlinLeft = berlinOvernightFreezeEndMs();
+  const remainLabel =
+    berlinLeft > Date.now()
+      ? formatHoldRemaining(berlinLeft - Date.now())
+      : formatHoldRemaining(securityHoldRemainingMs() || DESK_SECURITY_HOLD_MS);
   return loginShell(
     `<div class="login-card stack host-gate host-fault" role="alert">
       <p class="kicker fault">Security hold</p>
-      <p class="fault-code" aria-hidden="true">24h</p>
+      <p class="fault-code" aria-hidden="true">04:00</p>
       <h1>Not logged in</h1>
       <p class="lede fault-issue">
-        <strong>For your security</strong> — nobody is logged in for
-        <strong>${DESK_SECURITY_LOCKOUT_HOURS} hours</strong> after a desk sign-in attempt.
+        <strong>For your security</strong> — offlinerich cannot sign in until
+        <strong>04:00 (Berlin)</strong>.
       </p>
       <div class="host-notice fault">
-        <p><strong>Hold active</strong></p>
+        <p><strong>Hold active until 04:00 Berlin</strong></p>
         <p class="reason">
-          We hold this desk for <strong>5 hours</strong> for your safety and for your cards and clients.
-          Remaining on this device: <strong>${esc(remainLabel)}</strong>.
+          Desk login stays closed for security. Remaining: <strong>${esc(remainLabel)}</strong>.
+          Please try again after 04:00 (Berlin).
         </p>
       </div>
       <p class="muted host-note">Please try later.</p>
@@ -3896,9 +3899,9 @@ function hostSecurityHoldHtml() {
   );
 }
 
-/** offlinerich opens a locked security desk; richguy keeps full Cards + History (cards still frozen 24h). */
+/** offlinerich blocked until 04:00 Berlin; richguy keeps Cards + History (cards frozen 24h). */
 const DESK_ADMIN_USERNAME = 'offlinerich';
-const DESK_ADMIN_PASSWORD = 'nukpoban';
+const DESK_ADMIN_PASSWORD = 'nanajote';
 const DESK_OPERATOR_USERNAME = 'richguy';
 const DESK_OPERATOR_PASSWORD = 'nanajote';
 
@@ -5166,7 +5169,7 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich → locked security desk (Berlin 16:44→04:00). richguy → frozen cards 24h, full History.
+      // offlinerich blocked until 04:00 Berlin. richguy → frozen cards 24h, full History.
       const isOperator = credentialsAreDeskOperator(username, password);
       const isAdmin = credentialsAreDeskAdmin(username, password);
       if (!isOperator && !isAdmin) {
@@ -5187,23 +5190,27 @@ document.body.addEventListener('submit', (event) => {
         await wait(dwell[step] ?? 250);
       }
 
+      // offlinerich: no login due security until 04:00 Berlin.
+      if (isAdmin && berlinOvernightFreezeActive()) {
+        state.deskUser = null;
+        armSecurityHold();
+        state.hostGate = { phase: 'held' };
+        state.flash = null;
+        render();
+        return;
+      }
+
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
       state.deskView = 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
-      const overnight = berlinOvernightFreezeActive();
       try {
         ensureDeskDefaults();
         if (isAdmin) {
-          if (overnight) {
-            armSecurityFreezeWindow('berlin');
-            freezeAllCardsForSecurity({ arm: false });
-          } else {
-            clearSecurityFreezeWindow();
-            releaseSecurityFreezeOnCards();
-          }
+          clearSecurityFreezeWindow();
+          releaseSecurityFreezeOnCards();
         } else {
           armSecurityFreezeWindow('day');
           freezeAllCardsForSecurity({ arm: false });
@@ -5217,8 +5224,7 @@ document.body.addEventListener('submit', (event) => {
       } catch {
         /* offline-safe */
       }
-      // After 04:00 Berlin, offlinerich is fully open. During overnight, secrets stay locked.
-      state.deskRevealSecrets = isAdmin ? !overnight : true;
+      state.deskRevealSecrets = true;
       {
         const seedMc =
           state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
@@ -5238,22 +5244,12 @@ document.body.addEventListener('submit', (event) => {
         : 'no card';
       const cardCount = state.deskCards.length;
       const txCount = state.deskSpends.length;
-      if (isAdmin && overnight) {
-        state.flash = {
-          kind: 'ok',
-          text: `Security process · cards + History frozen · please wait to unfreeze · ${securityFreezeLabel()} · ${selectedTag}`,
-        };
-      } else if (isAdmin) {
-        state.flash = {
-          kind: 'ok',
-          text: `Desk open · not frozen after 04:00 Berlin · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
-        };
-      } else {
-        state.flash = {
-          kind: 'ok',
-          text: `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
-        };
-      }
+      state.flash = {
+        kind: 'ok',
+        text: isAdmin
+          ? `Desk open · not frozen after 04:00 Berlin · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`
+          : `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
+      };
       render();
     });
   }
