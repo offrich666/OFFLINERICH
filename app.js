@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117j';
+const DESK_BUILD = '20261117k';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3257,7 +3257,6 @@ function spendDetailHtml(spend) {
           <dl class="desk-tx-detail-list">
             <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${refund ? 'Refund' : 'Payment'}</span></dd></div>
             <div><dt>Status</dt><dd><span class="pill good">${esc(spend.status || (refund ? 'Refunded' : 'Completed'))}</span></dd></div>
-            <div><dt>Payment Gateway</dt><dd>${esc(spend.gateway || PAYMENT_GATEWAYS[0])}</dd></div>
             <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
             ${spend.orderNr ? `<div><dt>Order Nr</dt><dd class="mono">${esc(spend.orderNr)}</dd></div>` : ''}
             ${spend.paymentId ? `<div><dt>Payment ID</dt><dd class="mono">${esc(spend.paymentId)}</dd></div>` : ''}
@@ -3277,10 +3276,10 @@ function deskHistoryHtml() {
     storedSpends.find((s) => s.id === state.spendDetailId)
     || state.deskSpends.find((s) => s.id === state.spendDetailId)
     || null;
+  state.spendFilterGateway = '';
   const filtersOn = Boolean(
     state.spendFilterCardId
       || state.spendFilterQuery
-      || state.spendFilterGateway
       || state.spendFilterStatus
       || (state.spendFilterRange && state.spendFilterRange !== 'all'),
   );
@@ -3292,15 +3291,6 @@ function deskHistoryHtml() {
       const brand = c.endless ? '1955' : brandLabel(c.brand);
       const on = c.id === state.spendFilterCardId ? 'on' : '';
       return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-card" data-id="${esc(c.id)}">${esc(brand)} ····${esc(last4)}</button>`;
-    }),
-  ].join('');
-
-  const gatewayChips = [
-    `<button type="button" class="desk-filter-chip ${!state.spendFilterGateway ? 'on' : ''}" data-action="desk-filter-gateway" data-value="">All gateways</button>`,
-    ...PAYMENT_GATEWAYS.map((g) => {
-      const on = g === state.spendFilterGateway ? 'on' : '';
-      const short = g.split(' ')[0];
-      return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-gateway" data-value="${esc(g)}">${esc(short)}</button>`;
     }),
   ].join('');
 
@@ -3330,7 +3320,6 @@ function deskHistoryHtml() {
     ? storedSpends
         .map((s) => {
           const on = s.id === state.spendDetailId ? 'is-open' : '';
-          const gatewayShort = String(s.gateway || '').split(' ')[0] || '—';
           const refund = isSpendRefund(s);
           const card = state.deskCards.find((c) => c.id === s.cardId);
           const cur = card ? cardCurrency(card) : 'EUR';
@@ -3338,7 +3327,7 @@ function deskHistoryHtml() {
             <td class="desk-tx-when">${esc(s.when)}</td>
             <td>
               <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
-              <small class="desk-tx-sub">${esc(gatewayShort)} · Auth ${esc(s.authNr || '—')} · ${refund ? 'Refund' : 'Payment'}</small>
+              <small class="desk-tx-sub">Auth ${esc(s.authNr || '—')} · ${refund ? 'Refund' : 'Payment'}</small>
             </td>
             <td class="desk-tx-amount">${formatSpendAmountHtml(s, cur)}</td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
@@ -3354,7 +3343,7 @@ function deskHistoryHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Search and filter payments. Download a G Cards PDF statement for any card and period below.</p>
+          <p class="lede desk-home-lede">Search and filter card history. Download a G Cards PDF statement for any card and period below.</p>
         </section>
 
         ${selected ? spendDetailHtml(selected) : ''}
@@ -3384,15 +3373,11 @@ function deskHistoryHtml() {
           <div class="desk-history-filters" id="desk-history-filters">
             <label class="desk-history-search">
               <span>Search</span>
-              <input id="desk-spend-search" type="search" placeholder="Merchant, auth, gateway…" value="${esc(state.spendFilterQuery)}" autocomplete="off" />
+              <input id="desk-spend-search" type="search" placeholder="Merchant, auth…" value="${esc(state.spendFilterQuery)}" autocomplete="off" />
             </label>
             <div class="desk-filter-group">
               <small>Card</small>
               <div class="desk-filter-chips">${cardChips}</div>
-            </div>
-            <div class="desk-filter-group">
-              <small>Gateway</small>
-              <div class="desk-filter-chips">${gatewayChips}</div>
             </div>
             <div class="desk-filter-group">
               <small>Period</small>
@@ -4530,60 +4515,6 @@ document.body.addEventListener('click', (event) => {
         render();
       }).catch(() => {});
     }
-    return;
-  }
-  if (action === 'desk-open-gateway') {
-    const focusedId = button.dataset.id || state.deskDetailCardId || state.deskTopupCardId;
-    const card =
-      state.deskCards.find((c) => c.id === focusedId) || deskActiveCard();
-    if (!card?.pan) {
-      state.flash = { kind: 'error', text: 'Issue a card first.' };
-      render();
-      return;
-    }
-    if (!panPassesLuhn(card.pan)) {
-      state.flash = { kind: 'error', text: 'This PAN fails Luhn. Issue a new card from Cards.' };
-      render();
-      return;
-    }
-    if (!cardIsOperable(card)) {
-      state.flash = {
-        kind: 'error',
-        text:
-          cardStatusKey(card) === 'deactivated'
-            ? 'Card is deactivated. Reactivate it first.'
-            : 'Card is frozen. Unfreeze it first.',
-      };
-      render();
-      return;
-    }
-    const available = Number(card.balanceCents || 0);
-    if (available <= 0) {
-      state.flash = { kind: 'error', text: 'Top up this card with USDT Sol or USDT BSC first.' };
-      render();
-      document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      return;
-    }
-    const bank = button.dataset.bank || 'teb';
-    const amountCents = Math.min(available, Math.max(100, Math.round(available * 0.05) || 2500));
-    try {
-      sessionStorage.setItem(
-        'gcards-pay-intent-v1',
-        JSON.stringify({
-          pan: String(card.pan).replace(/\D/g, ''),
-          expiry: card.expiry,
-          cvv: card.cvv,
-          holder: card.holder || 'G Cards Member',
-          amountCents,
-          merchant: 'Gjirafa50',
-          bank,
-        }),
-      );
-    } catch {
-      /* ignore */
-    }
-    const payUrl = window.GCARDS_SITE?.pageUrl ? window.GCARDS_SITE.pageUrl('pay.html') : 'pay.html';
-    window.location.href = `${payUrl}?bank=${encodeURIComponent(bank)}&amount=${amountCents}&merchant=Gjirafa50`;
     return;
   }
   if (action === 'desk-copy-wallet-pack') {
