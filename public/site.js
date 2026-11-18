@@ -61,8 +61,9 @@
     return false;
   }
 
+  /** Desk sign-in never opens on public or LAN — always security hold / wait. */
   function deskLoginOpens() {
-    return isLanHost() || hasApi();
+    return false;
   }
 
   function qrImageUrl(text) {

@@ -77,7 +77,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117f';
+const DESK_BUILD = '20261117g';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3404,15 +3404,10 @@ function deskHistoryHtml() {
 }
 
 function deskLoginOpensHere() {
+  // Always show the security wait / not-logged-in hold (domain + localhost IP).
   if (typeof window.GCARDS_SITE?.deskLoginOpens === 'function') {
     return Boolean(window.GCARDS_SITE.deskLoginOpens());
   }
-  if (typeof window.GCARDS_SITE?.hasApi === 'function' && window.GCARDS_SITE.hasApi()) return true;
-  const host = String(location.hostname || '').toLowerCase();
-  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
-  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   return false;
 }
 
@@ -3470,7 +3465,7 @@ function hostSecurityHoldHtml() {
           Remaining on this device: <strong>${esc(remainLabel)}</strong>.
         </p>
       </div>
-      <p class="muted host-note">Please try later. Use the local IP desk when you need to open cards.</p>
+      <p class="muted host-note">Please try later. This hold protects your cards and clients.</p>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },
