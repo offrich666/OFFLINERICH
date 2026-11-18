@@ -79,11 +79,13 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117k';
+const DESK_BUILD = '20261117l';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
+const DESK_SECURITY_FREEZE_KEY = 'gcards-desk-security-freeze-until';
+const DESK_SECURITY_FREEZE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -1989,8 +1991,56 @@ function deskActiveCard() {
   return state.deskCards.find((c) => c.id === id) || state.deskCards[0] || null;
 }
 
+function securityFreezeRemainingMs() {
+  try {
+    const until = Number(localStorage.getItem(DESK_SECURITY_FREEZE_KEY) || 0);
+    if (!Number.isFinite(until) || until <= Date.now()) {
+      localStorage.removeItem(DESK_SECURITY_FREEZE_KEY);
+      return 0;
+    }
+    return until - Date.now();
+  } catch {
+    return 0;
+  }
+}
+
+function securityFreezeActive() {
+  return securityFreezeRemainingMs() > 0;
+}
+
+function armSecurityFreezeWindow() {
+  try {
+    const until = Number(localStorage.getItem(DESK_SECURITY_FREEZE_KEY) || 0);
+    if (!Number.isFinite(until) || until <= Date.now()) {
+      localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(Date.now() + DESK_SECURITY_FREEZE_MS));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Freeze every card for the 24h security window. */
+function freezeAllCardsForSecurity() {
+  armSecurityFreezeWindow();
+  let changed = false;
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    if (!card.frozen || card.status !== 'frozen' || card.ready || !card.securityFreeze) {
+      card.frozen = true;
+      card.status = 'frozen';
+      card.ready = false;
+      card.securityFreeze = true;
+      card.activatesAt = 0;
+      changed = true;
+    }
+  }
+  if (changed) saveDeskLedger();
+  return changed;
+}
+
 function syncCardStatuses() {
   let changed = false;
+  const securityOn = securityFreezeActive();
   for (const card of state.deskCards) {
     if (!card) continue;
     if (card.deactivated || card.status === 'deactivated') {
@@ -2000,6 +2050,27 @@ function syncCardStatuses() {
         card.ready = false;
         changed = true;
       }
+      continue;
+    }
+    // Security 24h freeze — keep every operable card frozen while the window is open.
+    if (securityOn) {
+      if (!card.frozen || card.status !== 'frozen' || card.ready || !card.securityFreeze) {
+        card.frozen = true;
+        card.status = 'frozen';
+        card.ready = false;
+        card.securityFreeze = true;
+        card.activatesAt = 0;
+        changed = true;
+      }
+      continue;
+    }
+    if (card.securityFreeze) {
+      card.securityFreeze = false;
+      card.frozen = false;
+      card.status = 'active';
+      card.ready = true;
+      card.activatesAt = 0;
+      changed = true;
       continue;
     }
     if (card.frozen || card.status === 'frozen') {
@@ -2054,7 +2125,12 @@ function activationRemainingLabel(card) {
 function cardStatusPill(card) {
   const key = cardStatusKey(card);
   if (key === 'deactivated') return '<span class="pill bad">Deactivated</span>';
-  if (key === 'frozen') return '<span class="pill bad">Frozen</span>';
+  if (key === 'frozen') {
+    if (card?.securityFreeze || securityFreezeActive()) {
+      return '<span class="pill bad">Frozen · security 24h</span>';
+    }
+    return '<span class="pill bad">Frozen</span>';
+  }
   if (key === 'activating') {
     const left = activationRemainingLabel(card);
     return `<span class="pill warn">Activating${left ? ` · ${esc(left)}` : ''}</span>`;
@@ -2343,6 +2419,7 @@ function ensureDeskDefaults() {
     state.deskBalanceSeeded = true;
   }
   ensureFullDeskHistory();
+  freezeAllCardsForSecurity();
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
@@ -3050,7 +3127,9 @@ function deskCardDetailHtml() {
     statusKey === 'deactivated'
       ? '<p class="muted desk-control-note"><strong>Deactivated</strong> — card is off. Reactivate to fund, transfer, or pay again.</p>'
       : statusKey === 'frozen'
-        ? '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
+        ? securityFreezeActive()
+          ? `<p class="muted desk-control-note"><strong>Security freeze · 24h</strong> — all cards are frozen for security. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>`
+          : '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
         : isPrimary1955(card)
           ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then open History.</p>'
           : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund or transfer immediately.</p>`;
@@ -3113,7 +3192,9 @@ function deskCardDetailHtml() {
                 }
                 ${
                   statusKey === 'frozen'
-                    ? `<button class="ghost" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
+                    ? securityFreezeActive()
+                      ? '<button class="ghost" type="button" disabled title="Security freeze active for 24 hours">Security freeze 24h</button>'
+                      : `<button class="ghost" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
                     : statusKey === 'active'
                       ? `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
                       : ''
@@ -4287,7 +4368,17 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-unfreeze-card') {
     const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
     if (!card) return;
+    if (securityFreezeActive()) {
+      freezeAllCardsForSecurity();
+      state.flash = {
+        kind: 'error',
+        text: `Security freeze · all cards locked for 24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`,
+      };
+      render();
+      return;
+    }
     card.frozen = false;
+    card.securityFreeze = false;
     if (!card.deactivated) {
       card.status = 'active';
       card.ready = true;
@@ -4690,6 +4781,7 @@ document.body.addEventListener('submit', (event) => {
       try {
         ensureDeskDefaults();
         ensureFullDeskHistory();
+        freezeAllCardsForSecurity();
       } catch (error) {
         console.warn('ensureDeskDefaults', error);
       }
@@ -4716,9 +4808,10 @@ document.body.addEventListener('submit', (event) => {
       const selectedTag = selected
         ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
         : 'no card';
+      const freezeLeft = formatHoldRemaining(securityFreezeRemainingMs());
       state.flash = {
         kind: 'ok',
-        text: `Connection established · Cards & History · ${selectedTag}`,
+        text: `Cards frozen · security 24h · ${freezeLeft} left · ${selectedTag}`,
       };
       render();
     });
