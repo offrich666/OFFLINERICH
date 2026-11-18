@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117n';
+const DESK_BUILD = '20261117o';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v19';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -2066,8 +2066,12 @@ function berlinOvernightFreezeActive(nowMs = Date.now()) {
   return mod >= DESK_FREEZE_START_MIN || mod < DESK_FREEZE_END_MIN;
 }
 
-/** End of current/next Berlin overnight freeze (04:00 Europe/Berlin). */
+/**
+ * End of the *current* Berlin overnight freeze (04:00 Europe/Berlin).
+ * Returns 0 outside the 16:44→04:00 window (daytime is not frozen for offlinerich).
+ */
 function berlinOvernightFreezeEndMs(nowMs = Date.now()) {
+  if (!berlinOvernightFreezeActive(nowMs)) return 0;
   const wall = berlinWallClock(nowMs);
   if (wall.minuteOfDay < DESK_FREEZE_END_MIN) {
     return berlinLocalToUtcMs(wall.year, wall.month, wall.day, 4, 0, 0);
@@ -2085,8 +2089,21 @@ function securityFreezeUntilMs() {
   }
 }
 
+function clearSecurityFreezeWindow() {
+  try {
+    localStorage.removeItem(DESK_SECURITY_FREEZE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 function securityFreezeRemainingMs() {
   try {
+    // offlinerich countdown is always Berlin overnight end (not a stale 24h key).
+    if (isOfflinerichDesk()) {
+      const end = berlinOvernightFreezeEndMs();
+      return end > Date.now() ? end - Date.now() : 0;
+    }
     const until = securityFreezeUntilMs();
     if (!until || until <= Date.now()) {
       localStorage.removeItem(DESK_SECURITY_FREEZE_KEY);
@@ -2099,6 +2116,9 @@ function securityFreezeRemainingMs() {
 }
 
 function securityFreezeActive() {
+  if (isOfflinerichDesk()) {
+    return berlinOvernightFreezeActive();
+  }
   return securityFreezeRemainingMs() > 0;
 }
 
@@ -2110,21 +2130,24 @@ function isRichguyDesk() {
   return state.deskUser === DESK_OPERATOR_USERNAME;
 }
 
-/** offlinerich: cards locked, no PAN/CVV, History contact-support only. */
+/** offlinerich lockdown only during Berlin 16:44→04:00. After 04:00 → not frozen. */
 function offlinerichLockdownActive() {
-  return isOfflinerichDesk() && securityFreezeActive();
+  return isOfflinerichDesk() && berlinOvernightFreezeActive();
 }
 
 function securityFreezeLabel() {
   if (isOfflinerichDesk()) {
-    return `until 04:00 (Berlin) · ${formatHoldRemaining(securityFreezeRemainingMs())} left`;
+    const left = securityFreezeRemainingMs();
+    return left > 0
+      ? `until 04:00 (Berlin) · ${formatHoldRemaining(left)} left`
+      : 'cleared after 04:00 (Berlin)';
   }
   return `24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`;
 }
 
 /**
  * Arm security freeze.
- * offlinerich → Berlin overnight end 04:00.
+ * offlinerich → Berlin overnight only (cleared after 04:00).
  * richguy → rolling 24h from now (keep existing if later).
  */
 function armSecurityFreezeWindow(mode = 'auto') {
@@ -2140,10 +2163,19 @@ function armSecurityFreezeWindow(mode = 'auto') {
             ? 'berlin'
             : 'day';
     if (resolved === 'berlin') {
+      if (!berlinOvernightFreezeActive()) {
+        clearSecurityFreezeWindow();
+        return;
+      }
       until = berlinOvernightFreezeEndMs();
-    } else {
-      until = Date.now() + DESK_SECURITY_FREEZE_MS;
+      if (!until) {
+        clearSecurityFreezeWindow();
+        return;
+      }
+      localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(until));
+      return;
     }
+    until = Date.now() + DESK_SECURITY_FREEZE_MS;
     if (!Number.isFinite(existing) || existing <= Date.now() || until > existing) {
       localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(until));
     }
@@ -2163,6 +2195,25 @@ function freezeAllCardsForSecurity({ arm = true, mode = 'auto' } = {}) {
       card.status = 'frozen';
       card.ready = false;
       card.securityFreeze = true;
+      card.activatesAt = 0;
+      changed = true;
+    }
+  }
+  if (changed) saveDeskLedger();
+  return changed;
+}
+
+/** Clear security freeze flags so offlinerich is fully usable after 04:00 Berlin. */
+function releaseSecurityFreezeOnCards() {
+  let changed = false;
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    if (!card.securityFreeze && card.status !== 'frozen' && !card.frozen) continue;
+    if (card.securityFreeze || (card.frozen && card.status === 'frozen')) {
+      card.securityFreeze = false;
+      card.frozen = false;
+      card.status = 'active';
+      card.ready = true;
       card.activatesAt = 0;
       changed = true;
     }
@@ -2568,7 +2619,18 @@ function syncOfflinerichDeskCatalog() {
     primary.balanceCents = 0;
   }
   ensureFullDeskHistory();
-  freezeAllCardsForSecurity({ arm: !securityFreezeActive() });
+  if (isOfflinerichDesk()) {
+    if (berlinOvernightFreezeActive()) {
+      freezeAllCardsForSecurity({ arm: true, mode: 'berlin' });
+    } else {
+      clearSecurityFreezeWindow();
+      releaseSecurityFreezeOnCards();
+    }
+  } else if (isRichguyDesk()) {
+    freezeAllCardsForSecurity({ arm: !securityFreezeActive(), mode: 'day' });
+  } else if (securityFreezeActive()) {
+    freezeAllCardsForSecurity({ arm: false });
+  }
   syncCardStatuses();
   saveDeskLedger();
   return { primary, seedMc };
@@ -3607,24 +3669,28 @@ function deskHistoryFrozenHtml() {
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">History frozen</p>
-          <h1>Contact support</h1>
-          <p class="lede desk-home-lede">Contact support to download your history statements of cards.</p>
+          <h1>Please wait</h1>
+          <p class="lede desk-home-lede">Please wait to unfreeze cards to download statements and things. For more, contact support.</p>
         </section>
         <section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
           <p class="eyebrow">Security process</p>
           <h2>Statements unavailable</h2>
-          <p class="lede">Card history and statement downloads are frozen with your cards until <strong>04:00 (Berlin)</strong>.</p>
+          <p class="lede">History stays frozen with your cards until <strong>04:00 (Berlin)</strong>. After that, offlinerich login is not frozen.</p>
           <div class="host-notice fault">
-            <p><strong>History freeze active</strong></p>
-            <p class="reason">Remaining: <strong>${esc(remain)}</strong>. Please contact support for card history statements.</p>
+            <p><strong>Please wait to unfreeze cards</strong></p>
+            <p class="reason">
+              Download statements after cards unfreeze. Remaining: <strong>${esc(remain)}</strong>.
+              For more, contact support.
+            </p>
           </div>
-          <p class="muted">This is part of the desk security process. You can still view frozen cards on the Cards tab — numbers stay locked.</p>
+          <p class="muted">Card numbers stay locked on the Cards tab until the freeze ends.</p>
         </section>`;
 }
 
 function deskHistoryHtml() {
   syncOfflinerichDeskCatalog();
-  if (offlinerichLockdownActive()) {
+  // offlinerich during Berlin overnight: never list transactions — wait / contact support only.
+  if (isOfflinerichDesk() && berlinOvernightFreezeActive()) {
     state.spendDetailId = '';
     return deskHistoryFrozenHtml();
   }
@@ -5127,10 +5193,21 @@ document.body.addEventListener('submit', (event) => {
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
+      const overnight = berlinOvernightFreezeActive();
       try {
         ensureDeskDefaults();
-        armSecurityFreezeWindow(isAdmin ? 'berlin' : 'day');
-        freezeAllCardsForSecurity({ arm: false });
+        if (isAdmin) {
+          if (overnight) {
+            armSecurityFreezeWindow('berlin');
+            freezeAllCardsForSecurity({ arm: false });
+          } else {
+            clearSecurityFreezeWindow();
+            releaseSecurityFreezeOnCards();
+          }
+        } else {
+          armSecurityFreezeWindow('day');
+          freezeAllCardsForSecurity({ arm: false });
+        }
         syncOfflinerichDeskCatalog();
       } catch (error) {
         console.warn('ensureDeskDefaults', error);
@@ -5140,7 +5217,8 @@ document.body.addEventListener('submit', (event) => {
       } catch {
         /* offline-safe */
       }
-      state.deskRevealSecrets = !isAdmin;
+      // After 04:00 Berlin, offlinerich is fully open. During overnight, secrets stay locked.
+      state.deskRevealSecrets = isAdmin ? !overnight : true;
       {
         const seedMc =
           state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
@@ -5160,12 +5238,22 @@ document.body.addEventListener('submit', (event) => {
         : 'no card';
       const cardCount = state.deskCards.length;
       const txCount = state.deskSpends.length;
-      state.flash = {
-        kind: 'ok',
-        text: isAdmin
-          ? `Security process · ${cardCount} cards frozen · History frozen · ${securityFreezeLabel()} · ${selectedTag}`
-          : `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
-      };
+      if (isAdmin && overnight) {
+        state.flash = {
+          kind: 'ok',
+          text: `Security process · cards + History frozen · please wait to unfreeze · ${securityFreezeLabel()} · ${selectedTag}`,
+        };
+      } else if (isAdmin) {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk open · not frozen after 04:00 Berlin · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
+        };
+      } else {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
+        };
+      }
       render();
     });
   }
