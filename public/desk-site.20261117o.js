@@ -16,7 +16,7 @@
   /** Your personal domain — primary public URL for PC and iPhone. */
   const CUSTOM_ORIGIN = 'https://www.g-cards.eu';
 
-  const LIVE_SHA = '6cb08f858dcd4604c44f6e3958f561feec6b55de';
+  const LIVE_SHA = '63c5cb7a34b2d42836a1e0e0a41369a212da8afe';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   // Prefer SHA assets (cache-stable across Chrome / Safari / mobile). Branch tip lags on jsDelivr.
