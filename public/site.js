@@ -52,6 +52,19 @@
     return !staticHost;
   }
 
+  /** True on localhost / LAN IP — desk login may open. Public domain stays on security hold. */
+  function isLanHost() {
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    return false;
+  }
+
+  function deskLoginOpens() {
+    return isLanHost() || hasApi();
+  }
+
   function qrImageUrl(text) {
     return `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=8&data=${encodeURIComponent(text)}`;
   }
@@ -103,6 +116,8 @@
     staticHost,
     onCustomDomain,
     hasApi,
+    isLanHost,
+    deskLoginOpens,
     pageUrl,
     qrImageUrl,
     fixStaticNav,
