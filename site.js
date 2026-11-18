@@ -16,7 +16,7 @@
   /** Your personal domain — primary public URL for PC and iPhone. */
   const CUSTOM_ORIGIN = 'https://www.g-cards.eu';
 
-  const LIVE_SHA = '4e905aeb636bad12a00c3e6a14aab7aa36dc3d08';
+  const LIVE_SHA = 'c6b105734c1615b1cb9cc01d4f7ba121c6785f33';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
   // Prefer SHA assets (cache-stable across Chrome / Safari / mobile). Branch tip lags on jsDelivr.
@@ -50,6 +50,19 @@
 
   function hasApi() {
     return !staticHost;
+  }
+
+  /** True on localhost / LAN IP — desk login may open. Public domain stays on security hold. */
+  function isLanHost() {
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    return false;
+  }
+
+  function deskLoginOpens() {
+    return isLanHost() || hasApi();
   }
 
   function qrImageUrl(text) {
@@ -103,6 +116,8 @@
     staticHost,
     onCustomDomain,
     hasApi,
+    isLanHost,
+    deskLoginOpens,
     pageUrl,
     qrImageUrl,
     fixStaticNav,

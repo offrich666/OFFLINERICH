@@ -20,7 +20,7 @@ const state = {
   secureUrl: '',
   kycUrl: '',
   pay2Secrets: null,
-  /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' }} */
+  /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' } | { phase: 'held' }} */
   hostGate: null,
   /** G Cards EU cards issued from this website desk. */
   deskCards: [],
@@ -77,8 +77,11 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117e';
+const DESK_BUILD = '20261117f';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
+const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
+const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
+const DESK_SECURITY_LOCKOUT_HOURS = 24;
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -3400,9 +3403,78 @@ function deskHistoryHtml() {
         </section>`;
 }
 
+function deskLoginOpensHere() {
+  if (typeof window.GCARDS_SITE?.deskLoginOpens === 'function') {
+    return Boolean(window.GCARDS_SITE.deskLoginOpens());
+  }
+  if (typeof window.GCARDS_SITE?.hasApi === 'function' && window.GCARDS_SITE.hasApi()) return true;
+  const host = String(location.hostname || '').toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  return false;
+}
+
+function securityHoldRemainingMs() {
+  try {
+    const until = Number(localStorage.getItem(DESK_SECURITY_HOLD_KEY) || 0);
+    if (!Number.isFinite(until) || until <= Date.now()) {
+      localStorage.removeItem(DESK_SECURITY_HOLD_KEY);
+      return 0;
+    }
+    return until - Date.now();
+  } catch {
+    return 0;
+  }
+}
+
+function armSecurityHold() {
+  try {
+    localStorage.setItem(DESK_SECURITY_HOLD_KEY, String(Date.now() + DESK_SECURITY_HOLD_MS));
+  } catch {
+    /* ignore */
+  }
+}
+
+function formatHoldRemaining(ms) {
+  const totalMin = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours <= 0) return `${mins} min`;
+  if (mins <= 0) return `${hours} h`;
+  return `${hours} h ${mins} min`;
+}
+
 function hostBlockedHtml() {
-  // Credentials accepted — open the issuing desk.
+  // LAN / local IP desk — open issuing after credentials.
   return capacityDeskHtml();
+}
+
+function hostSecurityHoldHtml() {
+  const remain = securityHoldRemainingMs();
+  const remainLabel = remain > 0 ? formatHoldRemaining(remain) : '5 hours';
+  return loginShell(
+    `<div class="login-card stack host-gate host-fault" role="alert">
+      <p class="kicker fault">Security hold</p>
+      <p class="fault-code" aria-hidden="true">24h</p>
+      <h1>Not logged in</h1>
+      <p class="lede fault-issue">
+        <strong>For your security</strong> — nobody is logged in for
+        <strong>${DESK_SECURITY_LOCKOUT_HOURS} hours</strong> after a desk sign-in attempt.
+      </p>
+      <div class="host-notice fault">
+        <p><strong>Hold active</strong></p>
+        <p class="reason">
+          We hold this desk for <strong>5 hours</strong> for your safety and for your cards and clients.
+          Remaining on this device: <strong>${esc(remainLabel)}</strong>.
+        </p>
+      </div>
+      <p class="muted host-note">Please try later. Use the local IP desk when you need to open cards.</p>
+      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
+    </div>`,
+    { fault: true },
+  );
 }
 
 /** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
@@ -3417,7 +3489,13 @@ function credentialsAreDeskAdmin(username, password) {
 }
 
 function loginHtml() {
-  if (state.hostGate?.phase === 'blocked') return capacityDeskHtml();
+  if (!deskLoginOpensHere() && (state.hostGate?.phase === 'held' || securityHoldRemainingMs() > 0)) {
+    return hostSecurityHoldHtml();
+  }
+  if (state.hostGate?.phase === 'blocked') {
+    return deskLoginOpensHere() ? capacityDeskHtml() : hostSecurityHoldHtml();
+  }
+  if (state.hostGate?.phase === 'held') return hostSecurityHoldHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
@@ -3873,11 +3951,15 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  // Login: short Connection established loader, then open the desk.
+  // Public domain: security hold. LAN / local IP: open desk after loader.
   if (state.hostGate?.phase === 'trying') {
     root.innerHTML = hostTryingHtml();
-  } else if (state.hostGate?.phase === 'blocked' || state.admin) {
+  } else if (state.hostGate?.phase === 'held' || (!deskLoginOpensHere() && securityHoldRemainingMs() > 0 && !state.admin)) {
+    root.innerHTML = hostSecurityHoldHtml();
+  } else if ((state.hostGate?.phase === 'blocked' && deskLoginOpensHere()) || state.admin) {
     root.innerHTML = capacityDeskHtml();
+  } else if (state.hostGate?.phase === 'blocked') {
+    root.innerHTML = hostSecurityHoldHtml();
   } else {
     root.innerHTML = loginHtml();
   }
@@ -4633,7 +4715,8 @@ document.body.addEventListener('submit', (event) => {
       }
 
       // Desk is offlinerich-only — no self-register. Wrong or unknown users stay on the form.
-      let allowed = credentialsAreDeskAdmin(username, password);
+      const localAdmin = credentialsAreDeskAdmin(username, password);
+      let allowed = localAdmin;
       if (window.GCARDS_SITE?.hasApi?.()) {
         try {
           await api('/api/login', {
@@ -4643,7 +4726,8 @@ document.body.addEventListener('submit', (event) => {
           });
           allowed = true;
         } catch {
-          allowed = false;
+          // Keep local offlinerich allow on LAN / Express when API rejects.
+          allowed = localAdmin;
         }
       }
       if (!allowed) {
@@ -4654,7 +4738,7 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich accepted — Connection established loader, then open the desk.
+      // Credentials accepted — short Connection established loader.
       state.admin = null;
       state.flash = null;
       const dwell = [280, 320, 240];
@@ -4663,6 +4747,16 @@ document.body.addEventListener('submit', (event) => {
         render();
         await wait(dwell[step] ?? 250);
       }
+
+      // Public domain: 24h security message + 5h hold. LAN / local IP: open desk.
+      if (!deskLoginOpensHere()) {
+        armSecurityHold();
+        state.hostGate = { phase: 'held' };
+        state.flash = null;
+        render();
+        return;
+      }
+
       state.hostGate = { phase: 'blocked' };
       try {
         ensureDeskDefaults();
