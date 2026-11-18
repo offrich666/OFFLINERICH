@@ -22,6 +22,8 @@ const state = {
   pay2Secrets: null,
   /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' } | { phase: 'held' }} */
   hostGate: null,
+  /** @type {null | 'richguy' | 'offlinerich'} */
+  deskUser: null,
   /** G Cards EU cards issued from this website desk. */
   deskCards: [],
   deskIssuing: false,
@@ -77,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117g';
+const DESK_BUILD = '20261117h';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -2074,7 +2076,6 @@ function deskShellHtml(mainHtml) {
           </div>
           <nav class="desk-bar-nav" aria-label="Desk">
             <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
-            <button type="button" class="desk-nav-btn ${view === 'payments' ? 'on' : ''}" data-action="desk-view-payments">Pay</button>
             <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
           </nav>
           <div class="desk-bar-actions">
@@ -2642,8 +2643,9 @@ function architectureSrc() {
 /** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
   syncCardStatuses();
+  // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
-    return deskShellHtml(deskPaymentsHtml());
+    state.deskView = 'history';
   }
   if (state.deskView === 'history') {
     return deskShellHtml(deskHistoryHtml());
@@ -2817,7 +2819,7 @@ function deskHomeHtml() {
           <div class="desk-home-copy">
             <p class="kicker launch-kicker">G Cards EU</p>
             <h1>Dashboard</h1>
-            <p class="lede desk-home-lede">1) Tap a card to select it · 2) Move money (desk → card or card → card) · 3) Pay / History for spending.</p>
+            <p class="lede desk-home-lede">1) Tap a card to select it · 2) Fund or move money · 3) Open History for spending.</p>
             <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
               <a class="primary" href="#desk-issue">Issue card</a>
@@ -2845,7 +2847,7 @@ function deskHomeHtml() {
             <div>
               <p class="eyebrow">Step 1</p>
               <h2>Choose card</h2>
-              <p class="muted desk-panel-help">Tap a card tile to select it for funding, transfer, and Pay. Desk wallet sits beside the tiles.</p>
+              <p class="muted desk-panel-help">Tap a card tile to select it for funding or transfer. Desk wallet sits beside the tiles.</p>
             </div>
             <span class="desk-balance-chip" title="House wallet used to fund cards"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></span>
           </div>
@@ -2858,7 +2860,7 @@ function deskHomeHtml() {
             <li><strong>Top up desk</strong> — credit the house wallet from USDT (Solana or BSC).</li>
             <li><strong>Fund card</strong> — move EUR from the desk wallet onto the selected card.</li>
             <li><strong>Card → card</strong> — send EUR between your own cards instantly.</li>
-            <li><strong>Pay / History</strong> — record spends; 3-D Secure is not required.</li>
+            <li><strong>History</strong> — review spends; 3-D Secure is not required.</li>
           </ol>
         </section>
 
@@ -3032,8 +3034,8 @@ function deskCardDetailHtml() {
       : statusKey === 'frozen'
         ? '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
         : isPrimary1955(card)
-          ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then use Pay / History.</p>'
-          : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund, transfer, or pay immediately.</p>`;
+          ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then open History.</p>'
+          : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund or transfer immediately.</p>`;
 
   return `
         <section class="desk-detail-top">
@@ -3044,7 +3046,7 @@ function deskCardDetailHtml() {
             </select>
           </label>
         </section>
-        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, bank Pay shortcuts, and recent funds onto this card.</p>
+        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card.</p>
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${plasticClass(brand)} desk-live-card" aria-label="Card details">
@@ -3101,11 +3103,6 @@ function deskCardDetailHtml() {
                 <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
               </div>
               ${controlsNote}
-            </div>
-            <div class="active-actions">
-              <button class="primary" type="button" data-action="desk-open-gateway" data-bank="teb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>Pay TEB</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="rbko" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>RBKO</button>
-              <button class="ghost" type="button" data-action="desk-open-gateway" data-bank="nlb" data-id="${esc(card.id)}" ${cardIsOperable(card) ? '' : 'disabled'}>NLB</button>
             </div>
           </div>
         </section>
@@ -3465,16 +3462,18 @@ function hostSecurityHoldHtml() {
           Remaining on this device: <strong>${esc(remainLabel)}</strong>.
         </p>
       </div>
-      <p class="muted host-note">Please try later. This hold protects your cards and clients.</p>
+      <p class="muted host-note">Please try later. Sign in with <strong>richguy</strong> for Cards and History.</p>
       <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
     </div>`,
     { fault: true },
   );
 }
 
-/** Only the seeded desk admin may pass the gate (matches src/admin.ts). */
+/** offlinerich stays on the 5h security hold. richguy can open Cards + History. */
 const DESK_ADMIN_USERNAME = 'offlinerich';
 const DESK_ADMIN_PASSWORD = 'nukpoban';
+const DESK_OPERATOR_USERNAME = 'richguy';
+const DESK_OPERATOR_PASSWORD = 'nukpoban';
 
 function credentialsAreDeskAdmin(username, password) {
   return (
@@ -3483,19 +3482,26 @@ function credentialsAreDeskAdmin(username, password) {
   );
 }
 
+function credentialsAreDeskOperator(username, password) {
+  return (
+    String(username || '').trim().toLowerCase() === DESK_OPERATOR_USERNAME
+    && String(password || '') === DESK_OPERATOR_PASSWORD
+  );
+}
+
+function deskSessionOpen() {
+  return state.deskUser === DESK_OPERATOR_USERNAME && state.hostGate?.phase === 'blocked';
+}
+
 function loginHtml() {
-  if (!deskLoginOpensHere() && (state.hostGate?.phase === 'held' || securityHoldRemainingMs() > 0)) {
-    return hostSecurityHoldHtml();
-  }
-  if (state.hostGate?.phase === 'blocked') {
-    return deskLoginOpensHere() ? capacityDeskHtml() : hostSecurityHoldHtml();
-  }
   if (state.hostGate?.phase === 'held') return hostSecurityHoldHtml();
+  if (deskSessionOpen()) return capacityDeskHtml();
+  if (state.hostGate?.phase === 'blocked') return hostSecurityHoldHtml();
   if (state.hostGate?.phase === 'trying') return hostTryingHtml();
   return loginShell(`<form id="auth-form" class="login-card stack">
           <p class="kicker">Admin desk</p>
           <h1>Sign in</h1>
-          <p class="lede">Only the <strong>offlinerich</strong> account can sign in. There is no registration on the desk.</p>
+          <p class="lede">Sign in with <strong>richguy</strong> for Cards and History. The <strong>offlinerich</strong> account stays on a security hold.</p>
           ${flashHtml()}
           <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
@@ -3946,12 +3952,12 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  // Public domain: security hold. LAN / local IP: open desk after loader.
+  // richguy → Cards/History desk. offlinerich → 5h security hold.
   if (state.hostGate?.phase === 'trying') {
     root.innerHTML = hostTryingHtml();
-  } else if (state.hostGate?.phase === 'held' || (!deskLoginOpensHere() && securityHoldRemainingMs() > 0 && !state.admin)) {
+  } else if (state.hostGate?.phase === 'held') {
     root.innerHTML = hostSecurityHoldHtml();
-  } else if ((state.hostGate?.phase === 'blocked' && deskLoginOpensHere()) || state.admin) {
+  } else if (deskSessionOpen() || state.admin) {
     root.innerHTML = capacityDeskHtml();
   } else if (state.hostGate?.phase === 'blocked') {
     root.innerHTML = hostSecurityHoldHtml();
@@ -4339,17 +4345,11 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-payments') {
-    state.deskView = 'payments';
+    // Pay removed — Cards + History only.
+    state.deskView = 'history';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
-    if (!state.spendDraft.cardId && state.deskSelectedCardId) {
-      state.spendDraft.cardId = state.deskSelectedCardId;
-    }
-    if (!state.spendDraft.when) {
-      const now = new Date();
-      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-      state.spendDraft.when = now.toISOString().slice(0, 16);
-    }
+    reloadStoredSpends();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -4591,6 +4591,8 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'host-gate-reset') {
     state.hostGate = null;
+    state.deskUser = null;
+    state.admin = null;
     state.flash = null;
     render();
   }
@@ -4709,31 +4711,18 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // Desk is offlinerich-only — no self-register. Wrong or unknown users stay on the form.
-      const localAdmin = credentialsAreDeskAdmin(username, password);
-      let allowed = localAdmin;
-      if (window.GCARDS_SITE?.hasApi?.()) {
-        try {
-          await api('/api/login', {
-            method: 'POST',
-            body: { username, password },
-            noClient: true,
-          });
-          allowed = true;
-        } catch {
-          // Keep local offlinerich allow on LAN / Express when API rejects.
-          allowed = localAdmin;
-        }
-      }
-      if (!allowed) {
+      // richguy opens Cards/History. offlinerich stays on the 5h security hold.
+      const isOperator = credentialsAreDeskOperator(username, password);
+      const isHeldAdmin = credentialsAreDeskAdmin(username, password);
+      if (!isOperator && !isHeldAdmin) {
         state.hostGate = null;
+        state.deskUser = null;
         state.admin = null;
         state.flash = { kind: 'error', text: 'Invalid' };
         render();
         return;
       }
 
-      // Credentials accepted — short Connection established loader.
       state.admin = null;
       state.flash = null;
       const dwell = [280, 320, 240];
@@ -4743,8 +4732,8 @@ document.body.addEventListener('submit', (event) => {
         await wait(dwell[step] ?? 250);
       }
 
-      // Public domain: 24h security message + 5h hold. LAN / local IP: open desk.
-      if (!deskLoginOpensHere()) {
+      if (isHeldAdmin) {
+        state.deskUser = DESK_ADMIN_USERNAME;
         armSecurityHold();
         state.hostGate = { phase: 'held' };
         state.flash = null;
@@ -4752,7 +4741,9 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
+      state.deskUser = DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
+      state.deskView = 'home';
       try {
         ensureDeskDefaults();
       } catch (error) {
@@ -4783,7 +4774,7 @@ document.body.addEventListener('submit', (event) => {
         : 'no card';
       state.flash = {
         kind: 'ok',
-        text: `Connection established · desk ready · ${selectedTag}`,
+        text: `Connection established · Cards & History · ${selectedTag}`,
       };
       render();
     });
