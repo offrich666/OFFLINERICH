@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117i';
+const DESK_BUILD = '20261117j';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -438,30 +438,52 @@ function filteredDeskSpends() {
 
 function ensureExampleSpend(primary) {
   if (!primary) return;
-  if (state.deskSpends.some((s) => s.id === EXAMPLE_SPEND_ID || s.merchant === 'CB INT DIGITAL JSC')) {
-    return;
+  const existing = state.deskSpends.find(
+    (s) => s.id === EXAMPLE_SPEND_ID || String(s.authNr || '') === '389274',
+  );
+  const whenDate = new Date('2026-11-17T17:13:45+01:00');
+  const payload = {
+    id: EXAMPLE_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'CB INT DIGITAL JSC',
+    amountCents: 3798,
+    kind: 'payment',
+    cardId: primary.id,
+    cardLast4: String(primary.pan).replace(/\D/g, '').slice(-4) || '1955',
+    network: String(primary.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: '389274',
+    threeDs: 'not_required',
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
   }
-  const whenDate = new Date();
-  whenDate.setHours(whenDate.getHours() - 5);
-  state.deskSpends = [
-    {
-      id: EXAMPLE_SPEND_ID,
-      when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
-      whenIso: whenDate.toISOString(),
-      merchant: 'CB INT DIGITAL JSC',
-      amountCents: 3798,
-      kind: 'payment',
-      cardId: primary.id,
-      cardLast4: String(primary.pan).slice(-4),
-      network: String(primary.brand || 'mastercard'),
-      status: 'Completed',
-      gateway: 'TEB BNP PARIBAS',
-      authNr: '389274',
-      threeDs: 'not_required',
-      createdAt: whenDate.getTime(),
-    },
-    ...state.deskSpends,
-  ];
+}
+
+function clearHistoryFilters() {
+  state.spendFilterCardId = '';
+  state.spendFilterQuery = '';
+  state.spendFilterGateway = '';
+  state.spendFilterStatus = '';
+  state.spendFilterRange = 'all';
+  state.spendDetailId = '';
+}
+
+/** Full offlinerich ledger seed on ····1955 — History shows every entry. */
+function ensureFullDeskHistory() {
+  const primary1955 = state.deskCards.find(isPrimary1955) || ensureEndless1955Card();
+  ensureExampleSpend(primary1955);
+  ensureIpkoSpend(primary1955);
+  ensureGjirafaSpend(primary1955);
+  purgeCbIntDigital7598();
+  ensureCbIntDigital3599Spend(primary1955);
+  saveDeskLedger();
+  return primary1955;
 }
 
 function refundAndDropSpends(predicate) {
@@ -2320,11 +2342,7 @@ function ensureDeskDefaults() {
     primary.balanceCents = 0;
     state.deskBalanceSeeded = true;
   }
-  ensureExampleSpend(primary);
-  ensureIpkoSpend(primary);
-  ensureGjirafaSpend(primary);
-  purgeCbIntDigital7598();
-  ensureCbIntDigital3599Spend(primary);
+  ensureFullDeskHistory();
   syncCardStatuses();
   const preferId = seedMc?.id || primary.id;
   // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
@@ -3252,7 +3270,7 @@ function spendDetailHtml(spend) {
 }
 
 function deskHistoryHtml() {
-  reloadStoredSpends();
+  ensureFullDeskHistory();
   const storedSpends = filteredDeskSpends();
   const storedTotal = storedSpends.reduce((sum, s) => sum + spendSignedCents(s), 0);
   const selected =
@@ -4357,15 +4375,8 @@ document.body.addEventListener('click', (event) => {
   if (action === 'desk-view-history') {
     state.deskView = 'history';
     state.deskDetailCardId = '';
-    reloadStoredSpends();
-    const primary = deskActiveCard();
-    const primary1955 = state.deskCards.find(isPrimary1955) || primary;
-    ensureExampleSpend(primary);
-    ensureIpkoSpend(primary);
-    ensureGjirafaSpend(primary1955);
-    purgeCbIntDigital7598();
-    ensureCbIntDigital3599Spend(primary1955);
-    saveDeskLedger();
+    clearHistoryFilters();
+    ensureFullDeskHistory();
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -4744,8 +4755,10 @@ document.body.addEventListener('submit', (event) => {
       state.deskUser = DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
       state.deskView = 'home';
+      clearHistoryFilters();
       try {
         ensureDeskDefaults();
+        ensureFullDeskHistory();
       } catch (error) {
         console.warn('ensureDeskDefaults', error);
       }
