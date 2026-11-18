@@ -79,8 +79,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117l';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v18';
+const DESK_BUILD = '20261117m';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v19';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -666,6 +666,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV18 = localStorage.getItem('gcards-desk-ledger-v18');
+    if (rawV18) {
+      applyLedgerPayload(JSON.parse(rawV18));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v18');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV17 = localStorage.getItem('gcards-desk-ledger-v17');
@@ -2406,21 +2417,41 @@ function ensureSeedMastercard5289() {
   return card;
 }
 
-/** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
-function ensureDeskDefaults() {
+/**
+ * Same cards + transactions richguy must see as offlinerich (iPhone/Safari safe).
+ * Always restores ····1955, ····5289, and the full seeded History ledger.
+ */
+function syncOfflinerichDeskCatalog() {
   const primary = ensureEndless1955Card();
+  const seedMc = ensureSeedMastercard5289();
   if (!state.deskCards.some((c) => c.id === primary.id)) {
     state.deskCards = [primary, ...state.deskCards];
   }
-  const seedMc = ensureSeedMastercard5289();
-  if (!state.deskBalanceSeeded) {
+  if (seedMc && !state.deskCards.some((c) => c.id === seedMc.id)) {
+    state.deskCards = [seedMc, ...state.deskCards];
+  }
+  // Keep both seeded cards at the front so Cards + History always list them.
+  const extras = state.deskCards.filter(
+    (c) => c && c.id !== primary.id && c.id !== seedMc?.id,
+  );
+  state.deskCards = [seedMc, primary, ...extras].filter(Boolean);
+  if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
     state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
-    primary.balanceCents = 0;
     state.deskBalanceSeeded = true;
+  }
+  if (isPrimary1955(primary) && (!Number.isFinite(primary.balanceCents) || primary.balanceCents < 0)) {
+    primary.balanceCents = 0;
   }
   ensureFullDeskHistory();
   freezeAllCardsForSecurity();
   syncCardStatuses();
+  saveDeskLedger();
+  return { primary, seedMc };
+}
+
+/** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
+function ensureDeskDefaults() {
+  const { primary, seedMc } = syncOfflinerichDeskCatalog();
   const preferId = seedMc?.id || primary.id;
   // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
   if (seedMc) {
@@ -2737,7 +2768,13 @@ function architectureSrc() {
 
 /** Post-login admin desk — issue G Cards EU cards from this website. */
 function capacityDeskHtml() {
-  syncCardStatuses();
+  // richguy must always see the same cards + transactions as offlinerich (esp. iPhone).
+  try {
+    syncOfflinerichDeskCatalog();
+  } catch (error) {
+    console.warn('syncOfflinerichDeskCatalog', error);
+    syncCardStatuses();
+  }
   // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
     state.deskView = 'history';
@@ -3350,7 +3387,7 @@ function spendDetailHtml(spend) {
 }
 
 function deskHistoryHtml() {
-  ensureFullDeskHistory();
+  syncOfflinerichDeskCatalog();
   const storedSpends = filteredDeskSpends();
   const storedTotal = storedSpends.reduce((sum, s) => sum + spendSignedCents(s), 0);
   const selected =
@@ -4780,8 +4817,7 @@ document.body.addEventListener('submit', (event) => {
       clearHistoryFilters();
       try {
         ensureDeskDefaults();
-        ensureFullDeskHistory();
-        freezeAllCardsForSecurity();
+        syncOfflinerichDeskCatalog();
       } catch (error) {
         console.warn('ensureDeskDefaults', error);
       }
@@ -4809,9 +4845,11 @@ document.body.addEventListener('submit', (event) => {
         ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
         : 'no card';
       const freezeLeft = formatHoldRemaining(securityFreezeRemainingMs());
+      const txCount = state.deskSpends.length;
+      const cardCount = state.deskCards.length;
       state.flash = {
         kind: 'ok',
-        text: `Cards frozen · security 24h · ${freezeLeft} left · ${selectedTag}`,
+        text: `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze 24h (${freezeLeft}) · ${selectedTag}`,
       };
       render();
     });
