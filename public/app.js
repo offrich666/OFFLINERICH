@@ -79,8 +79,17 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119j';
+const DESK_BUILD = '20261119k';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
+/** Post-login issuer notice after TEB / payment-gateway authorization try. */
+const ISSUER_FRAUD_NOTICE_CODE = '59';
+const ISSUER_FRAUD_NOTICE_GATEWAY = 'TEB BNP PARIBAS';
+const ISSUER_FRAUD_NOTICE_REASON =
+  'One of the banks or partners reported your system to the issuing platform — Fraud.';
+const ISSUER_SUPPORT_EMAILS = Object.freeze([
+  'anfragen.europa@visa.com',
+  'privacyanddataprotection@mastercard.com',
+]);
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -2563,6 +2572,7 @@ function deskShellHtml(mainHtml) {
       <main class="wrap capacity-main desk-main-fit">
         ${flash}
         ${deskSecurityBannerHtml()}
+        ${deskIssuerFraudNoticeHtml()}
         ${mainHtml}
       </main>
     </div>`;
@@ -3252,6 +3262,29 @@ function deskSecurityBannerHtml() {
   </div>`;
 }
 
+/** Shown after desk login — issuer Fraud report from latest payment-gateway try. */
+function deskIssuerFraudNoticeHtml() {
+  if (!deskSessionOpen()) return '';
+  const emails = ISSUER_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  return `
+        <section class="desk-issuer-notice" id="desk-issuer-notice" role="alert" aria-labelledby="desk-issuer-notice-title">
+          <div class="desk-issuer-notice-head">
+            <p class="eyebrow">Issuer response</p>
+            <p class="desk-issuer-code">Error code ${esc(ISSUER_FRAUD_NOTICE_CODE)}</p>
+            <h2 id="desk-issuer-notice-title">Authorization declined</h2>
+          </div>
+          <p class="desk-issuer-meta">Latest try on payment gateway · <strong>${esc(ISSUER_FRAUD_NOTICE_GATEWAY)}</strong></p>
+          <p class="desk-issuer-reason">${esc(ISSUER_FRAUD_NOTICE_REASON)}</p>
+          <div class="desk-issuer-action">
+            <p><strong>Please stop issuing cards immediately</strong> and contact network support urgently:</p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
 function deskCardSelectOptions(selectedId, { excludeId = '', emptyLabel = 'Choose card' } = {}) {
   const rows = state.deskCards.filter((c) => !excludeId || c.id !== excludeId);
   if (!rows.length) return `<option value="">${esc(emptyLabel)}</option>`;
@@ -3445,7 +3478,11 @@ function deskHomeHtml() {
             }</p>
             <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
-              ${lockdown ? '' : '<a class="primary" href="#desk-issue">Issue card</a>'}
+              ${
+                lockdown
+                  ? ''
+                  : `<a class="ghost" href="#desk-issuer-notice">Issuing paused · Error ${esc(ISSUER_FRAUD_NOTICE_CODE)}</a>`
+              }
               ${heroActions}
             </div>
           </div>
@@ -3471,7 +3508,19 @@ function deskHomeHtml() {
         ${
           lockdown
             ? ''
-            : deskIssuePanelHtml()
+            : `<section class="desk-issue-panel desk-issue-paused" id="desk-issue" aria-label="Card issuing paused">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Issue</p>
+              <h2>Issuing paused</h2>
+              <p class="muted desk-panel-help">New cards cannot be issued while Error ${esc(ISSUER_FRAUD_NOTICE_CODE)} Fraud is open. Contact Visa / Mastercard support above.</p>
+            </div>
+          </div>
+          <div class="active-actions">
+            <button class="primary" type="button" disabled>Issue card unavailable</button>
+            <a class="ghost" href="#desk-issuer-notice">View issuer notice</a>
+          </div>
+        </section>`
         }
 
         <section class="desk-balance-menu desk-card-picker-panel" aria-label="Choose a card">
@@ -4947,6 +4996,17 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-issue-new') {
+    if (deskSessionOpen()) {
+      state.flash = {
+        kind: 'error',
+        text: `Issuing paused · Error ${ISSUER_FRAUD_NOTICE_CODE} Fraud · contact ${ISSUER_SUPPORT_EMAILS[0]} or ${ISSUER_SUPPORT_EMAILS[1]}`,
+      };
+      render();
+      window.setTimeout(() => {
+        document.getElementById('desk-issuer-notice')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 40);
+      return;
+    }
     if (state.deskIssuing) return;
     const brandHint = normalizeBrand(
       button.dataset.brand || state.issueDraft?.brand || 'visa',
