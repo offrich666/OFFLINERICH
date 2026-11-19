@@ -79,9 +79,9 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119m';
+const DESK_BUILD = '20261119n';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
-/** Flip to true only when told — then show on the whole desk (Cards, detail, History). */
+/** Flip to true only when told — then open one dedicated notice page (not Cards/History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
 const ISSUER_FRAUD_NOTICE_CODE = '59';
 const ISSUER_FRAUD_NOTICE_GATEWAY = 'TEB BNP PARIBAS';
@@ -2551,6 +2551,9 @@ function deskShellHtml(mainHtml) {
     : '';
   const view = state.deskView || 'home';
   const navHome = view === 'home' || view === 'card' ? 'on' : '';
+  const issuerNav = ISSUER_FRAUD_NOTICE_ENABLED
+    ? `<button type="button" class="desk-nav-btn ${view === 'issuer' ? 'on' : ''}" data-action="desk-view-issuer">Notice</button>`
+    : '';
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar desk-bar-fit">
         <div class="wrap desk-bar-shell">
@@ -2564,6 +2567,7 @@ function deskShellHtml(mainHtml) {
           <nav class="desk-bar-nav" aria-label="Desk">
             <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
             <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
+            ${issuerNav}
           </nav>
           <div class="desk-bar-actions">
             <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
@@ -2572,8 +2576,7 @@ function deskShellHtml(mainHtml) {
       </header>
       <main class="wrap capacity-main desk-main-fit">
         ${flash}
-        ${deskSecurityBannerHtml()}
-        ${deskIssuerFraudNoticeHtml()}
+        ${view === 'issuer' ? '' : deskSecurityBannerHtml()}
         ${mainHtml}
       </main>
     </div>`;
@@ -3231,9 +3234,13 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // Pay tab removed — Cards + History only.
+  // Pay tab removed — Cards + History (+ optional Notice page when enabled).
   if (state.deskView === 'payments') {
     state.deskView = 'history';
+  }
+  // Dedicated one-page issuer notice (not mixed into Cards / History).
+  if (ISSUER_FRAUD_NOTICE_ENABLED && state.deskView === 'issuer') {
+    return deskShellHtml(deskIssuerNoticePageHtml());
   }
   if (state.deskView === 'history') {
     return deskShellHtml(deskHistoryHtml());
@@ -3263,25 +3270,30 @@ function deskSecurityBannerHtml() {
   </div>`;
 }
 
-/** Dormant until ISSUER_FRAUD_NOTICE_ENABLED — then whole desk (cards + everything after login). */
-function deskIssuerFraudNoticeHtml() {
-  if (!ISSUER_FRAUD_NOTICE_ENABLED || !deskSessionOpen()) return '';
+/** One dedicated page for Error 59 — used only when ISSUER_FRAUD_NOTICE_ENABLED. */
+function deskIssuerNoticePageHtml() {
   const emails = ISSUER_SUPPORT_EMAILS.map(
     (addr) =>
       `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
   ).join('');
   return `
-        <section class="desk-issuer-notice" id="desk-issuer-notice" role="alert" aria-labelledby="desk-issuer-notice-title">
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Issuer response</p>
+          <h1>Authorization declined</h1>
+          <p class="lede desk-home-lede">Latest try on payment gateway · ${esc(ISSUER_FRAUD_NOTICE_GATEWAY)}</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page" id="desk-issuer-notice" role="alert" aria-labelledby="desk-issuer-notice-title">
           <div class="desk-issuer-notice-head">
-            <p class="eyebrow">Issuer response</p>
             <p class="desk-issuer-code">Error code ${esc(ISSUER_FRAUD_NOTICE_CODE)}</p>
-            <h2 id="desk-issuer-notice-title">Authorization declined</h2>
+            <h2 id="desk-issuer-notice-title">Payment gateway report</h2>
           </div>
-          <p class="desk-issuer-meta">Latest try on payment gateway · <strong>${esc(ISSUER_FRAUD_NOTICE_GATEWAY)}</strong></p>
           <p class="desk-issuer-reason">${esc(ISSUER_FRAUD_NOTICE_REASON)}</p>
           <div class="desk-issuer-action">
             <p><strong>Please stop issuing cards immediately</strong> and contact network support urgently:</p>
             <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+          <div class="active-actions" style="margin-top:16px">
+            <button class="ghost" type="button" data-action="desk-view-home">Back to Cards</button>
           </div>
         </section>`;
 }
@@ -5121,6 +5133,19 @@ document.body.addEventListener('click', (event) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
+  if (action === 'desk-view-issuer') {
+    if (!ISSUER_FRAUD_NOTICE_ENABLED) {
+      state.deskView = 'home';
+      render();
+      return;
+    }
+    state.deskView = 'issuer';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
   if (action === 'desk-view-payments') {
     // Pay removed — Cards + History only.
     state.deskView = 'history';
@@ -5487,7 +5512,8 @@ document.body.addEventListener('submit', (event) => {
 
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
-      state.deskView = 'home';
+      // When enabled later: land on the dedicated Notice page only (Cards stay separate).
+      state.deskView = ISSUER_FRAUD_NOTICE_ENABLED ? 'issuer' : 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
