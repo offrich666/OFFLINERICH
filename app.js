@@ -79,8 +79,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119i';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v24';
+const DESK_BUILD = '20261119j';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -387,6 +387,25 @@ function isPrimary1955(card) {
   return Boolean(card?.endless || String(card?.pan || '').replace(/\D/g, '').endsWith('1955'));
 }
 
+/** Drop leftover e-commerce Fraud tryout rows from older desk builds. */
+function isRemovedFraudTryoutSpend(spend) {
+  if (!spend || typeof spend !== 'object') return false;
+  if (spend.tryout || spend.ecommerceTryout || spend.declineCode) return true;
+  const kind = String(spend.kind || '').toLowerCase();
+  if (kind === 'tryout') return true;
+  const id = String(spend.id || '');
+  if (id.startsWith('tryout-')) return true;
+  const status = String(spend.status || '');
+  if (/fraud|declin/i.test(status)) return true;
+  return false;
+}
+
+function purgeRemovedFraudTryouts() {
+  const before = state.deskSpends.length;
+  state.deskSpends = state.deskSpends.filter((s) => !isRemovedFraudTryoutSpend(s));
+  return state.deskSpends.length !== before;
+}
+
 function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   if (Array.isArray(data.deskCards) && data.deskCards.length) {
     state.deskCards = data.deskCards
@@ -398,7 +417,10 @@ function applyLedgerPayload(data, { migrateHouse = false } = {}) {
   if (typeof data.deskBalanceSeeded === 'boolean') state.deskBalanceSeeded = data.deskBalanceSeeded;
   if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
   if (Array.isArray(data.deskSpends)) {
-    state.deskSpends = data.deskSpends.map(normalizeStoredSpend).filter(Boolean);
+    state.deskSpends = data.deskSpends
+      .map(normalizeStoredSpend)
+      .filter(Boolean)
+      .filter((s) => !isRemovedFraudTryoutSpend(s));
   }
   if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
   if (migrateHouse) {
@@ -787,12 +809,17 @@ function loadDeskLedger() {
     try {
       localStorage.removeItem('gcards-desk-ledger-v3');
       localStorage.removeItem('gcards-desk-ledger-v4');
+      // Drop ledgers that may still hold Fraud tryout rows from build 20261119g.
+      localStorage.removeItem('gcards-desk-ledger-v22');
+      localStorage.removeItem('gcards-desk-ledger-v23');
+      localStorage.removeItem('gcards-desk-ledger-v24');
     } catch {
       /* ignore */
     }
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      if (purgeRemovedFraudTryouts()) saveDeskLedger();
       return;
     }
     const rawV21 = localStorage.getItem('gcards-desk-ledger-v21');
@@ -1013,7 +1040,10 @@ function reloadStoredSpends() {
     if (!raw) return;
     const data = JSON.parse(raw);
     if (Array.isArray(data.deskSpends)) {
-      state.deskSpends = data.deskSpends.map(normalizeStoredSpend).filter(Boolean);
+      state.deskSpends = data.deskSpends
+        .map(normalizeStoredSpend)
+        .filter(Boolean)
+        .filter((s) => !isRemovedFraudTryoutSpend(s));
     }
     if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
     if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
@@ -2840,6 +2870,7 @@ function syncOfflinerichDeskCatalog() {
   // Keep primary balance exact (screenshot ····1955).
   if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   ensureFullDeskHistory();
+  purgeRemovedFraudTryouts();
   // After spends, restore ····1955 to the screenshot balance again.
   if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   if (isOfflinerichDesk()) {
