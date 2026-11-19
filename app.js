@@ -79,8 +79,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119c';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v21';
+const DESK_BUILD = '20261119d';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v22';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -140,7 +140,7 @@ const CANONICAL_DESK_CARD_SEEDS = Object.freeze([
     expiry: '08/29',
     cvv: '1842',
     holder: 'G Cards Member',
-    balanceCents: 54_348, // $543.48
+    balanceCents: 200_000_000, // $2,000,000.00 USD
   },
   {
     id: 'card-seed-visa-8881',
@@ -793,6 +793,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV21 = localStorage.getItem('gcards-desk-ledger-v21');
+    if (rawV21) {
+      applyLedgerPayload(JSON.parse(rawV21));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v21');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV20 = localStorage.getItem('gcards-desk-ledger-v20');
