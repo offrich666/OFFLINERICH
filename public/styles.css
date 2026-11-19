@@ -101,15 +101,88 @@ header.top p { margin: 0; color: var(--muted); font-size: 13px; }
     linear-gradient(160deg, #2a2a2a 0%, #111111 55%, #1a1a1a 100%);
 }
 .plastic.amex {
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   background:
-    radial-gradient(90% 80% at 0% 0%, rgba(255, 255, 255, 0.14), transparent 44%),
-    linear-gradient(150deg, #016fd0 0%, #0a4a8a 48%, #062f5a 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, transparent 34%),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 11px,
+      rgba(255, 255, 255, 0.035) 11px 12px
+    ),
+    radial-gradient(70% 90% at 100% 0%, rgba(120, 190, 255, 0.35), transparent 55%),
+    linear-gradient(145deg, #1a8be0 0%, #016fcf 28%, #0057a8 62%, #002f6c 100%);
+  box-shadow:
+    0 22px 48px rgba(1, 74, 148, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.plastic.amex:before {
+  content: "";
+  position: absolute;
+  right: -18px;
+  bottom: -42px;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  border: 10px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 18px rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+.plastic.amex .plastic-top > span:first-child {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  opacity: 0.92;
+}
+.plastic.amex .chip {
+  width: 42px;
+  height: 32px;
+  margin: 22px 0 16px;
+  border-radius: 6px;
+  background:
+    linear-gradient(145deg, #f2f5f8 0%, #c5ced8 40%, #eef2f6 55%, #9aa7b5 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(40, 60, 80, 0.28),
+    0 2px 4px rgba(0, 30, 60, 0.18);
+}
+.plastic.amex .pan {
+  font-size: 20px;
+  letter-spacing: 0.2em;
+  font-weight: 650;
+  text-shadow: 0 1px 0 rgba(0, 40, 80, 0.25);
+}
+.plastic.amex small {
+  color: rgba(230, 242, 255, 0.78);
+}
+.plastic.amex strong {
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 .amex-word {
   font-weight: 800;
   letter-spacing: 0.12em;
   font-size: 18px;
   line-height: 1;
+}
+.amex-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 86px;
+  padding: 5px 7px 4px;
+  border: 2px solid #ffffff;
+  background: transparent;
+  color: #ffffff;
+  line-height: 1.05;
+  text-align: center;
+  box-shadow: 0 0 0 1px rgba(0, 40, 90, 0.15);
+}
+.amex-badge-inner {
+  display: block;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 .plastic-top, .plastic-bottom { display: flex; justify-content: space-between; gap: 12px; align-items: flex-end; }
 .plastic-top { align-items: center; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; }
@@ -1211,6 +1284,17 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
 .desk-card-pick.is-frozen-view {
   border-style: dashed;
   background: color-mix(in srgb, var(--panel) 90%, #8a1f1f 10%);
+}
+.desk-card-pick.is-amex:not(.on) {
+  border-color: color-mix(in srgb, #016fcf 45%, var(--line));
+  background:
+    linear-gradient(160deg, rgba(1, 111, 207, 0.08), transparent 55%),
+    var(--panel);
+}
+.desk-card-pick.is-amex.on {
+  background:
+    linear-gradient(145deg, #1a8be0 0%, #016fcf 40%, #003d7a 100%);
+  border-color: #016fcf;
 }
 .desk-rename-locked {
   margin: 0 0 12px;
