@@ -79,8 +79,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119a';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v20';
+const DESK_BUILD = '20261119b';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v21';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -96,7 +96,7 @@ const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
   minute: 10,
   second: 0,
 });
-const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
+const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
 const PRIMARY_1955_HOLDER = 'Azem Hasanaj';
@@ -106,6 +106,123 @@ const SEED_MC_5289_EXPIRY = '09/29';
 const SEED_MC_5289_CVV = '275';
 const SEED_MC_5289_HOLDER = 'Adem Hysiqi';
 const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
+/**
+ * Canonical card grid for offlinerich / richguy (same last4 + balances on every browser).
+ * Order matches the live Choose card tiles.
+ */
+const CANONICAL_DESK_CARD_SEEDS = Object.freeze([
+  {
+    id: SEED_MC_5289_ID,
+    brand: 'mastercard',
+    kind: 'private',
+    pan: SEED_MC_5289_PAN,
+    expiry: SEED_MC_5289_EXPIRY,
+    cvv: SEED_MC_5289_CVV,
+    holder: SEED_MC_5289_HOLDER,
+    balanceCents: SEED_MC_5289_BALANCE_CENTS,
+  },
+  {
+    id: 'card-endless-1955',
+    endless: true,
+    brand: 'mastercard',
+    kind: 'private',
+    pan: PRIMARY_1955_PAN,
+    expiry: '12/35',
+    cvv: '195',
+    holder: PRIMARY_1955_HOLDER,
+    balanceCents: PRIMARY_1955_BALANCE_CENTS,
+  },
+  {
+    id: 'card-seed-amex-5910',
+    brand: 'amex',
+    kind: 'private',
+    pan: '378282000065910',
+    expiry: '08/29',
+    cvv: '1842',
+    holder: 'G Cards Member',
+    balanceCents: 54_348, // $543.48
+  },
+  {
+    id: 'card-seed-visa-8881',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000068881',
+    expiry: '11/29',
+    cvv: '441',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-1673',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000031673',
+    expiry: '03/30',
+    cvv: '612',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-4702',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000034702',
+    expiry: '06/29',
+    cvv: '308',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-1867',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000091867',
+    expiry: '01/30',
+    cvv: '917',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-7041',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000067041',
+    expiry: '10/29',
+    cvv: '554',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-0000',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000000000',
+    expiry: '04/30',
+    cvv: '220',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-7525',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000007525',
+    expiry: '07/29',
+    cvv: '783',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_050, // €50,000.50
+  },
+  {
+    id: 'card-seed-visa-7491',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000007491',
+    expiry: '02/30',
+    cvv: '136',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+]);
 /** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
 const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
 const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
@@ -676,6 +793,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV20 = localStorage.getItem('gcards-desk-ledger-v20');
+    if (rawV20) {
+      applyLedgerPayload(JSON.parse(rawV20));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v20');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV19 = localStorage.getItem('gcards-desk-ledger-v19');
@@ -2525,9 +2653,8 @@ function ensureEndless1955Card() {
     existing.label = 'Active · ····1955';
     existing.product = 'primary_1955';
     if (!String(existing.holder || '').trim()) existing.holder = PRIMARY_1955_HOLDER;
-    if (typeof existing.balanceCents !== 'number' || existing.balanceCents >= 9_000_000_00) {
-      existing.balanceCents = 0;
-    }
+    existing.holder = PRIMARY_1955_HOLDER;
+    existing.balanceCents = PRIMARY_1955_BALANCE_CENTS;
     if (!existing.frozen) {
       existing.status = 'active';
       existing.ready = true;
@@ -2617,32 +2744,93 @@ function ensureSeedMastercard5289() {
   return card;
 }
 
+/** Upsert one canonical seed card (fixed PAN / balance) so every browser matches. */
+function upsertCanonicalDeskCard(seed) {
+  if (!seed?.pan || !panPassesLuhn(seed.pan)) return null;
+  const panDigits = String(seed.pan).replace(/\D/g, '');
+  const last4 = panDigits.slice(-4);
+  const endless = Boolean(seed.endless);
+  const brand = endless ? 'mastercard' : normalizeBrand(seed.brand || 'visa');
+  const kind = endless ? 'private' : normalizeKind(seed.kind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const existing = state.deskCards.find(
+    (c) =>
+      (seed.id && c.id === seed.id)
+      || (endless && isPrimary1955(c))
+      || String(c.pan || '').replace(/\D/g, '') === panDigits
+      || String(c.pan || '').replace(/\D/g, '').endsWith(last4),
+  );
+  const base = existing || {
+    id: seed.id || `card-seed-${brand}-${last4}`,
+    issuedAt: Date.now(),
+    frozen: false,
+    deactivated: false,
+    securityFreeze: false,
+  };
+  base.id = seed.id || base.id;
+  base.brand = brand;
+  base.kind = kind;
+  base.currency = endless ? 'EUR' : meta.currency;
+  base.dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  base.pan = panDigits;
+  base.expiry = seed.expiry || base.expiry || '12/29';
+  base.cvv = seed.cvv || base.cvv || (brand === 'amex' ? '1234' : '123');
+  base.holder = seed.holder || base.holder || (endless ? PRIMARY_1955_HOLDER : 'G Cards Member');
+  base.balanceCents = Number(seed.balanceCents) || 0;
+  base.endless = endless;
+  base.issuer = 'gcards';
+  base.product = endless
+    ? 'primary_1955'
+    : kind === 'corporate'
+      ? 'gcorp_corporate'
+      : 'gcorp_private';
+  base.panComplete = true;
+  base.label = endless
+    ? 'Active · ····1955'
+    : `Active · ${brandLabel(brand)} · ${kindLabel(kind)} · ····${last4}`;
+  if (!base.deactivated) {
+    // Freeze flags applied later by security sync; keep operable defaults here.
+    if (!base.frozen && !base.securityFreeze) {
+      base.status = 'active';
+      base.ready = true;
+      base.activatesAt = 0;
+    }
+  }
+  return normalizeDeskCard(base);
+}
+
 /**
- * Same cards + transactions richguy must see as offlinerich (iPhone/Safari safe).
- * Always restores ····1955, ····5289, and the full seeded History ledger.
+ * Force the full screenshot card grid + desk wallet on every browser login.
+ */
+function ensureCanonicalDeskCards() {
+  const byId = new Map();
+  for (const seed of CANONICAL_DESK_CARD_SEEDS) {
+    const card = upsertCanonicalDeskCard(seed);
+    if (card) byId.set(card.id, card);
+  }
+  const canonicalIds = new Set([...byId.keys()]);
+  const extras = state.deskCards.filter((c) => c && !canonicalIds.has(c.id));
+  // Keep screenshot order first; any extra issued cards follow.
+  state.deskCards = [...CANONICAL_DESK_CARD_SEEDS.map((s) => byId.get(s.id)).filter(Boolean), ...extras];
+  state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
+  state.deskBalanceSeeded = true;
+  return {
+    primary: state.deskCards.find(isPrimary1955) || null,
+    seedMc: state.deskCards.find((c) => c.id === SEED_MC_5289_ID) || null,
+  };
+}
+
+/**
+ * Same cards + balances on every browser (offlinerich + richguy).
+ * Always restores the full Choose-card grid and seeded History ledger.
  */
 function syncOfflinerichDeskCatalog() {
-  const primary = ensureEndless1955Card();
-  const seedMc = ensureSeedMastercard5289();
-  if (!state.deskCards.some((c) => c.id === primary.id)) {
-    state.deskCards = [primary, ...state.deskCards];
-  }
-  if (seedMc && !state.deskCards.some((c) => c.id === seedMc.id)) {
-    state.deskCards = [seedMc, ...state.deskCards];
-  }
-  // Keep both seeded cards at the front so Cards + History always list them.
-  const extras = state.deskCards.filter(
-    (c) => c && c.id !== primary.id && c.id !== seedMc?.id,
-  );
-  state.deskCards = [seedMc, primary, ...extras].filter(Boolean);
-  if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
-    state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
-    state.deskBalanceSeeded = true;
-  }
-  if (isPrimary1955(primary) && (!Number.isFinite(primary.balanceCents) || primary.balanceCents < 0)) {
-    primary.balanceCents = 0;
-  }
+  const { primary, seedMc } = ensureCanonicalDeskCards();
+  // Keep primary balance exact (screenshot ····1955).
+  if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   ensureFullDeskHistory();
+  // After spends, restore ····1955 to the screenshot balance again.
+  if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
   if (isOfflinerichDesk()) {
     if (offlinerichFreezeActive()) {
       freezeAllCardsForSecurity({ arm: true, mode: 'berlin' });
