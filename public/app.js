@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119e';
+const DESK_BUILD = '20261119f';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v22';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -1548,7 +1548,7 @@ function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 
             <div>
               <p class="eyebrow">G Cards</p>
               <h2>Download statement</h2>
-              <p class="muted desk-panel-help">Clean card statement PDF — summary, cardholder, and itemised transactions (SolCard-style).</p>
+              <p class="muted desk-panel-help">Clean card statement PDF — summary, cardholder, and itemised transactions.</p>
             </div>
           </div>
           <form id="${esc(formId)}" class="desk-statement-form ${embedCardSelect ? 'desk-statement-form-wide' : ''}">
