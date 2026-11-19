@@ -378,6 +378,83 @@ button.ghost.light:hover { background: rgba(255, 255, 255, 0.1); }
 .host-notice.fault {
   background: #f8eeee; border-color: #e2bcbc;
 }
+
+/* Post-login issuer Fraud notice (Error 59 / payment gateway) */
+.desk-issuer-notice {
+  margin: 0 0 4px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  border: 1px solid #d9b0b0;
+  background:
+    linear-gradient(180deg, #fff7f7 0%, #f8ecec 100%);
+  box-shadow: 0 10px 28px rgba(88, 28, 28, 0.06);
+}
+.desk-issuer-notice-head .eyebrow {
+  margin: 0 0 6px;
+  color: #8d2f2f;
+}
+.desk-issuer-code {
+  margin: 0;
+  font-family: Fraunces, Georgia, serif;
+  font-size: 28px;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+  color: #7a2424;
+  line-height: 1.15;
+}
+.desk-issuer-notice h2 {
+  margin: 6px 0 0;
+  font-size: 22px;
+  color: var(--navy);
+}
+.desk-issuer-meta {
+  margin: 12px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.desk-issuer-reason {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: #5c3030;
+  max-width: 54ch;
+}
+.desk-issuer-action {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(141, 47, 47, 0.18);
+}
+.desk-issuer-action p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--navy);
+}
+.desk-issuer-emails {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.desk-issuer-emails li {
+  margin: 0;
+}
+a.desk-issuer-mail {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #7a2424;
+  font-weight: 650;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-all;
+}
+a.desk-issuer-mail:hover {
+  color: #5c1c1c;
+}
 .host-notice p { margin: 0 0 8px; color: var(--navy); font-size: 13px; letter-spacing: 0.02em; }
 .host-notice .reason {
   margin: 0; color: #5c3030; font-size: 13.5px; line-height: 1.55;
