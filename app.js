@@ -65,27 +65,7 @@ const PAYMENT_GATEWAYS = [
   'RBKO Raiffeisen',
   'NLB Banka',
 ];
-/** ISO-ish issuer response when e-commerce tries a card (no 3DS). */
-const FRAUD_DECLINE_CODE = '59';
-const FRAUD_DECLINE_REASON =
-  'One of the banks or partners reported your system to the issuing platform — Fraud.';
-const ECOM_TRYOUT_MERCHANTS = Object.freeze([
-  'SHOPIFY CHECKOUT',
-  'STRIPE *CHECKOUT',
-  'AMAZON EU MARKET',
-  'BOOKING.COM',
-  'GJIRAFA50 ECOM',
-  'PAYPAL *STORE',
-  'APPLE.COM/BILL',
-  'GOOGLE *ADS',
-  'ALIEXPRESS',
-  'SPOTIFY P0BILL',
-]);
 const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
-/** @type {number} */
-let liveAuthWatchTimer = 0;
-/** @type {BroadcastChannel | null} */
-let liveAuthChannel = null;
 const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
 const GJIRAFA_SPEND_ID = 'spend-1794823980000-1955-759800';
 const GJIRAFA_SPEND_AUTH = '790924';
@@ -99,8 +79,8 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119g';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v23';
+const DESK_BUILD = '20261119h';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v24';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -353,7 +333,7 @@ function cardSpentOnDayCents(card, dayYmd) {
   const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
   return state.deskSpends
     .filter((s) => {
-      if (isSpendRefund(s) || isSpendDecline(s) || isSpendTryout(s)) return false;
+      if (isSpendRefund(s)) return false;
       const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
       if (!match) return false;
       const ts = spendTimestamp(s);
@@ -438,9 +418,6 @@ function normalizeSpendKind(row) {
   const raw = String(row?.kind || row?.direction || row?.entryType || row?.status || '')
     .toLowerCase()
     .trim();
-  if (raw === 'tryout' || raw.includes('tryout') || raw.includes('declin')) {
-    return 'tryout';
-  }
   if (
     raw === 'refund'
     || raw === 'credit'
@@ -457,174 +434,18 @@ function isSpendRefund(spend) {
   return normalizeSpendKind(spend) === 'refund';
 }
 
-/** Signed amount for totals: payments − · refunds +. Declined tryouts = 0. */
+/** Signed amount for totals: payments − · refunds +. */
 function spendSignedCents(spend) {
-  if (isSpendDecline(spend)) return 0;
   const amount = Math.abs(Number(spend?.amountCents || 0));
   return isSpendRefund(spend) ? amount : -amount;
 }
 
 function formatSpendAmountHtml(spend, currency = 'EUR') {
   const amount = Math.abs(Number(spend?.amountCents || 0));
-  if (isSpendDecline(spend)) {
-    return `<strong class="desk-tx-declined">${esc(money(amount, currency))} <small>declined</small></strong>`;
-  }
   const refund = isSpendRefund(spend);
   const cls = refund ? 'desk-tx-in plus' : 'desk-tx-out minus';
   const sign = refund ? '+' : '−';
   return `<strong class="${cls}">${sign}${esc(money(amount, currency))}</strong>`;
-}
-
-function pickEcommerceTryoutMerchant() {
-  const i = Math.floor(Math.random() * ECOM_TRYOUT_MERCHANTS.length);
-  return ECOM_TRYOUT_MERCHANTS[i] || ECOM_TRYOUT_MERCHANTS[0];
-}
-
-function pickEcommerceTryoutAmountCents(card) {
-  const cur = cardCurrency(card);
-  if (cur === 'USD') {
-    const dollars = [19.99, 49.0, 89.5, 129.0, 249.99, 499.0][Math.floor(Math.random() * 6)];
-    return Math.round(dollars * 100);
-  }
-  const euros = [9.99, 24.5, 59.0, 99.0, 149.99, 320.0][Math.floor(Math.random() * 6)];
-  return Math.round(euros * 100);
-}
-
-/**
- * Record a live e-commerce card tryout: no 3DS, issuer declines for Fraud.
- * Does not move card balance (authorization rejected).
- */
-function recordEcommerceFraudTryout(card, {
-  merchant = '',
-  amountCents = 0,
-  whenMs = Date.now(),
-  broadcast = true,
-} = {}) {
-  if (!card?.pan) return null;
-  const ms = Number(whenMs) || Date.now();
-  const cents =
-    Number.isFinite(amountCents) && amountCents > 0
-      ? Math.round(amountCents)
-      : pickEcommerceTryoutAmountCents(card);
-  const place = String(merchant || '').trim() || pickEcommerceTryoutMerchant();
-  const authNr = makeAuthNr();
-  const when = new Date(ms).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
-  const entry = {
-    id: `tryout-${ms}-${String(card.pan).slice(-4)}-${authNr}`,
-    when,
-    whenIso: new Date(ms).toISOString(),
-    merchant: place,
-    amountCents: cents,
-    kind: 'tryout',
-    cardId: card.id,
-    cardLast4: String(card.pan).slice(-4),
-    network: String(card.brand || 'card'),
-    status: 'Declined · Fraud',
-    gateway: 'E-commerce / online checkout',
-    authNr,
-    threeDs: 'not_required',
-    tryout: true,
-    declineCode: FRAUD_DECLINE_CODE,
-    declineReason: FRAUD_DECLINE_REASON,
-    paymentId: `ecom_${authNr}_${String(card.pan).slice(-4)}`,
-    orderNr: `TRY-${authNr}`,
-    createdAt: ms,
-  };
-  // Dedupe identical id
-  if (state.deskSpends.some((s) => s.id === entry.id)) return null;
-  state.deskSpends = [entry, ...state.deskSpends];
-  if (broadcast) {
-    try {
-      liveAuthChannel?.postMessage({ type: 'tryout', id: entry.id, at: ms });
-    } catch {
-      /* ignore */
-    }
-  }
-  return entry;
-}
-
-function recentEcommerceTryouts({ cardId = '', limit = 12 } = {}) {
-  return state.deskSpends
-    .filter((s) => isSpendTryout(s) && (!cardId || s.cardId === cardId))
-    .slice()
-    .sort((a, b) => spendTimestamp(b) - spendTimestamp(a))
-    .slice(0, limit);
-}
-
-/** Seed a few live-looking tryouts so every browser sees the same fraud declines. */
-function ensureLiveEcommerceTryouts() {
-  const cards = state.deskCards.filter((c) => c && !c.deactivated);
-  if (!cards.length) return false;
-  let changed = false;
-  const existing = recentEcommerceTryouts({ limit: 40 });
-  if (existing.length < 3) {
-    const seeds = [
-      { merchant: 'SHOPIFY CHECKOUT', agoMin: 4 },
-      { merchant: 'STRIPE *CHECKOUT', agoMin: 18 },
-      { merchant: 'GJIRAFA50 ECOM', agoMin: 41 },
-      { merchant: 'AMAZON EU MARKET', agoMin: 95 },
-    ];
-    for (const seed of seeds) {
-      if (existing.some((s) => String(s.merchant).toUpperCase() === seed.merchant)) continue;
-      const card = cards[Math.floor(Math.random() * cards.length)];
-      const whenMs = Date.now() - seed.agoMin * 60_000 - Math.floor(Math.random() * 40_000);
-      if (recordEcommerceFraudTryout(card, { merchant: seed.merchant, whenMs, broadcast: false })) {
-        changed = true;
-      }
-    }
-  }
-  return changed;
-}
-
-/** While desk is open, pulse a new live e-commerce tryout (feels synchronized). */
-function maybePulseLiveEcommerceTryout() {
-  if (!deskSessionOpen()) return false;
-  const cards = state.deskCards.filter((c) => c && !c.deactivated);
-  if (!cards.length) return false;
-  const latest = recentEcommerceTryouts({ limit: 1 })[0];
-  const latestTs = spendTimestamp(latest);
-  // At most one new live tryout about every 20–35 seconds.
-  if (latestTs && Date.now() - latestTs < 20_000) return false;
-  const card = cards[Math.floor(Math.random() * cards.length)];
-  const entry = recordEcommerceFraudTryout(card, { whenMs: Date.now(), broadcast: true });
-  if (!entry) return false;
-  saveDeskLedger();
-  if (state.deskView === 'history' || offlinerichLockdownActive()) {
-    state.spendDetailId = entry.id;
-  }
-  state.flash = {
-    kind: 'error',
-    text: `Live e-commerce tryout · ····${entry.cardLast4} · ${entry.merchant} · Error ${FRAUD_DECLINE_CODE} Fraud · 3DS not required`,
-  };
-  return true;
-}
-
-function startLiveAuthWatch() {
-  if (typeof window === 'undefined') return;
-  if (!liveAuthChannel) {
-    try {
-      liveAuthChannel = new BroadcastChannel('gcards-desk-auth-live');
-      liveAuthChannel.onmessage = () => {
-        try {
-          loadDeskLedger();
-          if (deskSessionOpen()) render();
-        } catch {
-          /* ignore */
-        }
-      };
-    } catch {
-      liveAuthChannel = null;
-    }
-  }
-  if (liveAuthWatchTimer) return;
-  liveAuthWatchTimer = window.setInterval(() => {
-    try {
-      if (!deskSessionOpen()) return;
-      if (maybePulseLiveEcommerceTryout()) render();
-    } catch {
-      /* ignore */
-    }
-  }, 22_000);
 }
 
 function normalizeStoredSpend(row) {
@@ -637,28 +458,19 @@ function normalizeStoredSpend(row) {
   const whenIso = row.whenIso || row.createdAt || '';
   const gateway = String(row.gateway || PAYMENT_GATEWAYS[0]).trim() || PAYMENT_GATEWAYS[0];
   const kind = normalizeSpendKind(row);
-  const tryout = Boolean(row.tryout || row.ecommerceTryout || row.declineCode);
-  const statusRaw = String(row.status || (kind === 'refund' ? 'Refunded' : 'Completed')).trim();
-  const status =
-    tryout || /declin|fraud|reject/i.test(statusRaw)
-      ? 'Declined · Fraud'
-      : statusRaw || (kind === 'refund' ? 'Refunded' : 'Completed');
+  const status = String(row.status || (kind === 'refund' ? 'Refunded' : 'Completed')).trim()
+    || (kind === 'refund' ? 'Refunded' : 'Completed');
   const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
-  // Card tryouts never challenge 3-D Secure — issuer declines frictionless.
-  const threeDs = 'not_required';
+  const threeDs = String(row.threeDs || 'not_required').trim() || 'not_required';
   const paymentId = String(row.paymentId || '').trim();
   const orderNr = String(row.orderNr || row.orderNumber || '').trim();
-  const declineCode = String(row.declineCode || (tryout ? FRAUD_DECLINE_CODE : '')).trim();
-  const declineReason = String(
-    row.declineReason || (tryout || declineCode ? FRAUD_DECLINE_REASON : ''),
-  ).trim();
   return {
     id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
     when: String(row.when || ''),
     whenIso: whenIso ? String(whenIso) : '',
     merchant,
     amountCents,
-    kind: tryout ? 'tryout' : kind,
+    kind,
     cardId: String(row.cardId || ''),
     cardLast4,
     network: String(row.network || 'card'),
@@ -668,24 +480,8 @@ function normalizeStoredSpend(row) {
     threeDs,
     paymentId,
     orderNr,
-    tryout: tryout || Boolean(declineCode),
-    declineCode,
-    declineReason,
     createdAt: Number(row.createdAt) || Date.now(),
   };
-}
-
-function isSpendTryout(spend) {
-  return Boolean(
-    spend?.tryout
-    || spend?.kind === 'tryout'
-    || spend?.declineCode
-    || /declin|fraud/i.test(String(spend?.status || '')),
-  );
-}
-
-function isSpendDecline(spend) {
-  return isSpendTryout(spend) || /declin|fraud|reject/i.test(String(spend?.status || ''));
 }
 
 function threeDsLabel(value) {
@@ -997,17 +793,6 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
-      return;
-    }
-    const rawV22 = localStorage.getItem('gcards-desk-ledger-v22');
-    if (rawV22) {
-      applyLedgerPayload(JSON.parse(rawV22));
-      saveDeskLedger();
-      try {
-        localStorage.removeItem('gcards-desk-ledger-v22');
-      } catch {
-        /* ignore */
-      }
       return;
     }
     const rawV21 = localStorage.getItem('gcards-desk-ledger-v21');
@@ -3057,7 +2842,6 @@ function syncOfflinerichDeskCatalog() {
   ensureFullDeskHistory();
   // After spends, restore ····1955 to the screenshot balance again.
   if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
-  ensureLiveEcommerceTryouts();
   if (isOfflinerichDesk()) {
     if (offlinerichFreezeActive()) {
       freezeAllCardsForSecurity({ arm: true, mode: 'berlin' });
@@ -4021,9 +3805,7 @@ function deskCardDetailHtml() {
           </div>
         </section>
 
-        ${deskStatementFormHtml({ cardId: card.id, embedCardSelect: false })}
-
-        ${deskLiveTryoutsPanelHtml({ limit: 6, cardId: card.id })}`;
+        ${deskStatementFormHtml({ cardId: card.id, embedCardSelect: false })}`;
 }
 
 function deskPaymentsHtml() {
@@ -4086,18 +3868,9 @@ function deskPaymentsHtml() {
             </label>
             <div class="desk-pay-actions">
               <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>${
-                entryKind === 'refund'
-                  ? 'Save refund'
-                  : cardStatusKey(card) === 'frozen' || securityFreezeActive()
-                    ? 'Try e-commerce checkout'
-                    : 'Save payment'
+                entryKind === 'refund' ? 'Save refund' : 'Save payment'
               }</button>
             </div>
-            ${
-              entryKind === 'payment' && (cardStatusKey(card) === 'frozen' || securityFreezeActive())
-                ? `<p class="muted desk-panel-help">Frozen card tryout: no 3-D Secure. Issuer returns error <strong>${esc(FRAUD_DECLINE_CODE)}</strong> Fraud — balance is not charged.</p>`
-                : ''
-            }
           </form>
         </section>`;
 }
@@ -4105,132 +3878,62 @@ function deskPaymentsHtml() {
 function spendDetailHtml(spend) {
   if (!spend) return '';
   const refund = isSpendRefund(spend);
-  const declined = isSpendDecline(spend);
   const card = state.deskCards.find((c) => c.id === spend.cardId);
   const cur = card ? cardCurrency(card) : 'EUR';
-  const typeLabel = declined ? 'E-commerce tryout' : refund ? 'Refund' : 'Payment';
-  const statusLabel = declined
-    ? String(spend.status || 'Declined · Fraud')
-    : String(spend.status || (refund ? 'Refunded' : 'Completed'));
   return `
-        <section class="desk-deposit desk-page-panel desk-tx-detail ${declined ? 'is-declined' : ''}" id="desk-tx-detail">
+        <section class="desk-deposit desk-page-panel desk-tx-detail" id="desk-tx-detail">
           <div class="panel-head-inline">
             <div>
-              <p class="eyebrow">${declined ? 'Authorization tryout' : refund ? 'Refund details' : 'Payment details'}</p>
+              <p class="eyebrow">${refund ? 'Refund details' : 'Payment details'}</p>
               <h2>${esc(spend.merchant)}</h2>
             </div>
             <div class="active-actions">
-              ${
-                declined
-                  ? ''
-                  : `<button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download transaction information</button>`
-              }
+              <button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download transaction information</button>
               <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
             </div>
           </div>
-          ${
-            declined
-              ? `<div class="host-notice fault desk-fraud-notice" role="alert">
-            <p><strong>Error code ${esc(spend.declineCode || FRAUD_DECLINE_CODE)}</strong></p>
-            <p class="reason">${esc(spend.declineReason || FRAUD_DECLINE_REASON)}</p>
-            <p class="muted">3-D Secure was not requested. The issuing platform declined this online checkout tryout.</p>
-          </div>`
-              : ''
-          }
           <dl class="desk-tx-detail-list">
-            <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${esc(typeLabel)}</span></dd></div>
-            <div><dt>Status</dt><dd><span class="pill ${declined ? 'bad' : 'good'}">${esc(statusLabel)}</span></dd></div>
-            ${
-              declined
-                ? `<div><dt>Decline code</dt><dd class="mono">${esc(spend.declineCode || FRAUD_DECLINE_CODE)}</dd></div>`
-                : ''
-            }
+            <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${refund ? 'Refund' : 'Payment'}</span></dd></div>
+            <div><dt>Status</dt><dd><span class="pill good">${esc(spend.status || (refund ? 'Refunded' : 'Completed'))}</span></dd></div>
             <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
             ${spend.orderNr ? `<div><dt>Order Nr</dt><dd class="mono">${esc(spend.orderNr)}</dd></div>` : ''}
             ${spend.paymentId ? `<div><dt>Payment ID</dt><dd class="mono">${esc(spend.paymentId)}</dd></div>` : ''}
             <div><dt>Amount</dt><dd>${formatSpendAmountHtml(spend, cur)}</dd></div>
-            <div><dt>3-D Secure</dt><dd><span class="pill">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
+            <div><dt>3-D Secure</dt><dd><span class="pill good">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
             <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
             <div><dt>Card</dt><dd>${esc(spend.cardLast4 ? `····${spend.cardLast4}` : '—')}</dd></div>
-            <div><dt>Channel</dt><dd>${esc(spend.gateway || 'E-commerce / online checkout')}</dd></div>
           </dl>
-        </section>`;
-}
-
-function deskLiveTryoutsPanelHtml({ limit = 10, cardId = '' } = {}) {
-  const rows = recentEcommerceTryouts({ cardId, limit });
-  const body = rows.length
-    ? rows
-        .map((s) => {
-          const card = state.deskCards.find((c) => c.id === s.cardId);
-          const cur = card ? cardCurrency(card) : 'EUR';
-          const on = s.id === state.spendDetailId ? 'is-open' : '';
-          return `<tr class="desk-tx-row is-tryout ${on}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
-            <td class="desk-tx-when">${esc(s.when)}</td>
-            <td>
-              <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
-              <small class="desk-tx-sub">Tryout · Error ${esc(s.declineCode || FRAUD_DECLINE_CODE)} · 3DS not required</small>
-            </td>
-            <td class="desk-tx-amount">${formatSpendAmountHtml(s, cur)}</td>
-            <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill bad">Declined · Fraud</span></td>
-          </tr>`;
-        })
-        .join('')
-    : '<tr><td colspan="5" class="muted">Waiting for the next live e-commerce tryout…</td></tr>';
-  return `
-        <section class="desk-deposit desk-page-panel desk-live-tryouts" id="desk-live-tryouts">
-          <div class="panel-head-inline">
-            <div>
-              <p class="eyebrow live-pulse">Live</p>
-              <h2>E-commerce tryouts</h2>
-              <p class="muted desk-panel-help">When a web store tries the card number, 3-D Secure is not asked. The issuing platform declines for Fraud — synchronized here live.</p>
-            </div>
-            <button class="ghost" type="button" data-action="desk-pulse-tryout">Refresh live tryout</button>
-          </div>
-          <div class="host-notice fault">
-            <p><strong>Error code ${esc(FRAUD_DECLINE_CODE)}</strong></p>
-            <p class="reason">${esc(FRAUD_DECLINE_REASON)}</p>
-          </div>
-          <div class="table-wrap desk-history-table">
-            <table class="desk desk-tx-table">
-              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Result</th></tr></thead>
-              <tbody>${body}</tbody>
-            </table>
-          </div>
         </section>`;
 }
 
 function deskHistoryFrozenHtml() {
   const remain = formatHoldRemaining(securityFreezeRemainingMs());
-  const selected =
-    state.deskSpends.find((s) => s.id === state.spendDetailId && isSpendTryout(s)) || null;
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">History frozen</p>
           <h1>Please wait</h1>
-          <p class="lede desk-home-lede">Statements stay locked until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>. Live e-commerce tryouts still sync below.</p>
+          <p class="lede desk-home-lede">Please wait to unfreeze cards to download statements and things. For more, contact support.</p>
         </section>
         <section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
           <p class="eyebrow">Security freeze</p>
-          <h2>Statements unavailable</h2>
+          <h2>History not available</h2>
+          <p class="lede">History and statements stay hidden until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>.</p>
           <div class="host-notice fault">
             <p><strong>Please wait to unfreeze cards</strong></p>
             <p class="reason">
-              Remaining: <strong>${esc(remain)}</strong>. For more, contact support.
+              Download statements after cards unfreeze. Remaining: <strong>${esc(remain)}</strong>.
+              For more, contact support.
             </p>
           </div>
-        </section>
-        ${selected ? spendDetailHtml(selected) : ''}
-        ${deskLiveTryoutsPanelHtml({ limit: 12 })}`;
+          <p class="muted">Cards stay visible on the Cards tab — frozen and not usable until the unfreeze time.</p>
+        </section>`;
 }
 
 function deskHistoryHtml() {
   syncOfflinerichDeskCatalog();
-  // offlinerich until 20.11.2026 15:10 Berlin: statements locked; live Fraud tryouts still show.
+  // offlinerich until 20.11.2026 15:10 Berlin: never list transactions.
   if (offlinerichLockdownActive()) {
-    const open = state.deskSpends.find((s) => s.id === state.spendDetailId);
-    if (open && !isSpendTryout(open)) state.spendDetailId = '';
+    state.spendDetailId = '';
     return deskHistoryFrozenHtml();
   }
   const storedSpends = filteredDeskSpends();
@@ -4260,7 +3963,6 @@ function deskHistoryHtml() {
   const statusChips = [
     ['', 'All status'],
     ['Completed', 'Completed'],
-    ['Declined · Fraud', 'Declined · Fraud'],
   ]
     .map(
       ([value, label]) =>
@@ -4285,25 +3987,17 @@ function deskHistoryHtml() {
         .map((s) => {
           const on = s.id === state.spendDetailId ? 'is-open' : '';
           const refund = isSpendRefund(s);
-          const declined = isSpendDecline(s);
           const card = state.deskCards.find((c) => c.id === s.cardId);
           const cur = card ? cardCurrency(card) : 'EUR';
-          const kindLabelTxt = declined ? 'Tryout' : refund ? 'Refund' : 'Payment';
-          return `<tr class="desk-tx-row ${on} ${declined ? 'is-tryout' : refund ? 'is-refund' : 'is-payment'}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
+          return `<tr class="desk-tx-row ${on} ${refund ? 'is-refund' : 'is-payment'}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
             <td class="desk-tx-when">${esc(s.when)}</td>
             <td>
               <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
-              <small class="desk-tx-sub">${
-                declined
-                  ? `Error ${esc(s.declineCode || FRAUD_DECLINE_CODE)} · 3DS not required`
-                  : `Auth ${esc(s.authNr || '—')} · ${kindLabelTxt}`
-              }</small>
+              <small class="desk-tx-sub">Auth ${esc(s.authNr || '—')} · ${refund ? 'Refund' : 'Payment'}</small>
             </td>
             <td class="desk-tx-amount">${formatSpendAmountHtml(s, cur)}</td>
             <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
-            <td><span class="pill ${refund ? 'good' : declined ? 'bad' : ''}">${esc(
-              declined ? 'Declined · Fraud' : s.status || (refund ? 'Refunded' : 'Completed'),
-            )}</span></td>
+            <td><span class="pill ${refund ? 'good' : ''}">${esc(s.status || (refund ? 'Refunded' : 'Completed'))}</span></td>
           </tr>`;
         })
         .join('')
@@ -4315,12 +4009,10 @@ function deskHistoryHtml() {
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Ledger</p>
           <h1>History</h1>
-          <p class="lede desk-home-lede">Completed spends plus live e-commerce tryouts. Online checkouts never ask for 3DS — Fraud declines sync here.</p>
+          <p class="lede desk-home-lede">Search and filter card history. Download a G Cards PDF statement for any card and period below.</p>
         </section>
 
         ${selected ? spendDetailHtml(selected) : ''}
-
-        ${deskLiveTryoutsPanelHtml({ limit: 8, cardId: state.spendFilterCardId || '' })}
 
         ${deskStatementFormHtml({
           cardId: state.spendFilterCardId || deskActiveCard()?.id || '',
@@ -4937,13 +4629,12 @@ function topupActions() {
 
 function render() {
   const root = document.getElementById('app');
-  // richguy → Cards/History desk. offlinerich → security freeze + live fraud tryouts.
+  // richguy → Cards/History desk. offlinerich → 5h security hold.
   if (state.hostGate?.phase === 'trying') {
     root.innerHTML = hostTryingHtml();
   } else if (state.hostGate?.phase === 'held') {
     root.innerHTML = hostSecurityHoldHtml();
   } else if (deskSessionOpen() || state.admin) {
-    startLiveAuthWatch();
     root.innerHTML = capacityDeskHtml();
   } else if (state.hostGate?.phase === 'blocked') {
     root.innerHTML = hostSecurityHoldHtml();
@@ -5384,46 +5075,17 @@ document.body.addEventListener('click', (event) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
-  if (action === 'desk-pulse-tryout') {
-    const card =
-      state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId || state.deskSelectedCardId))
-      || deskActiveCard();
-    if (!card) {
-      state.flash = { kind: 'error', text: 'No card available for a live tryout.' };
-      render();
-      return;
-    }
-    const entry = recordEcommerceFraudTryout(card, { whenMs: Date.now(), broadcast: true });
-    if (!entry) {
-      state.flash = { kind: 'error', text: 'Could not record live tryout.' };
-      render();
-      return;
-    }
-    saveDeskLedger();
-    state.spendDetailId = entry.id;
-    if (state.deskView !== 'card') state.deskView = 'history';
-    state.flash = {
-      kind: 'error',
-      text: `Live tryout · ····${entry.cardLast4} · ${entry.merchant} · Error ${FRAUD_DECLINE_CODE} Fraud · 3DS not required`,
-    };
-    render();
-    window.setTimeout(() => {
-      document.getElementById('desk-tx-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 40);
-    return;
-  }
   if (action === 'desk-open-spend-detail') {
-    const id = button.dataset.id || '';
-    const spend = state.deskSpends.find((s) => s.id === id);
-    // During offlinerich freeze, only live Fraud tryouts can be opened (statements stay locked).
-    if (offlinerichLockdownActive() && spend && !isSpendTryout(spend)) {
+    if (offlinerichLockdownActive()) {
+      state.spendDetailId = '';
       state.flash = {
         kind: 'error',
-        text: 'History frozen — contact support for statements. Live e-commerce tryouts still show Fraud declines.',
+        text: 'History frozen — contact support to download your history statements of cards.',
       };
       render();
       return;
     }
+    const id = button.dataset.id || '';
     state.deskView = 'history';
     state.spendDetailId = id;
     reloadStoredSpends();
@@ -6047,6 +5709,7 @@ document.body.addEventListener('submit', (event) => {
       const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
       if (!card) throw new Error('Choose a card for this payment.');
       if (cardStatusKey(card) === 'deactivated') throw new Error('Card is deactivated. Reactivate it first.');
+      if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
       const entryKind = normalizeSpendKind({ kind: data.kind || state.spendDraft.kind || 'payment' });
       const amount = Number(data.amount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
@@ -6056,39 +5719,6 @@ document.body.addEventListener('submit', (event) => {
       if (!whenRaw) throw new Error('Enter the payment date and time.');
       const amountCents = Math.round(amount * 100);
       const cur = cardCurrency(card);
-      // Frozen / security: e-commerce style tryout — no 3DS, issuer declines Fraud (no balance move).
-      if (entryKind === 'payment' && (cardStatusKey(card) === 'frozen' || securityFreezeActive())) {
-        const whenDate = new Date(whenRaw);
-        const whenMs = Number.isNaN(whenDate.getTime()) ? Date.now() : whenDate.getTime();
-        const entry = recordEcommerceFraudTryout(card, {
-          merchant,
-          amountCents,
-          whenMs,
-          broadcast: true,
-        });
-        if (!entry) throw new Error('Could not record the declined tryout.');
-        state.spendDraft = {
-          cardId: card.id,
-          merchant: '',
-          amount: '',
-          when: state.spendDraft.when || '',
-          gateway: state.spendDraft.gateway || PAYMENT_GATEWAYS[0],
-          kind: 'payment',
-        };
-        state.deskSelectedCardId = card.id;
-        state.spendDetailId = entry.id;
-        state.deskView = 'history';
-        saveDeskLedger();
-        reloadStoredSpends();
-        state.flash = {
-          kind: 'error',
-          text: `E-commerce tryout declined · Error ${FRAUD_DECLINE_CODE} Fraud · 3DS not required · ${merchant}`,
-        };
-        render();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
-      }
-      if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
       if (entryKind === 'payment') {
         const whenDatePreview = new Date(whenRaw);
         const whenMsPreview = Number.isNaN(whenDatePreview.getTime()) ? Date.now() : whenDatePreview.getTime();
