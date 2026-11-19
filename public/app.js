@@ -79,9 +79,9 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119l';
+const DESK_BUILD = '20261119m';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
-/** Flip to true only when told to publish the post-login issuer notice. */
+/** Flip to true only when told — then show on the whole desk (Cards, detail, History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
 const ISSUER_FRAUD_NOTICE_CODE = '59';
 const ISSUER_FRAUD_NOTICE_GATEWAY = 'TEB BNP PARIBAS';
@@ -3263,10 +3263,9 @@ function deskSecurityBannerHtml() {
   </div>`;
 }
 
-/** Dormant until ISSUER_FRAUD_NOTICE_ENABLED — Cards home only. */
+/** Dormant until ISSUER_FRAUD_NOTICE_ENABLED — then whole desk (cards + everything after login). */
 function deskIssuerFraudNoticeHtml() {
   if (!ISSUER_FRAUD_NOTICE_ENABLED || !deskSessionOpen()) return '';
-  if ((state.deskView || 'home') !== 'home') return '';
   const emails = ISSUER_SUPPORT_EMAILS.map(
     (addr) =>
       `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
