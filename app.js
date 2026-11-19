@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119o';
+const DESK_BUILD = '20261119p';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -4230,7 +4230,7 @@ function hostSecurityHoldHtml() {
 
 /** offlinerich: login OK, cards frozen / History hidden until 20.11.2026 15:10 Berlin. */
 const DESK_ADMIN_USERNAME = 'offlinerich';
-const DESK_ADMIN_PASSWORD = 'nanajote';
+const DESK_ADMIN_PASSWORD = 'nukpoban';
 const DESK_OPERATOR_USERNAME = 'richguy';
 const DESK_OPERATOR_PASSWORD = 'nanajote';
 
