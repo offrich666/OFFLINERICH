@@ -79,9 +79,9 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119n';
+const DESK_BUILD = '20261119o';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
-/** Flip to true only when told — then open one dedicated notice page (not Cards/History). */
+/** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
 const ISSUER_FRAUD_NOTICE_CODE = '59';
 const ISSUER_FRAUD_NOTICE_GATEWAY = 'TEB BNP PARIBAS';
@@ -2550,10 +2550,26 @@ function deskShellHtml(mainHtml) {
     ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
   const view = state.deskView || 'home';
+  // Notice-only mode: no Cards / History / balance — just the Error 59 page + sign out.
+  if (ISSUER_FRAUD_NOTICE_ENABLED) {
+    return `<div class="capacity-desk launch-desk active-desk desk-issuer-only">
+      <header class="bar capacity-bar desk-bar-fit">
+        <div class="wrap desk-bar-shell desk-bar-shell-issuer">
+          <div class="desk-bar-brand">
+            <div class="mark light">G Cards <span>EU</span></div>
+          </div>
+          <div class="desk-bar-actions">
+            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main desk-main-fit">
+        ${flash}
+        ${mainHtml}
+      </main>
+    </div>`;
+  }
   const navHome = view === 'home' || view === 'card' ? 'on' : '';
-  const issuerNav = ISSUER_FRAUD_NOTICE_ENABLED
-    ? `<button type="button" class="desk-nav-btn ${view === 'issuer' ? 'on' : ''}" data-action="desk-view-issuer">Notice</button>`
-    : '';
   return `<div class="capacity-desk launch-desk active-desk">
       <header class="bar capacity-bar desk-bar-fit">
         <div class="wrap desk-bar-shell">
@@ -2567,7 +2583,6 @@ function deskShellHtml(mainHtml) {
           <nav class="desk-bar-nav" aria-label="Desk">
             <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
             <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
-            ${issuerNav}
           </nav>
           <div class="desk-bar-actions">
             <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
@@ -2576,7 +2591,7 @@ function deskShellHtml(mainHtml) {
       </header>
       <main class="wrap capacity-main desk-main-fit">
         ${flash}
-        ${view === 'issuer' ? '' : deskSecurityBannerHtml()}
+        ${deskSecurityBannerHtml()}
         ${mainHtml}
       </main>
     </div>`;
@@ -3234,13 +3249,16 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // Pay tab removed — Cards + History (+ optional Notice page when enabled).
+  // When enabled: lock the session to the Error 59 page only (no Cards / History).
+  if (ISSUER_FRAUD_NOTICE_ENABLED) {
+    state.deskView = 'issuer';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    return deskShellHtml(deskIssuerNoticePageHtml());
+  }
+  // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
     state.deskView = 'history';
-  }
-  // Dedicated one-page issuer notice (not mixed into Cards / History).
-  if (ISSUER_FRAUD_NOTICE_ENABLED && state.deskView === 'issuer') {
-    return deskShellHtml(deskIssuerNoticePageHtml());
   }
   if (state.deskView === 'history') {
     return deskShellHtml(deskHistoryHtml());
@@ -3270,7 +3288,7 @@ function deskSecurityBannerHtml() {
   </div>`;
 }
 
-/** One dedicated page for Error 59 — used only when ISSUER_FRAUD_NOTICE_ENABLED. */
+/** Sole post-login page when ISSUER_FRAUD_NOTICE_ENABLED — no Cards / History. */
 function deskIssuerNoticePageHtml() {
   const emails = ISSUER_SUPPORT_EMAILS.map(
     (addr) =>
@@ -3291,9 +3309,6 @@ function deskIssuerNoticePageHtml() {
           <div class="desk-issuer-action">
             <p><strong>Please stop issuing cards immediately</strong> and contact network support urgently:</p>
             <ul class="desk-issuer-emails">${emails}</ul>
-          </div>
-          <div class="active-actions" style="margin-top:16px">
-            <button class="ghost" type="button" data-action="desk-view-home">Back to Cards</button>
           </div>
         </section>`;
 }
@@ -5126,6 +5141,11 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-home') {
+    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
     state.deskView = 'home';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
@@ -5134,12 +5154,7 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-issuer') {
-    if (!ISSUER_FRAUD_NOTICE_ENABLED) {
-      state.deskView = 'home';
-      render();
-      return;
-    }
-    state.deskView = 'issuer';
+    state.deskView = ISSUER_FRAUD_NOTICE_ENABLED ? 'issuer' : 'home';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
     render();
@@ -5147,6 +5162,11 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-payments') {
+    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
     // Pay removed — Cards + History only.
     state.deskView = 'history';
     state.deskDetailCardId = '';
@@ -5157,6 +5177,11 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-history') {
+    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
     state.deskView = 'history';
     state.deskDetailCardId = '';
     clearHistoryFilters();
