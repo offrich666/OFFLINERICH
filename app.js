@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119d';
+const DESK_BUILD = '20261119e';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v22';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3246,7 +3246,9 @@ function deskCardPickerHtml(selectedId) {
       const key = cardStatusKey(c);
       const brandTag = c.endless
         ? 'Primary 1955'
-        : `${brandLabel(c.brand)} · ${kindLabel(c.kind)}`;
+        : normalizeBrand(c.brand) === 'amex'
+          ? `American Express · ${kindLabel(c.kind)}`
+          : `${brandLabel(c.brand)} · ${kindLabel(c.kind)}`;
       const statusLabel =
         key === 'deactivated'
           ? 'Off'
@@ -3256,9 +3258,10 @@ function deskCardPickerHtml(selectedId) {
               : 'Frozen'
             : 'Active';
       const holder = String(c.holder || '').trim() || 'Cardholder';
+      const amexPick = normalizeBrand(c.brand) === 'amex' ? ' is-amex' : '';
       // During lockdown: still open details (masked) — numbers stay locked / not usable.
       const action = lockdown ? 'desk-open-detail' : 'desk-select-card';
-      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}${lockdown ? ' is-frozen-view' : ''}" data-action="${action}" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}" title="${lockdown ? 'Frozen — view details only until unfreeze' : ''}">
+      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}${amexPick}${lockdown ? ' is-frozen-view' : ''}" data-action="${action}" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}" title="${lockdown ? 'Frozen — view details only until unfreeze' : ''}">
           <span class="desk-card-pick-top">
             <small>${esc(brandTag)}</small>
             <span class="desk-chip-status">${esc(statusLabel)}</span>
@@ -3333,12 +3336,14 @@ function deskHomeHtml() {
   const lockdown = offlinerichLockdownActive();
   if (hasCard && !state.deskSelectedCardId) state.deskSelectedCardId = card.id;
   if (lockdown) state.deskRevealSecrets = false;
+  const cardBrand = hasCard ? normalizeBrand(card.brand || 'mastercard') : 'mastercard';
   const panShown = hasCard
     ? !lockdown && state.deskRevealSecrets
       ? formatPan(card.pan)
-      : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+      : cardBrand === 'amex'
+        ? `•••• •••••• ·${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+        : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
     : '•••• •••• •••• ••••';
-  const cardBrand = hasCard ? card.brand || 'mastercard' : 'mastercard';
   const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
   const amountNum = Number(state.deskDepositAmount);
   const priceEur = tokenPriceEur(selected);
@@ -3414,13 +3419,13 @@ function deskHomeHtml() {
             </div>
           </div>
           <article class="plastic ${plasticClass(cardBrand)} desk-live-card${plasticClassExtra}" ${plasticAttrs} aria-label="Selected card">
-            <div class="plastic-top"><span>${hasCard && normalizeKind(card.kind) === 'corporate' ? 'G Cards Europe' : 'G Cards'}</span>${schemeMark(cardBrand)}</div>
+            <div class="plastic-top"><span>${esc(hasCard ? plasticIssuerLabel(cardBrand, card?.kind) : 'G Cards')}</span>${schemeMark(cardBrand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
-              <div><small>Cardholder</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
+              <div><small>${cardBrand === 'amex' ? 'Member' : 'Cardholder'}</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
               <div><small>Expires</small><strong>${esc(hasCard ? (lockdown ? '••/••' : card.expiry) : '••/••')}</strong></div>
-              <div><small>Balance</small><strong>${esc(hasCard ? cardMoney(card) : money(0))}</strong></div>
+              <div><small>${cardBrand === 'amex' ? 'USD balance' : 'Balance'}</small><strong>${esc(hasCard ? cardMoney(card) : money(0))}</strong></div>
             </div>
             <p class="desk-card-status">${
               hasCard
@@ -3688,13 +3693,13 @@ function deskCardDetailHtml() {
 
         <section class="desk-home-hero desk-detail-hero">
           <article class="plastic ${plasticClass(brand)} desk-live-card${lockdown ? ' is-frozen-locked' : ''}" aria-label="Card details">
-            <div class="plastic-top"><span>${normalizeKind(card.kind) === 'corporate' ? 'G Cards Europe' : 'G Cards'}</span>${schemeMark(brand)}</div>
+            <div class="plastic-top"><span>${esc(plasticIssuerLabel(brand, card.kind))}</span>${schemeMark(brand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
-              <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
+              <div><small>${brand === 'amex' ? 'Member' : 'Cardholder'}</small><strong>${esc(card.holder)}</strong></div>
               <div><small>Expires</small><strong>${esc(expiryShown)}</strong></div>
-              <div><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
+              <div><small>${brand === 'amex' ? 'USD balance' : 'Balance'}</small><strong>${esc(cardMoney(card))}</strong></div>
             </div>
             <p class="desk-card-status">${cardStatusPill(card)}${lockdown ? ' · view only' : ` · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}`}</p>
           </article>
@@ -4186,13 +4191,20 @@ function tokenButton(token) {
 function schemeMark(brand) {
   const b = normalizeBrand(brand);
   if (b === 'visa') return '<span class="scheme visa-word">VISA</span>';
-  if (b === 'amex') return '<span class="scheme amex-word">AMEX</span>';
+  if (b === 'amex') {
+    return `<span class="scheme amex-badge" aria-label="American Express"><span class="amex-badge-inner">American<br>Express</span></span>`;
+  }
   return '<span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>';
+}
+
+function plasticIssuerLabel(brand, kind) {
+  if (normalizeBrand(brand) === 'amex') return 'American Express';
+  return normalizeKind(kind) === 'corporate' ? 'G Cards Europe' : 'G Cards';
 }
 
 function plasticCard({ brand, pan, holder, expiry, balance, note }) {
   return `<article class="plastic ${plasticClass(brand)}">
-      <div class="plastic-top"><span>G Cards</span>${schemeMark(brand)}</div>
+      <div class="plastic-top"><span>${esc(plasticIssuerLabel(brand))}</span>${schemeMark(brand)}</div>
       <div class="chip"></div>
       <p class="pan">${esc(pan)}</p>
       <div class="plastic-bottom">
