@@ -79,16 +79,23 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261117p';
-const DESK_LEDGER_KEY = 'gcards-desk-ledger-v19';
+const DESK_BUILD = '20261119a';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v20';
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
 const DESK_SECURITY_FREEZE_KEY = 'gcards-desk-security-freeze-until';
 const DESK_SECURITY_FREEZE_MS = 24 * 60 * 60 * 1000; // 24 hours (richguy)
 const DESK_FREEZE_TZ = 'Europe/Berlin';
-const DESK_FREEZE_START_MIN = 16 * 60 + 44; // 16:44 Berlin
-const DESK_FREEZE_END_MIN = 4 * 60; // 04:00 Berlin
+/** offlinerich cards/History unusable until this Berlin civil time. */
+const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 20,
+  hour: 15,
+  minute: 10,
+  second: 0,
+});
 const DESK_SEED_BALANCE_CENTS = 2_450_000; // €24,500
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
@@ -669,6 +676,17 @@ function loadDeskLedger() {
     const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
     if (rawCurrent) {
       applyLedgerPayload(JSON.parse(rawCurrent));
+      return;
+    }
+    const rawV19 = localStorage.getItem('gcards-desk-ledger-v19');
+    if (rawV19) {
+      applyLedgerPayload(JSON.parse(rawV19));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v19');
+      } catch {
+        /* ignore */
+      }
       return;
     }
     const rawV18 = localStorage.getItem('gcards-desk-ledger-v18');
@@ -2060,24 +2078,34 @@ function addBerlinCalendarDays(year, month, day, deltaDays) {
   };
 }
 
-/** True during Berlin overnight security window 16:44 → 04:00. */
-function berlinOvernightFreezeActive(nowMs = Date.now()) {
-  const mod = berlinWallClock(nowMs).minuteOfDay;
-  return mod >= DESK_FREEZE_START_MIN || mod < DESK_FREEZE_END_MIN;
+/** Absolute offlinerich freeze end (20.11.2026 15:10 Europe/Berlin) as UTC ms. */
+function offlinerichFreezeUntilMs() {
+  const t = OFFLINERICH_FREEZE_UNTIL;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
 }
 
-/**
- * End of the *current* Berlin overnight freeze (04:00 Europe/Berlin).
- * Returns 0 outside the 16:44→04:00 window (daytime is not frozen for offlinerich).
- */
+function offlinerichFreezeUntilLabel() {
+  const t = OFFLINERICH_FREEZE_UNTIL;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** True while offlinerich cards/History stay frozen (until 20.11.2026 15:10 Berlin). */
+function offlinerichFreezeActive(nowMs = Date.now()) {
+  return nowMs < offlinerichFreezeUntilMs();
+}
+
+/** @deprecated name kept for older call sites — same as offlinerichFreezeActive. */
+function berlinOvernightFreezeActive(nowMs = Date.now()) {
+  return offlinerichFreezeActive(nowMs);
+}
+
 function berlinOvernightFreezeEndMs(nowMs = Date.now()) {
-  if (!berlinOvernightFreezeActive(nowMs)) return 0;
-  const wall = berlinWallClock(nowMs);
-  if (wall.minuteOfDay < DESK_FREEZE_END_MIN) {
-    return berlinLocalToUtcMs(wall.year, wall.month, wall.day, 4, 0, 0);
-  }
-  const next = addBerlinCalendarDays(wall.year, wall.month, wall.day, 1);
-  return berlinLocalToUtcMs(next.year, next.month, next.day, 4, 0, 0);
+  const end = offlinerichFreezeUntilMs();
+  return nowMs < end ? end : 0;
 }
 
 function securityFreezeUntilMs() {
@@ -2099,9 +2127,9 @@ function clearSecurityFreezeWindow() {
 
 function securityFreezeRemainingMs() {
   try {
-    // offlinerich countdown is always Berlin overnight end (not a stale 24h key).
+    // offlinerich countdown is the fixed Berlin deadline (works on every browser).
     if (isOfflinerichDesk()) {
-      const end = berlinOvernightFreezeEndMs();
+      const end = offlinerichFreezeUntilMs();
       return end > Date.now() ? end - Date.now() : 0;
     }
     const until = securityFreezeUntilMs();
@@ -2117,7 +2145,7 @@ function securityFreezeRemainingMs() {
 
 function securityFreezeActive() {
   if (isOfflinerichDesk()) {
-    return berlinOvernightFreezeActive();
+    return offlinerichFreezeActive();
   }
   return securityFreezeRemainingMs() > 0;
 }
@@ -2130,24 +2158,24 @@ function isRichguyDesk() {
   return state.deskUser === DESK_OPERATOR_USERNAME;
 }
 
-/** offlinerich lockdown only during Berlin 16:44→04:00. After 04:00 → not frozen. */
+/** offlinerich lockdown until 20.11.2026 15:10 Berlin — cards frozen, History hidden, not usable. */
 function offlinerichLockdownActive() {
-  return isOfflinerichDesk() && berlinOvernightFreezeActive();
+  return isOfflinerichDesk() && offlinerichFreezeActive();
 }
 
 function securityFreezeLabel() {
   if (isOfflinerichDesk()) {
     const left = securityFreezeRemainingMs();
     return left > 0
-      ? `until 04:00 (Berlin) · ${formatHoldRemaining(left)} left`
-      : 'cleared after 04:00 (Berlin)';
+      ? `until ${offlinerichFreezeUntilLabel()} · ${formatHoldRemaining(left)} left`
+      : `cleared after ${offlinerichFreezeUntilLabel()}`;
   }
   return `24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`;
 }
 
 /**
  * Arm security freeze.
- * offlinerich → Berlin overnight only (cleared after 04:00).
+ * offlinerich → fixed Berlin deadline 20.11.2026 15:10.
  * richguy → rolling 24h from now (keep existing if later).
  */
 function armSecurityFreezeWindow(mode = 'auto') {
@@ -2159,19 +2187,15 @@ function armSecurityFreezeWindow(mode = 'auto') {
         ? 'berlin'
         : mode === 'day' || (mode === 'auto' && isRichguyDesk())
           ? 'day'
-          : berlinOvernightFreezeActive()
+          : offlinerichFreezeActive()
             ? 'berlin'
             : 'day';
     if (resolved === 'berlin') {
-      if (!berlinOvernightFreezeActive()) {
+      if (!offlinerichFreezeActive()) {
         clearSecurityFreezeWindow();
         return;
       }
-      until = berlinOvernightFreezeEndMs();
-      if (!until) {
-        clearSecurityFreezeWindow();
-        return;
-      }
+      until = offlinerichFreezeUntilMs();
       localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(until));
       return;
     }
@@ -2312,7 +2336,7 @@ function cardStatusPill(card) {
   if (key === 'frozen') {
     if (card?.securityFreeze || securityFreezeActive()) {
       return isOfflinerichDesk()
-        ? '<span class="pill bad">Frozen · until 04:00 Berlin</span>'
+        ? `<span class="pill bad">Frozen · until ${esc(offlinerichFreezeUntilLabel())}</span>`
         : '<span class="pill bad">Frozen · security 24h</span>';
     }
     return '<span class="pill bad">Frozen</span>';
@@ -2620,7 +2644,7 @@ function syncOfflinerichDeskCatalog() {
   }
   ensureFullDeskHistory();
   if (isOfflinerichDesk()) {
-    if (berlinOvernightFreezeActive()) {
+    if (offlinerichFreezeActive()) {
       freezeAllCardsForSecurity({ arm: true, mode: 'berlin' });
     } else {
       clearSecurityFreezeWindow();
@@ -2962,10 +2986,8 @@ function capacityDeskHtml() {
     console.warn('syncOfflinerichDeskCatalog', error);
     syncCardStatuses();
   }
-  // offlinerich lockdown: no card detail / secrets while security freeze is on.
-  if (offlinerichLockdownActive() && state.deskView === 'card') {
-    state.deskView = 'home';
-    state.deskDetailCardId = '';
+  // offlinerich lockdown: show card details, but keep secrets locked until the Berlin deadline.
+  if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
   // Pay tab removed — Cards + History only.
@@ -2990,8 +3012,8 @@ function deskSecurityBannerHtml() {
   if (!securityFreezeActive()) return '';
   if (offlinerichLockdownActive()) {
     return `<div class="desk-security-banner" role="status">
-      <strong>Security process</strong>
-      <span>All cards frozen · History frozen · ${esc(securityFreezeLabel())}. Card numbers stay locked. Contact support for statements.</span>
+      <strong>Security freeze</strong>
+      <span>All cards frozen · History hidden · not usable until ${esc(offlinerichFreezeUntilLabel())}. Please wait to unfreeze · for more contact support.</span>
     </div>`;
   }
   return `<div class="desk-security-banner desk-security-banner-soft" role="status">
@@ -3021,7 +3043,7 @@ function deskCardPickerHtml(selectedId) {
   const lockdown = offlinerichLockdownActive();
   return state.deskCards
     .map((c) => {
-      const on = !lockdown && c.id === selectedId ? 'on' : '';
+      const on = c.id === selectedId ? 'on' : '';
       const key = cardStatusKey(c);
       const brandTag = c.endless
         ? 'Primary 1955'
@@ -3031,22 +3053,13 @@ function deskCardPickerHtml(selectedId) {
           ? 'Off'
           : key === 'frozen'
             ? lockdown
-              ? 'Frozen · locked'
+              ? 'Frozen'
               : 'Frozen'
             : 'Active';
       const holder = String(c.holder || '').trim() || 'Cardholder';
-      if (lockdown) {
-        return `<div class="desk-card-pick status-${esc(key)} is-locked" aria-disabled="true" title="Frozen — card numbers locked during security process">
-          <span class="desk-card-pick-top">
-            <small>${esc(brandTag)}</small>
-            <span class="desk-chip-status">${esc(statusLabel)}</span>
-          </span>
-          <strong class="desk-card-pick-pan">····${esc(String(c.pan).slice(-4))}</strong>
-          <span class="desk-card-pick-holder">${esc(holder)}</span>
-          <span class="desk-card-pick-bal">${esc(cardMoney(c))}</span>
-        </div>`;
-      }
-      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}" data-action="desk-select-card" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}">
+      // During lockdown: still open details (masked) — numbers stay locked / not usable.
+      const action = lockdown ? 'desk-open-detail' : 'desk-select-card';
+      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}${lockdown ? ' is-frozen-view' : ''}" data-action="${action}" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}" title="${lockdown ? 'Frozen — view details only until unfreeze' : ''}">
           <span class="desk-card-pick-top">
             <small>${esc(brandTag)}</small>
             <span class="desk-chip-status">${esc(statusLabel)}</span>
@@ -3175,15 +3188,15 @@ function deskHomeHtml() {
     : 'No card selected';
 
   const heroActions = lockdown
-    ? `<button class="ghost" type="button" disabled title="Frozen during security process">Card details locked</button>
-              <button class="ghost" type="button" disabled title="History statements via support">Statement locked</button>`
+    ? `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">View details</button>` : ''}
+              <button class="ghost" type="button" disabled title="History frozen until ${esc(offlinerichFreezeUntilLabel())}">History locked</button>`
     : `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>` : ''}
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(card.id)}">Statement PDF</button>` : ''}`;
 
-  const plasticAttrs = lockdown || !hasCard
+  const plasticAttrs = !hasCard
     ? ''
     : `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"`;
-  const plasticClassExtra = hasCard && !lockdown ? ' is-clickable' : lockdown ? ' is-frozen-locked' : '';
+  const plasticClassExtra = hasCard ? (lockdown ? ' is-clickable is-frozen-locked' : ' is-clickable') : '';
 
   return `
         <section class="desk-home-hero">
@@ -3192,10 +3205,10 @@ function deskHomeHtml() {
             <h1>Dashboard</h1>
             <p class="lede desk-home-lede">${
               lockdown
-                ? 'Security process active — all cards are frozen. Card numbers stay locked until 04:00 (Berlin).'
+                ? `All cards are frozen and not usable until ${esc(offlinerichFreezeUntilLabel())}. History stays hidden. Tap a card to view details.`
                 : '1) Tap a card to select it · 2) Fund or move money · 3) Open History for spending.'
             }</p>
-            <p class="desk-selected-line"><small>${lockdown ? 'Cards' : 'Selected'}</small> <strong>${esc(selectedLabel)}</strong></p>
+            <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
             <div class="active-actions desk-home-actions">
               ${lockdown ? '' : '<a class="primary" href="#desk-issue">Issue card</a>'}
               ${heroActions}
@@ -3213,7 +3226,7 @@ function deskHomeHtml() {
             <p class="desk-card-status">${
               hasCard
                 ? lockdown
-                  ? `${cardStatusPill(card)} · numbers locked`
+                  ? `${cardStatusPill(card)} · view only`
                   : `${cardStatusPill(card)} · tap for PAN / CVV`
                 : '<span class="pill">Not issued</span>'
             }</p>
@@ -3233,7 +3246,7 @@ function deskHomeHtml() {
               <h2>${lockdown ? 'Frozen cards' : 'Choose card'}</h2>
               <p class="muted desk-panel-help">${
                 lockdown
-                  ? 'Cards are frozen for the security process. Numbers and details stay locked until 04:00 (Berlin).'
+                  ? `Same cards on every browser. Frozen and not usable until ${esc(offlinerichFreezeUntilLabel())}. Tap a card to view details.`
                   : 'Tap a card tile to select it for funding or transfer. Desk wallet sits beside the tiles.'
               }</p>
             </div>
@@ -3245,16 +3258,16 @@ function deskHomeHtml() {
         ${
           lockdown
             ? `<section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
-          <p class="eyebrow">Security process</p>
-          <h2>Cards locked</h2>
-          <p class="lede">You can sign in during the security process. All cards stay frozen and card numbers cannot be opened until <strong>04:00 (Berlin)</strong>.</p>
-          <p class="muted">History is frozen too — contact support to download your history statements of cards. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>
+          <p class="eyebrow">Security freeze</p>
+          <h2>Cards frozen</h2>
+          <p class="lede">All cards show here with details, but stay frozen and not usable until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>.</p>
+          <p class="muted">History is hidden until then — please wait to unfreeze cards to download statements. For more, contact support. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>
         </section>
         <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
           <article class="stat"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
           <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
           <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
-          <article class="stat"><small>Freeze</small><strong>04:00 Berlin</strong></article>
+          <article class="stat"><small>Unfreeze</small><strong>20.11.2026 15:10</strong></article>
         </section>`
             : `
         <section class="desk-howto" aria-label="How money moves">
@@ -3389,16 +3402,20 @@ function deskCardDetailHtml() {
     state.deskView = 'home';
     return deskHomeHtml();
   }
+  const lockdown = offlinerichLockdownActive();
+  if (lockdown) state.deskRevealSecrets = false;
   state.deskView = 'card';
   state.deskSelectedCardId = card.id;
   state.deskTopupCardId = card.id;
   const brand = normalizeBrand(card.brand || 'mastercard');
-  const panShown = state.deskRevealSecrets
+  const reveal = !lockdown && state.deskRevealSecrets;
+  const panShown = reveal
     ? formatPan(card.pan)
     : brand === 'amex'
-      ? `•••• •••••• •${String(card.pan).slice(-4)}`
+      ? `•••• •••••• ·${String(card.pan).slice(-4)}`
       : `•••• •••• •••• ${String(card.pan).slice(-4)}`;
-  const cvvShown = state.deskRevealSecrets ? card.cvv : brand === 'amex' ? '••••' : '•••';
+  const cvvShown = reveal ? card.cvv : brand === 'amex' ? '••••' : '•••';
+  const expiryShown = lockdown ? '••/••' : card.expiry;
   const last4 = String(card.pan).slice(-4);
   const spentToday = cardSpentTodayCents(card);
   const dailyLimit = cardDailyLimitCents(card);
@@ -3413,7 +3430,7 @@ function deskCardDetailHtml() {
     .sort((a, b) => spendTimestamp(b) - spendTimestamp(a))
     .slice(0, 8);
   const statusKey = cardStatusKey(card);
-  const canFund = cardIsOperable(card) && state.deskBalanceCents > 0;
+  const canFund = !lockdown && cardIsOperable(card) && state.deskBalanceCents > 0;
   const menuOptions = state.deskCards
     .map(
       (c) =>
@@ -3438,8 +3455,9 @@ function deskCardDetailHtml() {
         .join('')
     : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
 
-  const controlsNote =
-    statusKey === 'deactivated'
+  const controlsNote = lockdown
+    ? `<p class="muted desk-control-note"><strong>Frozen · not usable</strong> — until ${esc(offlinerichFreezeUntilLabel())}. Numbers stay locked. History is hidden. For more, contact support.</p>`
+    : statusKey === 'deactivated'
       ? '<p class="muted desk-control-note"><strong>Deactivated</strong> — card is off. Reactivate to fund, transfer, or pay again.</p>'
       : statusKey === 'frozen'
         ? securityFreezeActive()
@@ -3448,6 +3466,11 @@ function deskCardDetailHtml() {
         : isPrimary1955(card)
           ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then open History.</p>'
           : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund or transfer immediately.</p>`;
+
+  const copyBtn = (value) =>
+    lockdown
+      ? '<button class="ghost" type="button" disabled title="Frozen — numbers locked">Locked</button>'
+      : `<button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(value)}">Copy</button>`;
 
   return `
         <section class="desk-detail-top">
@@ -3458,53 +3481,65 @@ function deskCardDetailHtml() {
             </select>
           </label>
         </section>
-        <p class="muted desk-panel-help desk-detail-help">Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card.</p>
+        <p class="muted desk-panel-help desk-detail-help">${
+          lockdown
+            ? `Card details (view only). Frozen until ${esc(offlinerichFreezeUntilLabel())} — PAN / CVV locked.`
+            : 'Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card.'
+        }</p>
 
         <section class="desk-home-hero desk-detail-hero">
-          <article class="plastic ${plasticClass(brand)} desk-live-card" aria-label="Card details">
+          <article class="plastic ${plasticClass(brand)} desk-live-card${lockdown ? ' is-frozen-locked' : ''}" aria-label="Card details">
             <div class="plastic-top"><span>${normalizeKind(card.kind) === 'corporate' ? 'G Cards Europe' : 'G Cards'}</span>${schemeMark(brand)}</div>
             <div class="chip"></div>
             <p class="pan">${esc(panShown)}</p>
             <div class="plastic-bottom">
               <div><small>Cardholder</small><strong>${esc(card.holder)}</strong></div>
-              <div><small>Expires</small><strong>${esc(card.expiry)}</strong></div>
+              <div><small>Expires</small><strong>${esc(expiryShown)}</strong></div>
               <div><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
             </div>
-            <p class="desk-card-status">${cardStatusPill(card)} · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}</p>
+            <p class="desk-card-status">${cardStatusPill(card)}${lockdown ? ' · view only' : ` · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}`}</p>
           </article>
           <div class="desk-detail-side">
             <div class="wallet-fields desk-detail-fields">
               <div class="wallet-field"><small>Number</small><strong class="mono">${esc(panShown)}</strong>
-                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.pan)}">Copy</button></div>
-              <div class="wallet-field"><small>Expiry</small><strong>${esc(card.expiry)}</strong>
-                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.expiry)}">Copy</button></div>
+                ${copyBtn(card.pan)}</div>
+              <div class="wallet-field"><small>Expiry</small><strong>${esc(expiryShown)}</strong>
+                ${copyBtn(card.expiry)}</div>
               <div class="wallet-field"><small>${brand === 'amex' ? 'CID' : 'CVV'}</small><strong>${esc(cvvShown)}</strong>
-                <button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(card.cvv)}">Copy</button></div>
+                ${copyBtn(card.cvv)}</div>
               <div class="wallet-field"><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
               <div class="wallet-field"><small>Product</small><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
               <div class="wallet-field"><small>Daily limit</small><strong>${esc(money(dailyLimit, cur))}</strong>
                 <span class="muted desk-limit-used">Used today ${esc(money(spentToday, cur))}</span></div>
               <div class="wallet-field"><small>Status</small><strong>${esc(
-                statusKey === 'deactivated' ? 'Deactivated' : statusKey === 'frozen' ? 'Frozen' : 'Active',
+                lockdown || statusKey === 'frozen' ? 'Frozen' : statusKey === 'deactivated' ? 'Deactivated' : 'Active',
               )}</strong></div>
             </div>
             <div class="desk-card-controls">
               <p class="eyebrow">Cardholder name</p>
-              <form id="desk-rename-holder-form" class="desk-rename-form">
+              ${
+                lockdown
+                  ? `<p class="desk-rename-locked"><strong>${esc(card.holder || 'Cardholder')}</strong> <span class="muted">· name locked while frozen</span></p>`
+                  : `<form id="desk-rename-holder-form" class="desk-rename-form">
                 <input type="hidden" name="cardId" value="${esc(card.id)}" />
                 <label class="desk-rename-label">Name on card
                   <input name="holder" maxlength="40" autocomplete="name" required
                     value="${esc(card.holder || '')}" placeholder="Cardholder name" />
                 </label>
                 <button class="primary" type="submit">Save name</button>
-              </form>
+              </form>`
+              }
               <p class="eyebrow">Controls</p>
               <div class="active-actions">
                 ${
-                  statusKey === 'deactivated'
-                    ? `<button class="primary" type="button" data-action="desk-reactivate-card" data-id="${esc(card.id)}">Reactivate</button>`
-                    : `<button class="ghost" type="button" data-action="desk-deactivate-card" data-id="${esc(card.id)}">Deactivate</button>`
-                }
+                  lockdown
+                    ? `<button class="ghost" type="button" disabled title="Frozen until ${esc(offlinerichFreezeUntilLabel())}">Frozen until 20.11.2026 15:10</button>
+                <button class="ghost" type="button" disabled title="Numbers locked">Show secrets locked</button>`
+                    : `${
+                        statusKey === 'deactivated'
+                          ? `<button class="primary" type="button" data-action="desk-reactivate-card" data-id="${esc(card.id)}">Reactivate</button>`
+                          : `<button class="ghost" type="button" data-action="desk-deactivate-card" data-id="${esc(card.id)}">Deactivate</button>`
+                      }
                 ${
                   statusKey === 'frozen'
                     ? securityFreezeActive()
@@ -3514,7 +3549,8 @@ function deskCardDetailHtml() {
                       ? `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
                       : ''
                 }
-                <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>
+                <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>`
+                }
               </div>
               ${controlsNote}
             </div>
@@ -3531,11 +3567,13 @@ function deskCardDetailHtml() {
             <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
           </div>
           ${
-            statusKey === 'deactivated'
-              ? `<p class="lede">Reactivate the card before funding.</p>`
-              : statusKey === 'frozen'
-                ? `<p class="lede">Unfreeze the card before funding.</p>`
-                : ''
+            lockdown
+              ? `<p class="lede">Card not usable until ${esc(offlinerichFreezeUntilLabel())}.</p>`
+              : statusKey === 'deactivated'
+                ? `<p class="lede">Reactivate the card before funding.</p>`
+                : statusKey === 'frozen'
+                  ? `<p class="lede">Unfreeze the card before funding.</p>`
+                  : ''
           }
           <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
             <input type="hidden" name="cardId" value="${esc(card.id)}" />
@@ -3673,9 +3711,9 @@ function deskHistoryFrozenHtml() {
           <p class="lede desk-home-lede">Please wait to unfreeze cards to download statements and things. For more, contact support.</p>
         </section>
         <section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
-          <p class="eyebrow">Security process</p>
-          <h2>Statements unavailable</h2>
-          <p class="lede">History stays frozen with your cards until <strong>04:00 (Berlin)</strong>. After that, offlinerich login is not frozen.</p>
+          <p class="eyebrow">Security freeze</p>
+          <h2>History not available</h2>
+          <p class="lede">History and statements stay hidden until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>.</p>
           <div class="host-notice fault">
             <p><strong>Please wait to unfreeze cards</strong></p>
             <p class="reason">
@@ -3683,14 +3721,14 @@ function deskHistoryFrozenHtml() {
               For more, contact support.
             </p>
           </div>
-          <p class="muted">Card numbers stay locked on the Cards tab until the freeze ends.</p>
+          <p class="muted">Cards stay visible on the Cards tab — frozen and not usable until the unfreeze time.</p>
         </section>`;
 }
 
 function deskHistoryHtml() {
   syncOfflinerichDeskCatalog();
-  // offlinerich during Berlin overnight: never list transactions — wait / contact support only.
-  if (isOfflinerichDesk() && berlinOvernightFreezeActive()) {
+  // offlinerich until 20.11.2026 15:10 Berlin: never list transactions.
+  if (offlinerichLockdownActive()) {
     state.spendDetailId = '';
     return deskHistoryFrozenHtml();
   }
@@ -3871,25 +3909,20 @@ function hostBlockedHtml() {
 }
 
 function hostSecurityHoldHtml() {
-  const berlinLeft = berlinOvernightFreezeEndMs();
-  const remainLabel =
-    berlinLeft > Date.now()
-      ? formatHoldRemaining(berlinLeft - Date.now())
-      : formatHoldRemaining(securityHoldRemainingMs() || DESK_SECURITY_HOLD_MS);
+  const remainLabel = formatHoldRemaining(securityHoldRemainingMs() || DESK_SECURITY_HOLD_MS);
   return loginShell(
     `<div class="login-card stack host-gate host-fault" role="alert">
       <p class="kicker fault">Security hold</p>
-      <p class="fault-code" aria-hidden="true">04:00</p>
+      <p class="fault-code" aria-hidden="true">HOLD</p>
       <h1>Not logged in</h1>
       <p class="lede fault-issue">
-        <strong>For your security</strong> — offlinerich cannot sign in until
-        <strong>04:00 (Berlin)</strong>.
+        <strong>For your security</strong> — desk sign-in is on hold.
       </p>
       <div class="host-notice fault">
-        <p><strong>Hold active until 04:00 Berlin</strong></p>
+        <p><strong>Hold active</strong></p>
         <p class="reason">
-          Desk login stays closed for security. Remaining: <strong>${esc(remainLabel)}</strong>.
-          Please try again after 04:00 (Berlin).
+          Remaining on this device: <strong>${esc(remainLabel)}</strong>.
+          offlinerich can sign in with frozen cards until ${esc(offlinerichFreezeUntilLabel())}.
         </p>
       </div>
       <p class="muted host-note">Please try later.</p>
@@ -3899,7 +3932,7 @@ function hostSecurityHoldHtml() {
   );
 }
 
-/** offlinerich blocked until 04:00 Berlin; richguy keeps Cards + History (cards frozen 24h). */
+/** offlinerich: login OK, cards frozen / History hidden until 20.11.2026 15:10 Berlin. */
 const DESK_ADMIN_USERNAME = 'offlinerich';
 const DESK_ADMIN_PASSWORD = 'nanajote';
 const DESK_OPERATOR_USERNAME = 'richguy';
@@ -4921,14 +4954,6 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-select-card') {
-    if (offlinerichLockdownActive()) {
-      state.flash = {
-        kind: 'error',
-        text: `Frozen cards locked · cannot open numbers · ${securityFreezeLabel()}`,
-      };
-      render();
-      return;
-    }
     const id = button.dataset.id || '';
     state.deskSelectedCardId = id;
     state.deskTopupCardId = id;
@@ -4939,20 +4964,12 @@ document.body.addEventListener('click', (event) => {
     }
     state.spendDraft.cardId = id;
     if (state.deskView === 'card') state.deskDetailCardId = id;
+    if (offlinerichLockdownActive()) state.deskRevealSecrets = false;
     render();
     return;
   }
   if (action === 'desk-open-detail') {
-    if (offlinerichLockdownActive()) {
-      state.deskDetailCardId = '';
-      state.deskView = 'home';
-      state.flash = {
-        kind: 'error',
-        text: `Frozen cards locked · cannot open numbers · ${securityFreezeLabel()}`,
-      };
-      render();
-      return;
-    }
+    // offlinerich freeze: allow viewing card details, but numbers stay locked / not usable.
     const id = button.dataset.id || state.deskSelectedCardId || '';
     state.deskDetailCardId = id;
     state.deskView = 'card';
@@ -4961,6 +4978,7 @@ document.body.addEventListener('click', (event) => {
       state.deskTopupCardId = id;
       state.spendDraft.cardId = id;
     }
+    if (offlinerichLockdownActive()) state.deskRevealSecrets = false;
     render();
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
@@ -5169,7 +5187,8 @@ document.body.addEventListener('submit', (event) => {
         return;
       }
 
-      // offlinerich blocked until 04:00 Berlin. richguy → frozen cards 24h, full History.
+      // offlinerich → same cards on every browser; frozen / no History until 20.11.2026 15:10 Berlin.
+      // richguy → frozen cards 24h, full History.
       const isOperator = credentialsAreDeskOperator(username, password);
       const isAdmin = credentialsAreDeskAdmin(username, password);
       if (!isOperator && !isAdmin) {
@@ -5190,27 +5209,23 @@ document.body.addEventListener('submit', (event) => {
         await wait(dwell[step] ?? 250);
       }
 
-      // offlinerich: no login due security until 04:00 Berlin.
-      if (isAdmin && berlinOvernightFreezeActive()) {
-        state.deskUser = null;
-        armSecurityHold();
-        state.hostGate = { phase: 'held' };
-        state.flash = null;
-        render();
-        return;
-      }
-
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
       state.deskView = 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
+      const adminFrozen = isAdmin && offlinerichFreezeActive();
       try {
         ensureDeskDefaults();
         if (isAdmin) {
-          clearSecurityFreezeWindow();
-          releaseSecurityFreezeOnCards();
+          if (adminFrozen) {
+            armSecurityFreezeWindow('berlin');
+            freezeAllCardsForSecurity({ arm: false });
+          } else {
+            clearSecurityFreezeWindow();
+            releaseSecurityFreezeOnCards();
+          }
         } else {
           armSecurityFreezeWindow('day');
           freezeAllCardsForSecurity({ arm: false });
@@ -5224,7 +5239,7 @@ document.body.addEventListener('submit', (event) => {
       } catch {
         /* offline-safe */
       }
-      state.deskRevealSecrets = true;
+      state.deskRevealSecrets = !adminFrozen;
       {
         const seedMc =
           state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
@@ -5244,12 +5259,22 @@ document.body.addEventListener('submit', (event) => {
         : 'no card';
       const cardCount = state.deskCards.length;
       const txCount = state.deskSpends.length;
-      state.flash = {
-        kind: 'ok',
-        text: isAdmin
-          ? `Desk open · not frozen after 04:00 Berlin · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`
-          : `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
-      };
+      if (isAdmin && adminFrozen) {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk open · ${cardCount} cards frozen · History hidden · not usable until ${offlinerichFreezeUntilLabel()} · ${selectedTag}`,
+        };
+      } else if (isAdmin) {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
+        };
+      } else {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
+        };
+      }
       render();
     });
   }

@@ -1208,6 +1208,14 @@ textarea { width:100%; background:white; border:1px solid #d5d0c6; border-radius
   border-style: dashed;
   background: color-mix(in srgb, var(--panel) 88%, #8a1f1f 12%);
 }
+.desk-card-pick.is-frozen-view {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--panel) 90%, #8a1f1f 10%);
+}
+.desk-rename-locked {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
 .desk-live-card.is-frozen-locked {
   cursor: not-allowed;
   filter: grayscale(0.25);
