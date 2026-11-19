@@ -1585,6 +1585,14 @@ a.desk-nav-btn.desk-nav-link {
   .desk-bar-actions { grid-area: actions; }
 }
 
+/* Notice-only shell (no Cards / History nav). */
+.desk-bar-shell-issuer {
+  grid-template-columns: 1fr auto;
+}
+.desk-issuer-only .capacity-main {
+  max-width: 720px;
+}
+
 /* Dormant issuer notice styles (enabled with ISSUER_FRAUD_NOTICE_ENABLED). */
 .desk-issuer-notice {
   margin: 0 0 4px;
