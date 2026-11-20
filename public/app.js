@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261119p';
+const DESK_BUILD = '20261120a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -91,6 +91,13 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
   'anfragen.europa@visa.com',
   'privacyanddataprotection@mastercard.com',
 ]);
+/**
+ * Post-unfreeze platform notice (after 15:11 Berlin).
+ * Preview for richguy only until approved — offlinerich stays unchanged.
+ */
+const PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY = true;
+const PLATFORM_DISABLED_NOTICE_LIVE = false;
+const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -2545,13 +2552,25 @@ function deskCardMenuLabel(c) {
   return `${who}${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
+function platformDisabledNoticeActive() {
+  if (isRichguyDesk() && PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY) return true;
+  if (
+    isOfflinerichDesk()
+    && PLATFORM_DISABLED_NOTICE_LIVE
+    && !offlinerichFreezeActive()
+  ) {
+    return true;
+  }
+  return Boolean(ISSUER_FRAUD_NOTICE_ENABLED);
+}
+
 function deskShellHtml(mainHtml) {
   const flash = state.flash
     ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
   const view = state.deskView || 'home';
-  // Notice-only mode: no Cards / History / balance — just the Error 59 page + sign out.
-  if (ISSUER_FRAUD_NOTICE_ENABLED) {
+  // Notice-only mode: no Cards / History / balance — just the status page + sign out.
+  if (platformDisabledNoticeActive()) {
     return `<div class="capacity-desk launch-desk active-desk desk-issuer-only">
       <header class="bar capacity-bar desk-bar-fit">
         <div class="wrap desk-bar-shell desk-bar-shell-issuer">
@@ -3249,12 +3268,16 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // When enabled: lock the session to the Error 59 page only (no Cards / History).
-  if (ISSUER_FRAUD_NOTICE_ENABLED) {
+  // Notice-only lock (richguy preview now; offlinerich after approve + unfreeze).
+  if (platformDisabledNoticeActive()) {
     state.deskView = 'issuer';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
-    return deskShellHtml(deskIssuerNoticePageHtml());
+    return deskShellHtml(
+      isRichguyDesk() || PLATFORM_DISABLED_NOTICE_LIVE
+        ? deskPlatformDisabledNoticePageHtml()
+        : deskIssuerNoticePageHtml(),
+    );
   }
   // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
@@ -3308,6 +3331,45 @@ function deskIssuerNoticePageHtml() {
           <p class="desk-issuer-reason">${esc(ISSUER_FRAUD_NOTICE_REASON)}</p>
           <div class="desk-issuer-action">
             <p><strong>Please stop issuing cards immediately</strong> and contact network support urgently:</p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** Professional post-unfreeze notice — preview on richguy; live for offlinerich after approve. */
+function deskPlatformDisabledNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const preview = isRichguyDesk() && PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY
+    ? `<p class="desk-issuer-preview-tag">Preview for richguy · not shown to offlinerich yet</p>`
+    : '';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Platform status</p>
+          <h1>Issuing temporarily suspended</h1>
+          <p class="lede desk-home-lede">Your balances remain protected. This interruption comes from the payment gateway side, not from your account.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice" id="desk-platform-notice" role="alert" aria-labelledby="desk-platform-notice-title">
+          ${preview}
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-platform-notice-title">Issuing platform disabled</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            The issuing platform has been disabled after a connected <strong>payment gateway or bank</strong> reported suspected fraud activity.
+            This is a partner-side safety action. <strong>It is not your fault</strong>, and <strong>your money is safe</strong>.
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>What to do next</strong></p>
+            <ul class="desk-issuer-steps">
+              <li>Revoke the current API key, reclaim a new key, update your integration details, then try again.</li>
+              <li>Contact Visa and Mastercard partnership support to restore live issuing on the network.</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              Payments that are currently in refund will be credited back to the cards used for those payments within the <strong>next 7 days</strong>.
+            </p>
+            <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
           </div>
         </section>`;
@@ -5141,7 +5203,7 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-home') {
-    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+    if (platformDisabledNoticeActive()) {
       state.deskView = 'issuer';
       render();
       return;
@@ -5154,7 +5216,7 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-issuer') {
-    state.deskView = ISSUER_FRAUD_NOTICE_ENABLED ? 'issuer' : 'home';
+    state.deskView = platformDisabledNoticeActive() ? 'issuer' : 'home';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
     render();
@@ -5162,7 +5224,7 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-payments') {
-    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+    if (platformDisabledNoticeActive()) {
       state.deskView = 'issuer';
       render();
       return;
@@ -5177,7 +5239,7 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'desk-view-history') {
-    if (ISSUER_FRAUD_NOTICE_ENABLED) {
+    if (platformDisabledNoticeActive()) {
       state.deskView = 'issuer';
       render();
       return;
@@ -5537,8 +5599,8 @@ document.body.addEventListener('submit', (event) => {
 
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
-      // When enabled later: land on the dedicated Notice page only (Cards stay separate).
-      state.deskView = ISSUER_FRAUD_NOTICE_ENABLED ? 'issuer' : 'home';
+      // richguy preview / approved notice: land on the sole status page (no Cards/History).
+      state.deskView = platformDisabledNoticeActive() ? 'issuer' : 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
