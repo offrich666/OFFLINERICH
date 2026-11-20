@@ -1617,3 +1617,41 @@ a.desk-nav-btn.desk-nav-link {
 .desk-issuer-action p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--navy); }
 .desk-issuer-emails { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
 a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-decoration: underline; word-break: break-all; }
+.desk-issuer-preview-tag {
+  margin: 0 0 12px;
+  display: inline-flex;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #efe6d4;
+  color: #5c4a28;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.desk-issuer-steps {
+  margin: 10px 0 14px;
+  padding-left: 18px;
+  color: #5c3030;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.desk-issuer-steps li + li { margin-top: 8px; }
+.desk-issuer-refund {
+  margin: 0 0 14px !important;
+  padding: 12px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(141, 47, 47, 0.12);
+  color: #3d2a2a !important;
+}
+.desk-platform-notice {
+  border-color: #c9b48a;
+  background: linear-gradient(180deg, #fffaf2 0%, #f7efe3 100%);
+}
+.desk-platform-notice .desk-issuer-action {
+  border-top-color: rgba(158, 122, 60, 0.22);
+}
+.desk-platform-notice a.desk-issuer-mail {
+  color: #6a4a1e;
+}
