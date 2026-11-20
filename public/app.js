@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120f';
+const DESK_BUILD = '20261120g';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -93,10 +93,11 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
 ]);
 /**
  * After Berlin freeze ends:
- * 1) “contacting Visa / Mastercard / Amex to unfreeze” process page
- * 2) then the platform-disabled / API revoke error page
- * offlinerich: freeze → 15:10, process 60 min (→ 16:10), then error
- * richguy test: freeze → 15:00, process 30 min, then error
+ * 1) contacting Visa / Mastercard / Amex
+ * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
+ * 3) platform-disabled / API revoke error page
+ * offlinerich: 15:10 → 60m contacting → 16:10 → 3h accept wait → 19:10 error
+ * richguy test: 15:00 → 30m contacting → 15:30 → 3h accept wait → 18:30 error
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
@@ -108,8 +109,9 @@ const RICHGUY_FREEZE_UNTIL = Object.freeze({
   minute: 0,
   second: 0,
 });
-const UNFREEZE_PROCESS_MS = 60 * 60 * 1000; // offlinerich: 60 minutes after 15:10 → error at 16:10
-const RICHGUY_UNFREEZE_PROCESS_MS = 30 * 60 * 1000; // richguy test: 30 minutes then error
+const UNFREEZE_PROCESS_MS = 60 * 60 * 1000; // offlinerich: 60 minutes after 15:10 → 16:10
+const RICHGUY_UNFREEZE_PROCESS_MS = 30 * 60 * 1000; // richguy test: 30 minutes
+const NETWORK_ACCEPT_WAIT_MS = 3 * 60 * 60 * 1000; // Visa/MC accepted; Amex pending ~3h
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
 const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
@@ -2609,22 +2611,38 @@ function offlinerichUnfreezeProcessUntilMs() {
   return offlinerichFreezeUntilMs() + UNFREEZE_PROCESS_MS;
 }
 
-/** offlinerich: freeze ended, still inside the ~3h partner unfreeze window. */
+function offlinerichNetworkAcceptUntilMs() {
+  return offlinerichUnfreezeProcessUntilMs() + NETWORK_ACCEPT_WAIT_MS;
+}
+
+/** offlinerich: freeze ended, still in first contacting window (→ 16:10). */
 function offlinerichUnfreezeProcessActive(nowMs = Date.now()) {
   if (!isOfflinerichDesk()) return false;
   if (offlinerichFreezeActive(nowMs)) return false;
   return nowMs < offlinerichUnfreezeProcessUntilMs();
 }
 
-/** offlinerich: after the 3h process — show the platform error notice. */
+/** offlinerich: Visa/MC accepted; Amex pending (~3h after 16:10). */
+function offlinerichNetworkAcceptActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichUnfreezeProcessUntilMs()) return false;
+  return nowMs < offlinerichNetworkAcceptUntilMs();
+}
+
+/** offlinerich: after Visa/MC wait — show the platform error notice. */
 function offlinerichPlatformErrorActive(nowMs = Date.now()) {
   if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
   if (offlinerichFreezeActive(nowMs)) return false;
-  return nowMs >= offlinerichUnfreezeProcessUntilMs();
+  return nowMs >= offlinerichNetworkAcceptUntilMs();
 }
 
 function richguyUnfreezeProcessUntilMs() {
   return richguyFreezeUntilMs() + RICHGUY_UNFREEZE_PROCESS_MS;
+}
+
+function richguyNetworkAcceptUntilMs() {
+  return richguyUnfreezeProcessUntilMs() + NETWORK_ACCEPT_WAIT_MS;
 }
 
 /** richguy preview after demo freeze: contacting page (same as offlinerich after 15:10). */
@@ -2634,18 +2652,33 @@ function richguyUnfreezeProcessActive(nowMs = Date.now()) {
   return nowMs < richguyUnfreezeProcessUntilMs();
 }
 
+function richguyNetworkAcceptActive(nowMs = Date.now()) {
+  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
+  if (richguyFreezeActive(nowMs)) return false;
+  if (nowMs < richguyUnfreezeProcessUntilMs()) return false;
+  return nowMs < richguyNetworkAcceptUntilMs();
+}
+
 function richguyPlatformErrorActive(nowMs = Date.now()) {
   if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
   if (richguyFreezeActive(nowMs)) return false;
-  return nowMs >= richguyUnfreezeProcessUntilMs();
+  return nowMs >= richguyNetworkAcceptUntilMs();
 }
 
-/** Contacting Visa / Mastercard / Amex to restore API / cards (~3h). */
+/** Contacting Visa / Mastercard / Amex (first stage). */
 function unfreezeProcessNoticeActive() {
   if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
     return richguyUnfreezeProcessActive();
   }
   return offlinerichUnfreezeProcessActive();
+}
+
+/** Visa + Mastercard accepted; Amex still pending (~3h). */
+function networkAcceptNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyNetworkAcceptActive();
+  }
+  return offlinerichNetworkAcceptActive();
 }
 
 /** Final platform-disabled / revoke error page. */
@@ -2658,7 +2691,11 @@ function platformErrorNoticeActive() {
 
 /** Any sole status page (no Cards / History). */
 function platformDisabledNoticeActive() {
-  return unfreezeProcessNoticeActive() || platformErrorNoticeActive();
+  return (
+    unfreezeProcessNoticeActive()
+    || networkAcceptNoticeActive()
+    || platformErrorNoticeActive()
+  );
 }
 
 function startUnfreezeProcessWatch() {
@@ -3399,9 +3436,11 @@ function capacityDeskHtml() {
     state.spendDetailId = '';
     const page = unfreezeProcessNoticeActive()
       ? deskUnfreezeProcessNoticePageHtml()
-      : platformErrorNoticeActive()
-        ? deskPlatformDisabledNoticePageHtml()
-        : deskIssuerNoticePageHtml();
+      : networkAcceptNoticeActive()
+        ? deskNetworkAcceptNoticePageHtml()
+        : platformErrorNoticeActive()
+          ? deskPlatformDisabledNoticePageHtml()
+          : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
   // Pay tab removed — Cards + History only.
@@ -3509,7 +3548,53 @@ function deskUnfreezeProcessNoticePageHtml() {
         </section>`;
 }
 
-/** After the 3h process — platform disabled / API revoke error notice. */
+/** After first contacting: Visa + Mastercard accepted; Amex still pending (~3h). */
+function deskNetworkAcceptNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const untilMs = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
+    ? richguyNetworkAcceptUntilMs()
+    : offlinerichNetworkAcceptUntilMs();
+  const remainMs = Math.max(0, untilMs - Date.now());
+  const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Network update</p>
+          <h1>Visa &amp; Mastercard accepted</h1>
+          <p class="lede desk-home-lede">We have reached Visa and Mastercard. Their unfreeze request is accepted. American Express is still on the way.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-network-accept" id="desk-network-accept" role="status" aria-labelledby="desk-network-accept-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-network-accept-title">Waiting on final network clearance</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            <strong>Visa</strong> and <strong>Mastercard</strong> have accepted our request to unfreeze.
+            We are still waiting on <strong>American Express</strong>, which remains in progress.
+            This extra step helps ensure that <strong>admin control</strong> is restored only after the networks finish their safety checks.
+          </p>
+          <p class="desk-issuer-callout">
+            Approximate remaining time: <strong>${esc(remainLabel)}</strong> (about 3 hours).<br />
+            <strong>Please check back every 20 minutes</strong> for the latest status.
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Current status</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>Visa</strong> — request accepted</li>
+              <li><strong>Mastercard</strong> — request accepted</li>
+              <li><strong>American Express</strong> — still processing</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              Your funds remain safe. No action is required from you while we wait for the remaining network clearance.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** Final stage — platform disabled / API revoke error notice. */
 function deskPlatformDisabledNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
