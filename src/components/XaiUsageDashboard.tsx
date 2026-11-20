@@ -79,6 +79,17 @@ type TelegramLink = {
   lastError: string | null;
 };
 
+type ProxyHit = {
+  id: string;
+  at: string;
+  method: string;
+  path: string;
+  status: number;
+  authOk: boolean;
+  model?: string;
+  note?: string;
+};
+
 type Props = {
   opsKey: string;
   initialUsage: UsageState;
@@ -136,6 +147,7 @@ export function XaiUsageDashboard({
   const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">(
     "connecting",
   );
+  const [proxyHits, setProxyHits] = useState<ProxyHit[]>([]);
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -153,10 +165,12 @@ export function XaiUsageDashboard({
           usage: UsageState;
           cost: CostSummary;
           rates: ModelRate[];
+          proxyHits?: ProxyHit[];
         };
         setUsage(data.usage);
         setCost(data.cost);
         if (data.rates?.length) setRates(data.rates);
+        if (data.proxyHits) setProxyHits(data.proxyHits);
         setThresholdInput(String(data.usage.alertThresholdTokens));
         setWebhookInput(data.usage.webhookUrl || "");
         setLiveStatus("live");
@@ -200,10 +214,12 @@ export function XaiUsageDashboard({
       probe: Probe | null;
       cost: CostSummary;
       rates: ModelRate[];
+      proxyHits?: ProxyHit[];
     };
     setUsage(data.usage);
     setCost(data.cost);
     if (data.rates?.length) setRates(data.rates);
+    if (data.proxyHits) setProxyHits(data.proxyHits);
     if (data.probe) setProbe(data.probe);
     setThresholdInput(String(data.usage.alertThresholdTokens));
     setWebhookInput(data.usage.webhookUrl || "");
@@ -547,27 +563,82 @@ export function XaiUsageDashboard({
       <section className="setup-panel soft">
         <h2>Live tracking (no manual add)</h2>
         <p>
-          Point Cursor at this proxy. Every chat/agent call is counted
-          automatically on this dashboard.
+          Cursor only counts spend when chat goes through this proxy. Composer /
+          Claude / subscription Grok do not.
         </p>
         <ol className="xai-steps">
           <li>
-            Cursor Settings → Models → API Keys →{" "}
-            <strong>OpenAI API Key</strong> = your <code>OPS_SECRET</code>
+            OpenAI API Key = <code>xai-monitor-demo</code> and toggle{" "}
+            <strong>Use OpenAI API Key</strong> ON
           </li>
           <li>
-            Enable <strong>Override OpenAI Base URL</strong> and set:
+            Override OpenAI Base URL ON — paste exactly:
           </li>
         </ol>
         <pre className="xai-code">{liveBaseUrl}</pre>
+        <ol className="xai-steps" start={3}>
+          <li>
+            Models → <strong>Add Custom Model</strong> → name{" "}
+            <code>grok-4.3</code> → enable it
+          </li>
+          <li>
+            New chat → pick model <code>grok-4.3</code> (not Auto / Composer /
+            Claude) → send any message
+          </li>
+        </ol>
         <p className="fineprint">
-          Add model id <code>grok-4.3</code> (or another Grok id). Do not paste
-          the raw <code>xai-…</code> key into Cursor if you want live tracking —
-          Cursor would talk to xAI directly and skip this monitor.
+          If Cursor Hits below stays empty, Cursor is not calling this proxy.
+          Proxy path: <code>{proxyPath}</code>
         </p>
-        <pre className="xai-code">{`Also works as:
-POST ${proxyPath}
-Authorization: Bearer OPS_SECRET`}</pre>
+      </section>
+
+      <section className="setup-panel soft">
+        <h2>Cursor Hits (live)</h2>
+        <p className="fineprint">
+          Every request Cursor sends to the proxy appears here — even auth
+          failures. Empty = Cursor is not using the base URL yet.
+        </p>
+        {proxyHits.length === 0 ? (
+          <div className="setup-panel">No Cursor hits yet.</div>
+        ) : (
+          <div className="xai-table-wrap">
+            <table className="xai-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Req</th>
+                  <th>Status</th>
+                  <th>Model</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {proxyHits.slice(0, 12).map((h) => (
+                  <tr key={h.id}>
+                    <td>
+                      {new Date(h.at).toLocaleTimeString("en-GB", {
+                        timeZone: "Europe/Warsaw",
+                      })}
+                    </td>
+                    <td>
+                      {h.method} {h.path.replace(/^\/api\/xai\/v1/, "")}
+                    </td>
+                    <td>
+                      {h.status}
+                      {h.authOk ? "" : " · bad key"}
+                    </td>
+                    <td>{h.model || "—"}</td>
+                    <td>{h.note || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="setup-panel soft">
+        <h2>Reset / emergency ingest</h2>
         <div className="xai-form-row">
           <button
             type="button"

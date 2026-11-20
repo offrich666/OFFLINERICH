@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { getProxyHits } from "@/lib/xaiProxy";
 import {
   assertOpsKey,
   buildCostSummary,
@@ -35,12 +36,14 @@ export async function GET(req: Request) {
           const usage = await getXaiUsage();
           const rates = await getXaiModelRates();
           const cost = buildCostSummary(usage, rates);
-          const stamp = `${usage.updatedAt}:${usage.totalTokens}:${usage.events[0]?.id || ""}`;
+          const proxyHits = getProxyHits();
+          const stamp = `${usage.updatedAt}:${usage.totalTokens}:${usage.events[0]?.id || ""}:${proxyHits[0]?.id || ""}`;
           if (stamp === lastStamp) return;
           lastStamp = stamp;
           const payload = JSON.stringify({
             usage,
             cost,
+            proxyHits,
             rates: rates.slice(0, 40).map((r) => ({
               id: r.id,
               usdPerToken: r.usdPerToken,

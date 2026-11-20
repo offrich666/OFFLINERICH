@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 import { NextResponse } from "next/server";
+import { getProxyHits } from "@/lib/xaiProxy";
 import {
   assertOpsKey,
   buildCostSummary,
@@ -37,6 +38,7 @@ export async function GET(req: Request) {
       cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,
     })),
     cost,
+    proxyHits: getProxyHits(),
     progress: {
       tokens: usage.totalTokens,
       threshold: usage.alertThresholdTokens,
