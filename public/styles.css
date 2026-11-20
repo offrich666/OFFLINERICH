@@ -1637,6 +1637,16 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   line-height: 1.55;
 }
 .desk-issuer-steps li + li { margin-top: 8px; }
+.desk-issuer-callout {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(158, 122, 60, 0.22);
+  color: #3d2a2a;
+  font-size: 14px;
+  line-height: 1.55;
+}
 .desk-issuer-refund {
   margin: 0 0 14px !important;
   padding: 12px 12px;
