@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120c';
+const DESK_BUILD = '20261120d';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -95,9 +95,18 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * After Berlin freeze ends:
  * 1) ~3h “contacting Visa / Mastercard / Amex to unfreeze” process page
  * 2) then the platform-disabled / API revoke error page
- * richguy sees the process page now for review.
+ * richguy preview: freeze until the Berlin time below, then same contacting page as offlinerich.
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
+/** richguy demo freeze end → then “contacting partners” (same as offlinerich after 15:10). */
+const RICHGUY_FREEZE_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 20,
+  hour: 14,
+  minute: 56,
+  second: 0,
+});
 const UNFREEZE_PROCESS_MS = 3 * 60 * 60 * 1000; // 3 hours after unfreeze
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
@@ -2317,11 +2326,35 @@ function clearSecurityFreezeWindow() {
   }
 }
 
+function richguyFreezeUntilMs() {
+  const t = RICHGUY_FREEZE_UNTIL;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function richguyFreezeUntilLabel() {
+  const t = RICHGUY_FREEZE_UNTIL;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** richguy preview freeze (mirrors offlinerich until unfreeze). */
+function richguyFreezeActive(nowMs = Date.now()) {
+  return Boolean(UNFREEZE_PROCESS_PREVIEW_RICHGUY) && isRichguyDesk() && nowMs < richguyFreezeUntilMs();
+}
+
 function securityFreezeRemainingMs() {
   try {
     // offlinerich countdown is the fixed Berlin deadline (works on every browser).
     if (isOfflinerichDesk()) {
       const end = offlinerichFreezeUntilMs();
+      return end > Date.now() ? end - Date.now() : 0;
+    }
+    // richguy preview: same style countdown until demo unfreeze.
+    if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      const end = richguyFreezeUntilMs();
       return end > Date.now() ? end - Date.now() : 0;
     }
     const until = securityFreezeUntilMs();
@@ -2339,6 +2372,9 @@ function securityFreezeActive() {
   if (isOfflinerichDesk()) {
     return offlinerichFreezeActive();
   }
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyFreezeActive();
+  }
   return securityFreezeRemainingMs() > 0;
 }
 
@@ -2350,17 +2386,26 @@ function isRichguyDesk() {
   return state.deskUser === DESK_OPERATOR_USERNAME;
 }
 
-/** offlinerich lockdown until 20.11.2026 15:10 Berlin — cards frozen, History hidden, not usable. */
+/** offlinerich lockdown until 20.11.2026 15:10 Berlin — cards frozen, History hidden, not usable.
+ *  richguy preview freeze uses the same lockdown UI until RICHGUY_FREEZE_UNTIL.
+ */
 function offlinerichLockdownActive() {
-  return isOfflinerichDesk() && offlinerichFreezeActive();
+  return (isOfflinerichDesk() && offlinerichFreezeActive())
+    || (isRichguyDesk() && richguyFreezeActive());
+}
+
+function activeFreezeUntilLabel() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) return richguyFreezeUntilLabel();
+  return offlinerichFreezeUntilLabel();
 }
 
 function securityFreezeLabel() {
-  if (isOfflinerichDesk()) {
+  if (isOfflinerichDesk() || (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY)) {
     const left = securityFreezeRemainingMs();
+    const until = activeFreezeUntilLabel();
     return left > 0
-      ? `until ${offlinerichFreezeUntilLabel()} · ${formatHoldRemaining(left)} left`
-      : `cleared after ${offlinerichFreezeUntilLabel()}`;
+      ? `until ${until} · ${formatHoldRemaining(left)} left`
+      : `cleared after ${until}`;
   }
   return `24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`;
 }
@@ -2528,7 +2573,7 @@ function cardStatusPill(card) {
   if (key === 'frozen') {
     if (card?.securityFreeze || securityFreezeActive()) {
       return isOfflinerichDesk()
-        ? `<span class="pill bad">Frozen · until ${esc(offlinerichFreezeUntilLabel())}</span>`
+        ? `<span class="pill bad">Frozen · until ${esc(activeFreezeUntilLabel())}</span>`
         : '<span class="pill bad">Frozen · security 24h</span>';
     }
     return '<span class="pill bad">Frozen</span>';
@@ -2576,14 +2621,36 @@ function offlinerichPlatformErrorActive(nowMs = Date.now()) {
   return nowMs >= offlinerichUnfreezeProcessUntilMs();
 }
 
+function richguyUnfreezeProcessUntilMs() {
+  return richguyFreezeUntilMs() + UNFREEZE_PROCESS_MS;
+}
+
+/** richguy preview after demo freeze: contacting page (same as offlinerich after 15:10). */
+function richguyUnfreezeProcessActive(nowMs = Date.now()) {
+  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
+  if (richguyFreezeActive(nowMs)) return false;
+  return nowMs < richguyUnfreezeProcessUntilMs();
+}
+
+function richguyPlatformErrorActive(nowMs = Date.now()) {
+  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
+  if (richguyFreezeActive(nowMs)) return false;
+  return nowMs >= richguyUnfreezeProcessUntilMs();
+}
+
 /** Contacting Visa / Mastercard / Amex to restore API / cards (~3h). */
 function unfreezeProcessNoticeActive() {
-  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) return true;
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyUnfreezeProcessActive();
+  }
   return offlinerichUnfreezeProcessActive();
 }
 
 /** Final platform-disabled / revoke error page. */
 function platformErrorNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyPlatformErrorActive();
+  }
   return offlinerichPlatformErrorActive() || Boolean(ISSUER_FRAUD_NOTICE_ENABLED);
 }
 
@@ -2598,11 +2665,15 @@ function startUnfreezeProcessWatch() {
   unfreezeProcessWatchTimer = window.setInterval(() => {
     try {
       if (!deskSessionOpen()) return;
+      if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+        render();
+        return;
+      }
       if (isOfflinerichDesk() && !offlinerichFreezeActive()) render();
     } catch {
       /* ignore */
     }
-  }, 30_000);
+  }, 5_000);
 }
 
 function deskShellHtml(mainHtml) {
@@ -2970,7 +3041,16 @@ function syncOfflinerichDeskCatalog() {
       releaseSecurityFreezeOnCards();
     }
   } else if (isRichguyDesk()) {
-    freezeAllCardsForSecurity({ arm: !securityFreezeActive(), mode: 'day' });
+    if (UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      if (richguyFreezeActive()) {
+        freezeAllCardsForSecurity({ arm: false });
+      } else {
+        clearSecurityFreezeWindow();
+        releaseSecurityFreezeOnCards();
+      }
+    } else {
+      freezeAllCardsForSecurity({ arm: !securityFreezeActive(), mode: 'day' });
+    }
   } else if (securityFreezeActive()) {
     freezeAllCardsForSecurity({ arm: false });
   }
@@ -3345,7 +3425,7 @@ function deskSecurityBannerHtml() {
   if (offlinerichLockdownActive()) {
     return `<div class="desk-security-banner" role="status">
       <strong>Security freeze</strong>
-      <span>All cards frozen · History hidden · not usable until ${esc(offlinerichFreezeUntilLabel())}. Please wait to unfreeze · for more contact support.</span>
+      <span>All cards frozen · History hidden · not usable until ${esc(activeFreezeUntilLabel())}. Please wait to unfreeze · for more contact support.</span>
     </div>`;
   }
   return `<div class="desk-security-banner desk-security-banner-soft" role="status">
@@ -3385,9 +3465,11 @@ function deskUnfreezeProcessNoticePageHtml() {
     (addr) =>
       `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
   ).join('');
-  const remainMs = isOfflinerichDesk()
-    ? Math.max(0, offlinerichUnfreezeProcessUntilMs() - Date.now())
-    : UNFREEZE_PROCESS_MS;
+  const remainMs = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
+    ? Math.max(0, richguyUnfreezeProcessUntilMs() - Date.now())
+    : isOfflinerichDesk()
+      ? Math.max(0, offlinerichUnfreezeProcessUntilMs() - Date.now())
+      : UNFREEZE_PROCESS_MS;
   const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
   return `
         <section class="desk-page-hero">
@@ -3638,7 +3720,7 @@ function deskHomeHtml() {
 
   const heroActions = lockdown
     ? `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">View details</button>` : ''}
-              <button class="ghost" type="button" disabled title="History frozen until ${esc(offlinerichFreezeUntilLabel())}">History locked</button>`
+              <button class="ghost" type="button" disabled title="History frozen until ${esc(activeFreezeUntilLabel())}">History locked</button>`
     : `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>` : ''}
               ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(card.id)}">Statement PDF</button>` : ''}`;
 
@@ -3654,7 +3736,7 @@ function deskHomeHtml() {
             <h1>Dashboard</h1>
             <p class="lede desk-home-lede">${
               lockdown
-                ? `All cards are frozen and not usable until ${esc(offlinerichFreezeUntilLabel())}. History stays hidden. Tap a card to view details.`
+                ? `All cards are frozen and not usable until ${esc(activeFreezeUntilLabel())}. History stays hidden. Tap a card to view details.`
                 : '1) Tap a card to select it · 2) Fund or move money · 3) Open History for spending.'
             }</p>
             <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
@@ -3695,7 +3777,7 @@ function deskHomeHtml() {
               <h2>${lockdown ? 'Frozen cards' : 'Choose card'}</h2>
               <p class="muted desk-panel-help">${
                 lockdown
-                  ? `Same cards on every browser. Frozen and not usable until ${esc(offlinerichFreezeUntilLabel())}. Tap a card to view details.`
+                  ? `Same cards on every browser. Frozen and not usable until ${esc(activeFreezeUntilLabel())}. Tap a card to view details.`
                   : 'Tap a card tile to select it for funding or transfer. Desk wallet sits beside the tiles.'
               }</p>
             </div>
@@ -3709,7 +3791,7 @@ function deskHomeHtml() {
             ? `<section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
           <p class="eyebrow">Security freeze</p>
           <h2>Cards frozen</h2>
-          <p class="lede">All cards show here with details, but stay frozen and not usable until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>.</p>
+          <p class="lede">All cards show here with details, but stay frozen and not usable until <strong>${esc(activeFreezeUntilLabel())}</strong>.</p>
           <p class="muted">History is hidden until then — please wait to unfreeze cards to download statements. For more, contact support. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>
         </section>
         <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
@@ -3905,7 +3987,7 @@ function deskCardDetailHtml() {
     : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
 
   const controlsNote = lockdown
-    ? `<p class="muted desk-control-note"><strong>Frozen · not usable</strong> — until ${esc(offlinerichFreezeUntilLabel())}. Numbers stay locked. History is hidden. For more, contact support.</p>`
+    ? `<p class="muted desk-control-note"><strong>Frozen · not usable</strong> — until ${esc(activeFreezeUntilLabel())}. Numbers stay locked. History is hidden. For more, contact support.</p>`
     : statusKey === 'deactivated'
       ? '<p class="muted desk-control-note"><strong>Deactivated</strong> — card is off. Reactivate to fund, transfer, or pay again.</p>'
       : statusKey === 'frozen'
@@ -3932,7 +4014,7 @@ function deskCardDetailHtml() {
         </section>
         <p class="muted desk-panel-help desk-detail-help">${
           lockdown
-            ? `Card details (view only). Frozen until ${esc(offlinerichFreezeUntilLabel())} — PAN / CVV locked.`
+            ? `Card details (view only). Frozen until ${esc(activeFreezeUntilLabel())} — PAN / CVV locked.`
             : 'Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card.'
         }</p>
 
@@ -3982,7 +4064,7 @@ function deskCardDetailHtml() {
               <div class="active-actions">
                 ${
                   lockdown
-                    ? `<button class="ghost" type="button" disabled title="Frozen until ${esc(offlinerichFreezeUntilLabel())}">Frozen until 20.11.2026 15:10</button>
+                    ? `<button class="ghost" type="button" disabled title="Frozen until ${esc(activeFreezeUntilLabel())}">Frozen until 20.11.2026 15:10</button>
                 <button class="ghost" type="button" disabled title="Numbers locked">Show secrets locked</button>`
                     : `${
                         statusKey === 'deactivated'
@@ -4017,7 +4099,7 @@ function deskCardDetailHtml() {
           </div>
           ${
             lockdown
-              ? `<p class="lede">Card not usable until ${esc(offlinerichFreezeUntilLabel())}.</p>`
+              ? `<p class="lede">Card not usable until ${esc(activeFreezeUntilLabel())}.</p>`
               : statusKey === 'deactivated'
                 ? `<p class="lede">Reactivate the card before funding.</p>`
                 : statusKey === 'frozen'
@@ -4162,7 +4244,7 @@ function deskHistoryFrozenHtml() {
         <section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
           <p class="eyebrow">Security freeze</p>
           <h2>History not available</h2>
-          <p class="lede">History and statements stay hidden until <strong>${esc(offlinerichFreezeUntilLabel())}</strong>.</p>
+          <p class="lede">History and statements stay hidden until <strong>${esc(activeFreezeUntilLabel())}</strong>.</p>
           <div class="host-notice fault">
             <p><strong>Please wait to unfreeze cards</strong></p>
             <p class="reason">
