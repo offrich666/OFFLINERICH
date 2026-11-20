@@ -44,10 +44,36 @@ type Probe = {
   error?: string;
 };
 
+type ModelRate = {
+  id: string;
+  inputUsdPerMillion: number;
+  outputUsdPerMillion: number;
+  cachedInputUsdPerMillion: number;
+};
+
+type CostSummary = {
+  totalCostUsd: number;
+  billedCostUsd: number;
+  estimatedFromRatesUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  otherTokens: number;
+  avgUsdPer1kTokens: number | null;
+  byModel: Array<{
+    model: string;
+    tokens: number;
+    costUsd: number;
+    inputUsdPerMillion: number | null;
+    outputUsdPerMillion: number | null;
+  }>;
+};
+
 type Props = {
   opsKey: string;
   initialUsage: UsageState;
   initialProbe: Probe | null;
+  initialCost: CostSummary;
+  initialRates: ModelRate[];
   proxyPath: string;
 };
 
@@ -55,14 +81,29 @@ function formatTokens(n: number) {
   return n.toLocaleString("en-US");
 }
 
+function formatUsd(n: number, digits = 4) {
+  if (!Number.isFinite(n)) return "$0";
+  if (n > 0 && n < 0.0001) return `$${n.toFixed(6)}`;
+  return `$${n.toFixed(digits)}`;
+}
+
+function formatRate(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `$${n.toFixed(2)} / 1M`;
+}
+
 export function XaiUsageDashboard({
   opsKey,
   initialUsage,
   initialProbe,
+  initialCost,
+  initialRates,
   proxyPath,
 }: Props) {
   const [usage, setUsage] = useState(initialUsage);
   const [probe, setProbe] = useState(initialProbe);
+  const [cost, setCost] = useState(initialCost);
+  const [rates, setRates] = useState(initialRates);
   const [thresholdInput, setThresholdInput] = useState(
     String(initialUsage.alertThresholdTokens),
   );
@@ -85,6 +126,16 @@ export function XaiUsageDashboard({
     ),
   );
   const alertActive = usage.totalTokens >= usage.alertThresholdTokens;
+  const featuredRates = (cost.byModel.length
+    ? cost.byModel
+    : rates.slice(0, 6).map((r) => ({
+        model: r.id,
+        tokens: 0,
+        costUsd: 0,
+        inputUsdPerMillion: r.inputUsdPerMillion,
+        outputUsdPerMillion: r.outputUsdPerMillion,
+      }))
+  ).slice(0, 8);
 
   async function refresh(withProbe = true) {
     const res = await fetch(
@@ -92,8 +143,15 @@ export function XaiUsageDashboard({
       { cache: "no-store" },
     );
     if (!res.ok) throw new Error("refresh failed");
-    const data = (await res.json()) as { usage: UsageState; probe: Probe | null };
+    const data = (await res.json()) as {
+      usage: UsageState;
+      probe: Probe | null;
+      cost: CostSummary;
+      rates: ModelRate[];
+    };
     setUsage(data.usage);
+    setCost(data.cost);
+    if (data.rates?.length) setRates(data.rates);
     if (data.probe) setProbe(data.probe);
     setThresholdInput(String(data.usage.alertThresholdTokens));
     setWebhookInput(data.usage.webhookUrl || "");
@@ -112,9 +170,15 @@ export function XaiUsageDashboard({
     if (!alertActive || !canNotify) return;
     if (Notification.permission !== "granted") return;
     new Notification("xAI token alert", {
-      body: `${formatTokens(usage.totalTokens)} tokens spent (limit ${formatTokens(usage.alertThresholdTokens)})`,
+      body: `${formatTokens(usage.totalTokens)} tokens · ${formatUsd(cost.totalCostUsd)} (limit ${formatTokens(usage.alertThresholdTokens)})`,
     });
-  }, [alertActive, canNotify, usage.totalTokens, usage.alertThresholdTokens]);
+  }, [
+    alertActive,
+    canNotify,
+    usage.totalTokens,
+    usage.alertThresholdTokens,
+    cost.totalCostUsd,
+  ]);
 
   function run(action: () => Promise<void>) {
     setMessage(null);
@@ -131,12 +195,14 @@ export function XaiUsageDashboard({
     <div className="xai-dash">
       {alertActive ? (
         <div className="xai-alert" role="alert">
-          Alert: {formatTokens(usage.totalTokens)} tokens spent — threshold{" "}
+          Alert: {formatTokens(usage.totalTokens)} tokens /{" "}
+          {formatUsd(cost.totalCostUsd)} — threshold{" "}
           {formatTokens(usage.alertThresholdTokens)} reached
           {usage.alertFiredAt ? (
             <span className="fineprint">
               {" "}
-              · fired {new Date(usage.alertFiredAt).toLocaleString("en-GB", {
+              · fired{" "}
+              {new Date(usage.alertFiredAt).toLocaleString("en-GB", {
                 timeZone: "Europe/Warsaw",
               })}{" "}
               (Europe/Warsaw)
@@ -147,11 +213,36 @@ export function XaiUsageDashboard({
 
       <div className="xai-grid">
         <section className="setup-panel soft">
-          <h2>Spend</h2>
+          <h2>Cost</h2>
+          <p className="xai-metric">{formatUsd(cost.totalCostUsd, 4)}</p>
+          <p className="fineprint">
+            billed {formatUsd(cost.billedCostUsd, 5)} · from rates{" "}
+            {formatUsd(cost.estimatedFromRatesUsd, 5)}
+            {cost.avgUsdPer1kTokens != null
+              ? ` · avg ${formatUsd(cost.avgUsdPer1kTokens, 5)} / 1k tokens`
+              : ""}
+          </p>
+          <dl className="xai-cost-breakdown">
+            <div>
+              <dt>Input tokens</dt>
+              <dd>{formatTokens(cost.promptTokens)}</dd>
+            </div>
+            <div>
+              <dt>Output tokens</dt>
+              <dd>{formatTokens(cost.completionTokens)}</dd>
+            </div>
+            <div>
+              <dt>Other (reasoning)</dt>
+              <dd>{formatTokens(cost.otherTokens)}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="setup-panel soft">
+          <h2>Tokens</h2>
           <p className="xai-metric">{formatTokens(usage.totalTokens)}</p>
           <p className="fineprint">
-            of {formatTokens(usage.alertThresholdTokens)} token alert · est. $
-            {usage.totalCostUsd.toFixed(4)}
+            of {formatTokens(usage.alertThresholdTokens)} token alert
           </p>
           <div className="xai-bar" aria-label="Token progress">
             <span style={{ width: `${percent}%` }} />
@@ -176,7 +267,6 @@ export function XaiUsageDashboard({
                   Rate window:{" "}
                   {formatTokens(probe.rateLimit.remainingTokens)} /{" "}
                   {formatTokens(probe.rateLimit.limitTokens || 0)} tokens left
-                  (not wallet balance)
                 </p>
               ) : null}
             </>
@@ -206,6 +296,7 @@ export function XaiUsageDashboard({
                   if (!res.ok) throw new Error(data.error || "probe failed");
                   setProbe(data.probe);
                   setUsage(data.usage);
+                  await refresh(false);
                 })
               }
             >
@@ -233,6 +324,41 @@ export function XaiUsageDashboard({
           </div>
         </section>
       </div>
+
+      <section className="setup-panel soft">
+        <h2>Price per token (xAI rates)</h2>
+        <p className="fineprint">
+          Live from xAI model catalog. Prices are USD per 1 million tokens
+          (input / output). Cost for each call = tokens × these rates (API
+          billed ticks when available).
+        </p>
+        <div className="ops-table-wrap">
+          <table className="ops-table">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>Input</th>
+                <th>Output</th>
+                <th>Tracked tokens</th>
+                <th>Tracked cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {featuredRates.map((row) => (
+                <tr key={row.model}>
+                  <td>
+                    <code>{row.model}</code>
+                  </td>
+                  <td>{formatRate(row.inputUsdPerMillion)}</td>
+                  <td>{formatRate(row.outputUsdPerMillion)}</td>
+                  <td>{formatTokens(row.tokens)}</td>
+                  <td>{formatUsd(row.costUsd, 5)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="setup-panel soft">
         <h2>Alert settings</h2>
@@ -288,13 +414,11 @@ export function XaiUsageDashboard({
 
       <section className="setup-panel soft">
         <h2>Track spend</h2>
-        <p>
-          Route chat calls through the proxy so every request is counted:
-        </p>
+        <p>Route chat calls through the proxy so every request is priced:</p>
         <pre className="xai-code">{`POST ${proxyPath}
-Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
+Authorization: Bearer OPS_SECRET`}</pre>
         <p className="fineprint">
-          Or manually add tokens from Cursor/other apps that bypass the proxy.
+          Or manually add tokens from apps that bypass the proxy.
         </p>
         <div className="xai-form-row">
           <label>
@@ -326,6 +450,7 @@ Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
                 };
                 if (!res.ok) throw new Error(data.error || "ingest failed");
                 setUsage(data.usage);
+                await refresh(false);
               })
             }
           >
@@ -354,6 +479,7 @@ Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
                 };
                 if (!res.ok) throw new Error(data.error || "reset failed");
                 setUsage(data.usage);
+                await refresh(false);
               })
             }
           >
@@ -374,6 +500,7 @@ Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
                 <th>When</th>
                 <th>Source</th>
                 <th>Model</th>
+                <th>In / Out</th>
                 <th>Tokens</th>
                 <th>Cost</th>
                 <th>Note</th>
@@ -391,9 +518,13 @@ Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
                     <code>{e.source}</code>
                   </td>
                   <td>{e.model || "—"}</td>
+                  <td>
+                    {formatTokens(e.promptTokens || 0)} /{" "}
+                    {formatTokens(e.completionTokens || 0)}
+                  </td>
                   <td>{formatTokens(e.totalTokens)}</td>
                   <td>
-                    {e.costUsd != null ? `$${e.costUsd.toFixed(5)}` : "—"}
+                    {e.costUsd != null ? formatUsd(e.costUsd, 5) : "—"}
                   </td>
                   <td className="ops-notes">{e.note || "—"}</td>
                 </tr>

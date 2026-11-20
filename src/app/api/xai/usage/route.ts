@@ -2,6 +2,8 @@ import { connection } from "next/server";
 import { NextResponse } from "next/server";
 import {
   assertOpsKey,
+  buildCostSummary,
+  getXaiModelRates,
   getXaiUsage,
   probeXaiKey,
   recordXaiUsage,
@@ -20,11 +22,20 @@ export async function GET(req: Request) {
 
   const includeProbe = url.searchParams.get("probe") === "1";
   const usage = await getXaiUsage();
+  const rates = await getXaiModelRates();
+  const cost = buildCostSummary(usage, rates);
   const probe = includeProbe ? await probeXaiKey({ recordSample: false }) : null;
 
   return NextResponse.json({
     usage,
     probe,
+    rates: rates.slice(0, 40).map((r) => ({
+      id: r.id,
+      inputUsdPerMillion: r.inputUsdPerMillion,
+      outputUsdPerMillion: r.outputUsdPerMillion,
+      cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,
+    })),
+    cost,
     progress: {
       tokens: usage.totalTokens,
       threshold: usage.alertThresholdTokens,

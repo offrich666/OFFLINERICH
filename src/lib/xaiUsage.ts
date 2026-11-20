@@ -35,10 +35,194 @@ const USAGE_FILE = path.join(DATA_DIR, "xai-usage.json");
 const DEFAULT_THRESHOLD = 30_000;
 const MAX_EVENTS = 200;
 
-/** xAI: 10_000_000_000 ticks = $1 */
+/** xAI: 10_000_000_000 ticks = $1. Model price fields are ticks per token. */
+export const XAI_TICKS_PER_USD = 10_000_000_000;
+
+export type XaiModelRate = {
+  id: string;
+  inputUsdPerMillion: number;
+  outputUsdPerMillion: number;
+  cachedInputUsdPerMillion: number;
+  promptTicksPerToken: number;
+  completionTicksPerToken: number;
+  cachedPromptTicksPerToken: number;
+};
+
+export type XaiCostSummary = {
+  totalCostUsd: number;
+  billedCostUsd: number;
+  estimatedFromRatesUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  otherTokens: number;
+  avgUsdPer1kTokens: number | null;
+  byModel: Array<{
+    model: string;
+    tokens: number;
+    costUsd: number;
+    inputUsdPerMillion: number | null;
+    outputUsdPerMillion: number | null;
+  }>;
+};
+
 export function ticksToUsd(ticks: number | undefined): number | undefined {
   if (ticks == null || !Number.isFinite(ticks)) return undefined;
-  return ticks / 10_000_000_000;
+  return ticks / XAI_TICKS_PER_USD;
+}
+
+export function ticksPerTokenToUsdPerMillion(ticks: number): number {
+  return (ticks / XAI_TICKS_PER_USD) * 1_000_000;
+}
+
+export function estimateCostUsd(args: {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens?: number;
+  promptTicksPerToken: number;
+  completionTicksPerToken: number;
+}): number {
+  const promptTicks = Math.max(0, args.promptTokens) * args.promptTicksPerToken;
+  let completionTokens = Math.max(0, args.completionTokens);
+  if (args.totalTokens != null) {
+    // Reasoning / extras often appear in total_tokens beyond prompt+completion.
+    completionTokens += Math.max(
+      0,
+      args.totalTokens - args.promptTokens - args.completionTokens,
+    );
+  }
+  const completionTicks = completionTokens * args.completionTicksPerToken;
+  return (promptTicks + completionTicks) / XAI_TICKS_PER_USD;
+}
+
+let pricingCache:
+  | { at: number; rates: XaiModelRate[]; byId: Map<string, XaiModelRate> }
+  | null = null;
+
+export async function getXaiModelRates(): Promise<XaiModelRate[]> {
+  const apiKey = process.env.XAI_API_KEY?.trim();
+  if (!apiKey) return pricingCache?.rates ?? [];
+
+  if (pricingCache && Date.now() - pricingCache.at < 5 * 60_000) {
+    return pricingCache.rates;
+  }
+
+  try {
+    const res = await fetch("https://api.x.ai/v1/language-models", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    });
+    const body = (await res.json().catch(() => null)) as {
+      models?: Array<{
+        id: string;
+        aliases?: string[];
+        prompt_text_token_price?: number;
+        completion_text_token_price?: number;
+        cached_prompt_text_token_price?: number;
+      }>;
+    } | null;
+    if (!res.ok || !body?.models) return pricingCache?.rates ?? [];
+
+    const rates: XaiModelRate[] = [];
+    const byId = new Map<string, XaiModelRate>();
+    for (const model of body.models) {
+      const promptTicks = model.prompt_text_token_price ?? 0;
+      const completionTicks = model.completion_text_token_price ?? 0;
+      const cachedTicks = model.cached_prompt_text_token_price ?? 0;
+      const rate: XaiModelRate = {
+        id: model.id,
+        promptTicksPerToken: promptTicks,
+        completionTicksPerToken: completionTicks,
+        cachedPromptTicksPerToken: cachedTicks,
+        inputUsdPerMillion: ticksPerTokenToUsdPerMillion(promptTicks),
+        outputUsdPerMillion: ticksPerTokenToUsdPerMillion(completionTicks),
+        cachedInputUsdPerMillion: ticksPerTokenToUsdPerMillion(cachedTicks),
+      };
+      rates.push(rate);
+      byId.set(model.id, rate);
+      for (const alias of model.aliases || []) byId.set(alias, rate);
+    }
+    pricingCache = { at: Date.now(), rates, byId };
+    return rates;
+  } catch {
+    return pricingCache?.rates ?? [];
+  }
+}
+
+export function findModelRate(
+  model: string | undefined,
+  byId?: Map<string, XaiModelRate>,
+): XaiModelRate | null {
+  if (!model) return null;
+  const map = byId ?? pricingCache?.byId;
+  if (!map) return null;
+  return map.get(model) || null;
+}
+
+export function buildCostSummary(
+  usage: XaiUsageState,
+  rates: XaiModelRate[],
+): XaiCostSummary {
+  const byId = pricingCache?.byId ?? new Map(rates.map((r) => [r.id, r]));
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let otherTokens = 0;
+  let estimatedFromRatesUsd = 0;
+  const modelMap = new Map<
+    string,
+    { tokens: number; costUsd: number; rate: XaiModelRate | null }
+  >();
+
+  for (const event of usage.events) {
+    promptTokens += event.promptTokens || 0;
+    completionTokens += event.completionTokens || 0;
+    otherTokens += Math.max(
+      0,
+      event.totalTokens - (event.promptTokens || 0) - (event.completionTokens || 0),
+    );
+
+    const rate = findModelRate(event.model, byId);
+    const estimated =
+      event.costUsd ??
+      (rate
+        ? estimateCostUsd({
+            promptTokens: event.promptTokens || 0,
+            completionTokens: event.completionTokens || 0,
+            totalTokens: event.totalTokens,
+            promptTicksPerToken: rate.promptTicksPerToken,
+            completionTicksPerToken: rate.completionTicksPerToken,
+          })
+        : 0);
+    estimatedFromRatesUsd += estimated;
+
+    const key = event.model || "unknown";
+    const row = modelMap.get(key) || { tokens: 0, costUsd: 0, rate };
+    row.tokens += event.totalTokens;
+    row.costUsd += estimated;
+    row.rate = row.rate || rate;
+    modelMap.set(key, row);
+  }
+
+  const billedCostUsd = usage.totalCostUsd;
+  const totalCostUsd = Math.max(billedCostUsd, estimatedFromRatesUsd);
+  return {
+    totalCostUsd,
+    billedCostUsd,
+    estimatedFromRatesUsd,
+    promptTokens,
+    completionTokens,
+    otherTokens,
+    avgUsdPer1kTokens:
+      usage.totalTokens > 0 ? (totalCostUsd / usage.totalTokens) * 1000 : null,
+    byModel: [...modelMap.entries()]
+      .map(([model, row]) => ({
+        model,
+        tokens: row.tokens,
+        costUsd: row.costUsd,
+        inputUsdPerMillion: row.rate?.inputUsdPerMillion ?? null,
+        outputUsdPerMillion: row.rate?.outputUsdPerMillion ?? null,
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd),
+  };
 }
 
 function defaultState(): XaiUsageState {
@@ -143,7 +327,22 @@ export async function recordXaiUsage(input: {
   const totalTokens = Math.max(0, Math.floor(input.totalTokens));
   const promptTokens = Math.max(0, Math.floor(input.promptTokens ?? 0));
   const completionTokens = Math.max(0, Math.floor(input.completionTokens ?? 0));
-  const costUsd = input.costUsd && Number.isFinite(input.costUsd) ? input.costUsd : 0;
+
+  let costUsd =
+    input.costUsd != null && Number.isFinite(input.costUsd) ? input.costUsd : 0;
+  if (!costUsd) {
+    await getXaiModelRates();
+    const rate = findModelRate(input.model);
+    if (rate) {
+      costUsd = estimateCostUsd({
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        promptTicksPerToken: rate.promptTicksPerToken,
+        completionTicksPerToken: rate.completionTicksPerToken,
+      });
+    }
+  }
 
   const event: XaiUsageEvent = {
     id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,

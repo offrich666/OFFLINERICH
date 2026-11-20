@@ -1,6 +1,11 @@
 import { connection } from "next/server";
 import { XaiUsageDashboard } from "@/components/XaiUsageDashboard";
-import { getXaiUsage, probeXaiKey } from "@/lib/xaiUsage";
+import {
+  buildCostSummary,
+  getXaiModelRates,
+  getXaiUsage,
+  probeXaiKey,
+} from "@/lib/xaiUsage";
 
 type Props = {
   searchParams: Promise<{ key?: string }>;
@@ -28,6 +33,8 @@ export default async function OpsXaiPage({ searchParams }: Props) {
   }
 
   const usage = await getXaiUsage();
+  const rates = await getXaiModelRates();
+  const cost = buildCostSummary(usage, rates);
   const probe = process.env.XAI_API_KEY?.trim()
     ? await probeXaiKey({ recordSample: false })
     : null;
@@ -42,10 +49,9 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           <p className="eyebrow">Ops · xAI</p>
           <h1>Token spend monitor</h1>
           <p>
-            Tracks tokens from the usage proxy (and manual entries). Alerts when
-            spend hits your threshold (default 30,000). xAI does not expose
-            wallet token balance on a normal API key — this counter is the
-            source of truth for apps you route through the proxy.
+            Tracks tokens and dollar cost from xAI per-token rates (input /
+            output $/1M). Alerts when spend hits your threshold (default
+            30,000 tokens).
           </p>
         </div>
 
@@ -53,6 +59,13 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           opsKey={expected}
           initialUsage={usage}
           initialProbe={probe}
+          initialCost={cost}
+          initialRates={rates.slice(0, 40).map((r) => ({
+            id: r.id,
+            inputUsdPerMillion: r.inputUsdPerMillion,
+            outputUsdPerMillion: r.outputUsdPerMillion,
+            cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,
+          }))}
           proxyPath={proxyPath || "/api/xai/proxy/chat/completions"}
         />
       </section>

@@ -668,6 +668,29 @@ code {
   letter-spacing: -0.03em;
 }
 
+.xai-cost-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+}
+
+.xai-cost-breakdown div {
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+}
+
+.xai-cost-breakdown dt {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--mist);
+}
+
+.xai-cost-breakdown dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+}
+
 .xai-bar {
   height: 0.55rem;
   border-radius: 999px;
