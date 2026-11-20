@@ -761,6 +761,24 @@ code {
   line-height: 1.45;
 }
 
+.xai-telegram {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.xai-link-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: var(--gold-deep);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  text-decoration: none;
+  font: inherit;
+}
+
 .mark-sent {
   display: flex;
   flex-wrap: wrap;

@@ -71,12 +71,26 @@ type CostSummary = {
   }>;
 };
 
+type TelegramLink = {
+  chatId: string | null;
+  chatTitle: string | null;
+  username: string | null;
+  linkedAt: string | null;
+  lastError: string | null;
+};
+
 type Props = {
   opsKey: string;
   initialUsage: UsageState;
   initialProbe: Probe | null;
   initialCost: CostSummary;
   initialRates: ModelRate[];
+  initialTelegram: {
+    configured: boolean;
+    botUsername: string;
+    botUrl: string;
+    link: TelegramLink;
+  };
   proxyPath: string;
 };
 
@@ -100,12 +114,14 @@ export function XaiUsageDashboard({
   initialProbe,
   initialCost,
   initialRates,
+  initialTelegram,
   proxyPath,
 }: Props) {
   const [usage, setUsage] = useState(initialUsage);
   const [probe, setProbe] = useState(initialProbe);
   const [cost, setCost] = useState(initialCost);
   const [rates, setRates] = useState(initialRates);
+  const [telegram, setTelegram] = useState(initialTelegram);
   const [thresholdInput, setThresholdInput] = useState(
     String(initialUsage.alertThresholdTokens),
   );
@@ -363,8 +379,12 @@ export function XaiUsageDashboard({
       <section className="setup-panel soft">
         <h2>Alert settings</h2>
         <p className="fineprint">
-          Default threshold is 30,000 tokens. Optional Discord/Slack webhook
-          fires when the counter crosses the limit.
+          Default threshold is <strong>300,000 tokens</strong> ($300,000 at
+          $1/token). Telegram bot{" "}
+          <a href={telegram.botUrl} target="_blank" rel="noreferrer">
+            @{telegram.botUsername}
+          </a>{" "}
+          gets a message when the limit is hit.
         </p>
         <div className="xai-form-row">
           <label>
@@ -376,7 +396,7 @@ export function XaiUsageDashboard({
             />
           </label>
           <label>
-            Webhook URL
+            Webhook URL (optional)
             <input
               value={webhookInput}
               onChange={(e) => setWebhookInput(e.target.value)}
@@ -409,6 +429,87 @@ export function XaiUsageDashboard({
           >
             Save alerts
           </button>
+        </div>
+
+        <div className="xai-telegram">
+          <p className="fineprint">
+            {telegram.configured
+              ? telegram.link.chatId
+                ? `Telegram linked: chat ${telegram.link.chatId}${
+                    telegram.link.username ? ` (@${telegram.link.username})` : ""
+                  }`
+                : "Telegram bot token is set, but no chat is linked yet."
+              : "Set TELEGRAM_BOT_TOKEN in env."}
+          </p>
+          {telegram.link.lastError ? (
+            <p className="fineprint">{telegram.link.lastError}</p>
+          ) : null}
+          <div className="xai-actions">
+            <a
+              className="xai-link-btn"
+              href={telegram.botUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Open @{telegram.botUsername}
+            </a>
+            <button
+              type="button"
+              disabled={pending || !telegram.configured}
+              onClick={() =>
+                run(async () => {
+                  const res = await fetch("/api/xai/telegram", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ key: opsKey, action: "link" }),
+                  });
+                  const data = (await res.json()) as {
+                    ok: boolean;
+                    link: TelegramLink;
+                    hint?: string;
+                    error?: string;
+                  };
+                  if (!res.ok) throw new Error(data.error || "link failed");
+                  setTelegram((prev) => ({ ...prev, link: data.link }));
+                  setMessage(data.hint || (data.ok ? "Linked" : "Not linked yet"));
+                })
+              }
+            >
+              Link Telegram
+            </button>
+            <button
+              type="button"
+              disabled={pending || !telegram.configured}
+              onClick={() =>
+                run(async () => {
+                  const res = await fetch("/api/xai/telegram", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ key: opsKey, action: "test" }),
+                  });
+                  const data = (await res.json()) as {
+                    ok: boolean;
+                    link: TelegramLink;
+                    result?: { error?: string };
+                    error?: string;
+                  };
+                  if (!res.ok || !data.ok) {
+                    setTelegram((prev) => ({
+                      ...prev,
+                      link: data.link || prev.link,
+                    }));
+                    throw new Error(
+                      data.result?.error || data.error || "test alert failed",
+                    );
+                  }
+                  setTelegram((prev) => ({ ...prev, link: data.link }));
+                  setMessage("Test alert sent to Telegram");
+                })
+              }
+            >
+              Send test alert
+            </button>
+          </div>
         </div>
       </section>
 

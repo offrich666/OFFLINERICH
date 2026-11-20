@@ -1,6 +1,7 @@
 import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
+import { sendTelegramAlert } from "@/lib/xaiTelegram";
 
 export type XaiUsageEvent = {
   id: string;
@@ -32,7 +33,7 @@ const DATA_DIR =
     : path.join(process.cwd(), "data");
 const USAGE_FILE = path.join(DATA_DIR, "xai-usage.json");
 
-const DEFAULT_THRESHOLD = 30_000;
+const DEFAULT_THRESHOLD = 300_000;
 const MAX_EVENTS = 200;
 
 /** Dashboard pricing: 1 token = $1 (override with XAI_USD_PER_TOKEN). */
@@ -261,17 +262,19 @@ async function maybeAlert(state: XaiUsageState): Promise<XaiUsageState> {
     state.totalTokens >= state.alertThresholdTokens &&
     (state.lastAlertTokens == null ||
       state.lastAlertTokens < state.alertThresholdTokens ||
-      // Re-alert every additional full threshold step (30k, 60k, …)
+      // Re-alert every additional full threshold step (300k, 600k, …)
       state.totalTokens >= (state.lastAlertTokens || 0) + state.alertThresholdTokens);
 
   if (!crossed) return state;
 
-  const message = {
-    text:
-      `xAI usage alert: ${state.totalTokens.toLocaleString()} tokens spent ` +
-      `($${costForTokens(state.totalTokens).toFixed(2)} at $${USD_PER_TOKEN}/token; ` +
-      `threshold ${state.alertThresholdTokens.toLocaleString()}).`,
-  };
+  const cost = costForTokens(state.totalTokens);
+  const text =
+    `🚨 xAI API limit alert\n` +
+    `Tokens: ${state.totalTokens.toLocaleString()}\n` +
+    `Cost: $${cost.toLocaleString("en-US", { minimumFractionDigits: 2 })} ` +
+    `($${USD_PER_TOKEN}/token)\n` +
+    `Threshold: ${state.alertThresholdTokens.toLocaleString()} tokens\n` +
+    `Bot: @botapilimit_bot`;
 
   if (state.webhookUrl) {
     try {
@@ -279,17 +282,19 @@ async function maybeAlert(state: XaiUsageState): Promise<XaiUsageState> {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...message,
-          content: message.text,
+          text,
+          content: text,
           totalTokens: state.totalTokens,
           threshold: state.alertThresholdTokens,
-          totalCostUsd: state.totalCostUsd,
+          totalCostUsd: cost,
         }),
       });
     } catch {
       // Keep dashboard alert even if webhook fails.
     }
   }
+
+  await sendTelegramAlert(text);
 
   state.alertFiredAt = new Date().toISOString();
   state.lastAlertTokens = state.totalTokens;

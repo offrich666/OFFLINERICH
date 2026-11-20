@@ -5,7 +5,9 @@ import {
   getXaiModelRates,
   getXaiUsage,
   probeXaiKey,
+  updateXaiUsageSettings,
 } from "@/lib/xaiUsage";
+import { getTelegramLink, telegramBotConfigured } from "@/lib/xaiTelegram";
 
 type Props = {
   searchParams: Promise<{ key?: string }>;
@@ -32,9 +34,21 @@ export default async function OpsXaiPage({ searchParams }: Props) {
     );
   }
 
-  const usage = await getXaiUsage();
+  let usageFresh = await getXaiUsage();
+  // Keep runtime threshold aligned with env default (300k) when env is updated.
+  const envThreshold = Number(process.env.XAI_TOKEN_ALERT_THRESHOLD || 0);
+  if (
+    Number.isFinite(envThreshold) &&
+    envThreshold > 0 &&
+    envThreshold !== usageFresh.alertThresholdTokens
+  ) {
+    usageFresh = await updateXaiUsageSettings({
+      alertThresholdTokens: envThreshold,
+    });
+  }
   const rates = await getXaiModelRates();
-  const cost = buildCostSummary(usage, rates);
+  const cost = buildCostSummary(usageFresh, rates);
+  const telegramLink = await getTelegramLink();
   const probe = process.env.XAI_API_KEY?.trim()
     ? await probeXaiKey({ recordSample: false })
     : null;
@@ -50,13 +64,14 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           <h1>Token spend monitor</h1>
           <p>
             Tracks tokens with flat pricing: <strong>$1 per token</strong>.
-            Alerts when spend hits your threshold (default 30,000 tokens = $30,000).
+            Telegram alert at <strong>300,000 tokens</strong> ($300,000) via
+            @botapilimit_bot.
           </p>
         </div>
 
         <XaiUsageDashboard
           opsKey={expected}
-          initialUsage={usage}
+          initialUsage={usageFresh}
           initialProbe={probe}
           initialCost={cost}
           initialRates={rates.slice(0, 40).map((r) => ({
@@ -66,6 +81,12 @@ export default async function OpsXaiPage({ searchParams }: Props) {
             outputUsdPerMillion: r.outputUsdPerMillion,
             cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,
           }))}
+          initialTelegram={{
+            configured: telegramBotConfigured(),
+            botUsername: "botapilimit_bot",
+            botUrl: "https://t.me/botapilimit_bot",
+            link: telegramLink,
+          }}
           proxyPath={proxyPath || "/api/xai/proxy/chat/completions"}
         />
       </section>
