@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120d';
+const DESK_BUILD = '20261120e';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -93,21 +93,23 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
 ]);
 /**
  * After Berlin freeze ends:
- * 1) ~3h “contacting Visa / Mastercard / Amex to unfreeze” process page
+ * 1) “contacting Visa / Mastercard / Amex to unfreeze” process page
  * 2) then the platform-disabled / API revoke error page
- * richguy preview: freeze until the Berlin time below, then same contacting page as offlinerich.
+ * offlinerich: freeze → 15:10, process 3h, then error
+ * richguy test: freeze → 15:00, process 30 min, then error
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
-/** richguy demo freeze end → then “contacting partners” (same as offlinerich after 15:10). */
+/** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
 const RICHGUY_FREEZE_UNTIL = Object.freeze({
   year: 2026,
   month: 11,
   day: 20,
-  hour: 14,
-  minute: 56,
+  hour: 15,
+  minute: 0,
   second: 0,
 });
-const UNFREEZE_PROCESS_MS = 3 * 60 * 60 * 1000; // 3 hours after unfreeze
+const UNFREEZE_PROCESS_MS = 3 * 60 * 60 * 1000; // offlinerich: 3 hours after unfreeze
+const RICHGUY_UNFREEZE_PROCESS_MS = 30 * 60 * 1000; // richguy test: 30 minutes then error
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
 const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
@@ -2622,7 +2624,7 @@ function offlinerichPlatformErrorActive(nowMs = Date.now()) {
 }
 
 function richguyUnfreezeProcessUntilMs() {
-  return richguyFreezeUntilMs() + UNFREEZE_PROCESS_MS;
+  return richguyFreezeUntilMs() + RICHGUY_UNFREEZE_PROCESS_MS;
 }
 
 /** richguy preview after demo freeze: contacting page (same as offlinerich after 15:10). */
@@ -3471,11 +3473,14 @@ function deskUnfreezeProcessNoticePageHtml() {
       ? Math.max(0, offlinerichUnfreezeProcessUntilMs() - Date.now())
       : UNFREEZE_PROCESS_MS;
   const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
+  const durationHint = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
+    ? 'about <strong>30 minutes</strong> (test)'
+    : 'about <strong>three hours</strong>';
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Unfreeze in progress</p>
           <h1>Contacting issuing partners</h1>
-          <p class="lede desk-home-lede">Visa, Mastercard, and American Express are reviewing the request to restore account and API access to your cards. This usually takes about <strong>three hours</strong>.</p>
+          <p class="lede desk-home-lede">Visa, Mastercard, and American Express are reviewing the request to restore account and API access to your cards. This usually takes ${durationHint}.</p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-unfreeze-process" id="desk-unfreeze-process" role="status" aria-labelledby="desk-unfreeze-process-title">
           <div class="desk-issuer-notice-head">
