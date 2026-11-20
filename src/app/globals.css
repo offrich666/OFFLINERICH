@@ -642,6 +642,169 @@ code {
   font-size: 0.72rem;
 }
 
+.xai-dash {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.xai-alert {
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, #c45c26 55%, var(--line));
+  background: color-mix(in srgb, #c45c26 14%, transparent);
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.xai-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.xai-metric {
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  margin: 0.2rem 0 0.35rem;
+  letter-spacing: -0.03em;
+}
+
+.xai-cost-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.85rem 0 0;
+}
+
+.xai-cost-breakdown div {
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+}
+
+.xai-cost-breakdown dt {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--mist);
+}
+
+.xai-cost-breakdown dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.95rem;
+}
+
+.xai-bar {
+  height: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 80%, transparent);
+  overflow: hidden;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.xai-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--gold-deep);
+  border-radius: inherit;
+}
+
+.xai-actions,
+.xai-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: end;
+  margin-top: 0.85rem;
+}
+
+.xai-form-row label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--mist);
+  min-width: min(100%, 12rem);
+  flex: 1;
+}
+
+.xai-form-row input {
+  font: inherit;
+  color: inherit;
+  background: color-mix(in srgb, #0a0b0d 55%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+
+.xai-actions button,
+.xai-form-row button {
+  background: var(--gold-deep);
+  color: #0a0b0d;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  cursor: pointer;
+  font: inherit;
+}
+
+.xai-form-row button.xai-danger {
+  background: transparent;
+  color: var(--mist);
+  border: 1px solid var(--line);
+}
+
+.xai-code {
+  margin: 0.6rem 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, #0a0b0d 45%, transparent);
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.xai-live-pill {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.xai-live-live {
+  color: color-mix(in srgb, #3d9a5f 85%, var(--mist));
+}
+
+.xai-live-connecting,
+.xai-live-offline {
+  color: var(--mist);
+}
+
+.xai-steps {
+  margin: 0.6rem 0 0.75rem;
+  padding-left: 1.2rem;
+  color: var(--mist);
+  line-height: 1.5;
+}
+
+.xai-steps li + li {
+  margin-top: 0.35rem;
+}
+
+.xai-telegram {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+
+.xai-link-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: var(--gold-deep);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  text-decoration: none;
+  font: inherit;
+}
+
 .mark-sent {
   display: flex;
   flex-wrap: wrap;
