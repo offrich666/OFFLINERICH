@@ -1636,7 +1636,20 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   font-size: 14px;
   line-height: 1.55;
 }
+.desk-issuer-steps-ordered {
+  list-style: decimal;
+}
 .desk-issuer-steps li + li { margin-top: 8px; }
+.desk-unfreeze-process {
+  border-color: #b8c4d8;
+  background: linear-gradient(180deg, #f5f8fc 0%, #eef2f7 100%);
+}
+.desk-unfreeze-process .desk-issuer-action {
+  border-top-color: rgba(27, 51, 92, 0.14);
+}
+.desk-unfreeze-process a.desk-issuer-mail {
+  color: #1b335c;
+}
 .desk-issuer-callout {
   margin: 14px 0 0;
   padding: 12px 14px;

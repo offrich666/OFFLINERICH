@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120b';
+const DESK_BUILD = '20261120c';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -92,14 +92,18 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
   'privacyanddataprotection@mastercard.com',
 ]);
 /**
- * Platform disabled notice:
- * - richguy: shown now (preview / operator view)
- * - offlinerich: shown automatically after Berlin unfreeze (15:10+)
+ * After Berlin freeze ends:
+ * 1) ~3h “contacting Visa / Mastercard / Amex to unfreeze” process page
+ * 2) then the platform-disabled / API revoke error page
+ * richguy sees the process page now for review.
  */
-const PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY = true;
+const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
+const UNFREEZE_PROCESS_MS = 3 * 60 * 60 * 1000; // 3 hours after unfreeze
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
 const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
+/** @type {number} */
+let unfreezeProcessWatchTimer = 0;
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
 const DESK_SECURITY_LOCKOUT_HOURS = 24;
@@ -2554,16 +2558,51 @@ function deskCardMenuLabel(c) {
   return `${who}${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
 }
 
+function offlinerichUnfreezeProcessUntilMs() {
+  return offlinerichFreezeUntilMs() + UNFREEZE_PROCESS_MS;
+}
+
+/** offlinerich: freeze ended, still inside the ~3h partner unfreeze window. */
+function offlinerichUnfreezeProcessActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk()) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  return nowMs < offlinerichUnfreezeProcessUntilMs();
+}
+
+/** offlinerich: after the 3h process — show the platform error notice. */
+function offlinerichPlatformErrorActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  return nowMs >= offlinerichUnfreezeProcessUntilMs();
+}
+
+/** Contacting Visa / Mastercard / Amex to restore API / cards (~3h). */
+function unfreezeProcessNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) return true;
+  return offlinerichUnfreezeProcessActive();
+}
+
+/** Final platform-disabled / revoke error page. */
+function platformErrorNoticeActive() {
+  return offlinerichPlatformErrorActive() || Boolean(ISSUER_FRAUD_NOTICE_ENABLED);
+}
+
+/** Any sole status page (no Cards / History). */
 function platformDisabledNoticeActive() {
-  if (isRichguyDesk() && PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY) return true;
-  if (
-    isOfflinerichDesk()
-    && PLATFORM_DISABLED_NOTICE_LIVE
-    && !offlinerichFreezeActive()
-  ) {
-    return true;
-  }
-  return Boolean(ISSUER_FRAUD_NOTICE_ENABLED);
+  return unfreezeProcessNoticeActive() || platformErrorNoticeActive();
+}
+
+function startUnfreezeProcessWatch() {
+  if (typeof window === 'undefined') return;
+  if (unfreezeProcessWatchTimer) return;
+  unfreezeProcessWatchTimer = window.setInterval(() => {
+    try {
+      if (!deskSessionOpen()) return;
+      if (isOfflinerichDesk() && !offlinerichFreezeActive()) render();
+    } catch {
+      /* ignore */
+    }
+  }, 30_000);
 }
 
 function deskShellHtml(mainHtml) {
@@ -3270,16 +3309,18 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // Notice-only lock (richguy preview now; offlinerich after approve + unfreeze).
+  // Notice-only lock: process page (~3h) then error page; richguy previews process now.
   if (platformDisabledNoticeActive()) {
+    startUnfreezeProcessWatch();
     state.deskView = 'issuer';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
-    return deskShellHtml(
-      isRichguyDesk() || PLATFORM_DISABLED_NOTICE_LIVE
+    const page = unfreezeProcessNoticeActive()
+      ? deskUnfreezeProcessNoticePageHtml()
+      : platformErrorNoticeActive()
         ? deskPlatformDisabledNoticePageHtml()
-        : deskIssuerNoticePageHtml(),
-    );
+        : deskIssuerNoticePageHtml();
+    return deskShellHtml(page);
   }
   // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
@@ -3338,7 +3379,50 @@ function deskIssuerNoticePageHtml() {
         </section>`;
 }
 
-/** Professional post-unfreeze notice — richguy now; offlinerich after Berlin unfreeze. */
+/** ~3h after freeze ends: contacting networks to restore issuing / API / cards. */
+function deskUnfreezeProcessNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const remainMs = isOfflinerichDesk()
+    ? Math.max(0, offlinerichUnfreezeProcessUntilMs() - Date.now())
+    : UNFREEZE_PROCESS_MS;
+  const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Unfreeze in progress</p>
+          <h1>Contacting issuing partners</h1>
+          <p class="lede desk-home-lede">Visa, Mastercard, and American Express are reviewing the request to restore account and API access to your cards. This usually takes about <strong>three hours</strong>.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-unfreeze-process" id="desk-unfreeze-process" role="status" aria-labelledby="desk-unfreeze-process-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-unfreeze-process-title">Request submitted to the networks</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            We are contacting the issuing partners — <strong>Visa</strong>, <strong>Mastercard</strong>, and <strong>American Express</strong> —
+            to unfreeze this account and restore API access to your cards. Please keep this window open and wait while the request is processed.
+          </p>
+          <p class="desk-issuer-callout">
+            Estimated remaining time: <strong>${esc(remainLabel)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>How restoration proceeds</strong></p>
+            <ol class="desk-issuer-steps desk-issuer-steps-ordered">
+              <li><strong>First</strong> — the system is unfrozen for <em>issuing new cards</em>.</li>
+              <li><strong>Then</strong> — existing cards, History, and full desk access come back online.</li>
+              <li><strong>Ready to go</strong> — once both steps complete, the account is fully restored.</li>
+            </ol>
+            <p class="desk-issuer-refund">
+              Your funds remain safe during this process. No action is required from you while the networks complete the unfreeze.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** After the 3h process — platform disabled / API revoke error notice. */
 function deskPlatformDisabledNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
