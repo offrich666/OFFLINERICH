@@ -1,0 +1,407 @@
+"use client";
+
+import { useEffect, useState, useTransition } from "react";
+
+type UsageEvent = {
+  id: string;
+  at: string;
+  source: string;
+  model?: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd?: number;
+  note?: string;
+};
+
+type UsageState = {
+  totalTokens: number;
+  totalCostUsd: number;
+  alertThresholdTokens: number;
+  alertFiredAt: string | null;
+  webhookUrl: string | null;
+  events: UsageEvent[];
+  updatedAt: string;
+};
+
+type Probe = {
+  ok: boolean;
+  keyName?: string;
+  keyBlocked?: boolean;
+  teamBlocked?: boolean;
+  redactedKey?: string;
+  rateLimit?: {
+    limitTokens?: number;
+    remainingTokens?: number;
+    limitRequests?: number;
+    remainingRequests?: number;
+  };
+  sampleUsage?: {
+    totalTokens: number;
+    costUsd?: number;
+    model?: string;
+  };
+  error?: string;
+};
+
+type Props = {
+  opsKey: string;
+  initialUsage: UsageState;
+  initialProbe: Probe | null;
+  proxyPath: string;
+};
+
+function formatTokens(n: number) {
+  return n.toLocaleString("en-US");
+}
+
+export function XaiUsageDashboard({
+  opsKey,
+  initialUsage,
+  initialProbe,
+  proxyPath,
+}: Props) {
+  const [usage, setUsage] = useState(initialUsage);
+  const [probe, setProbe] = useState(initialProbe);
+  const [thresholdInput, setThresholdInput] = useState(
+    String(initialUsage.alertThresholdTokens),
+  );
+  const [webhookInput, setWebhookInput] = useState(
+    initialUsage.webhookUrl || "",
+  );
+  const [manualTokens, setManualTokens] = useState("1000");
+  const [message, setMessage] = useState<string | null>(null);
+  const [canNotify, setCanNotify] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setCanNotify(typeof window !== "undefined" && "Notification" in window);
+  }, []);
+
+  const percent = Math.min(
+    100,
+    Math.round(
+      (usage.totalTokens / Math.max(1, usage.alertThresholdTokens)) * 100,
+    ),
+  );
+  const alertActive = usage.totalTokens >= usage.alertThresholdTokens;
+
+  async function refresh(withProbe = true) {
+    const res = await fetch(
+      `/api/xai/usage?key=${encodeURIComponent(opsKey)}${withProbe ? "&probe=1" : ""}`,
+      { cache: "no-store" },
+    );
+    if (!res.ok) throw new Error("refresh failed");
+    const data = (await res.json()) as { usage: UsageState; probe: Probe | null };
+    setUsage(data.usage);
+    if (data.probe) setProbe(data.probe);
+    setThresholdInput(String(data.usage.alertThresholdTokens));
+    setWebhookInput(data.usage.webhookUrl || "");
+  }
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      startTransition(() => {
+        void refresh(false).catch(() => undefined);
+      });
+    }, 20_000);
+    return () => window.clearInterval(id);
+  }, [opsKey]);
+
+  useEffect(() => {
+    if (!alertActive || !canNotify) return;
+    if (Notification.permission !== "granted") return;
+    new Notification("xAI token alert", {
+      body: `${formatTokens(usage.totalTokens)} tokens spent (limit ${formatTokens(usage.alertThresholdTokens)})`,
+    });
+  }, [alertActive, canNotify, usage.totalTokens, usage.alertThresholdTokens]);
+
+  function run(action: () => Promise<void>) {
+    setMessage(null);
+    startTransition(() => {
+      void action()
+        .then(() => setMessage("Saved"))
+        .catch((err) =>
+          setMessage(err instanceof Error ? err.message : "Request failed"),
+        );
+    });
+  }
+
+  return (
+    <div className="xai-dash">
+      {alertActive ? (
+        <div className="xai-alert" role="alert">
+          Alert: {formatTokens(usage.totalTokens)} tokens spent — threshold{" "}
+          {formatTokens(usage.alertThresholdTokens)} reached
+          {usage.alertFiredAt ? (
+            <span className="fineprint">
+              {" "}
+              · fired {new Date(usage.alertFiredAt).toLocaleString("en-GB", {
+                timeZone: "Europe/Warsaw",
+              })}{" "}
+              (Europe/Warsaw)
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="xai-grid">
+        <section className="setup-panel soft">
+          <h2>Spend</h2>
+          <p className="xai-metric">{formatTokens(usage.totalTokens)}</p>
+          <p className="fineprint">
+            of {formatTokens(usage.alertThresholdTokens)} token alert · est. $
+            {usage.totalCostUsd.toFixed(4)}
+          </p>
+          <div className="xai-bar" aria-label="Token progress">
+            <span style={{ width: `${percent}%` }} />
+          </div>
+          <p className="fineprint">{percent}% of alert threshold</p>
+        </section>
+
+        <section className="setup-panel soft">
+          <h2>Key status</h2>
+          {probe ? (
+            <>
+              <p>
+                <code>{probe.redactedKey || "xai-…"}</code>
+                {probe.keyName ? ` · ${probe.keyName}` : ""}
+              </p>
+              <p className="fineprint">
+                {probe.ok ? "Live probe OK" : `Probe failed: ${probe.error}`}
+                {probe.keyBlocked || probe.teamBlocked ? " · BLOCKED" : ""}
+              </p>
+              {probe.rateLimit?.remainingTokens != null ? (
+                <p className="fineprint">
+                  Rate window:{" "}
+                  {formatTokens(probe.rateLimit.remainingTokens)} /{" "}
+                  {formatTokens(probe.rateLimit.limitTokens || 0)} tokens left
+                  (not wallet balance)
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="fineprint">Set XAI_API_KEY to enable live probes.</p>
+          )}
+          <div className="xai-actions">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                run(async () => {
+                  const res = await fetch("/api/xai/usage", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      key: opsKey,
+                      action: "probe",
+                      recordSample: true,
+                    }),
+                  });
+                  const data = (await res.json()) as {
+                    probe: Probe;
+                    usage: UsageState;
+                    error?: string;
+                  };
+                  if (!res.ok) throw new Error(data.error || "probe failed");
+                  setProbe(data.probe);
+                  setUsage(data.usage);
+                })
+              }
+            >
+              Probe + record sample
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                run(async () => {
+                  await refresh(true);
+                })
+              }
+            >
+              Refresh
+            </button>
+            {canNotify ? (
+              <button
+                type="button"
+                onClick={() => void Notification.requestPermission()}
+              >
+                Enable browser alerts
+              </button>
+            ) : null}
+          </div>
+        </section>
+      </div>
+
+      <section className="setup-panel soft">
+        <h2>Alert settings</h2>
+        <p className="fineprint">
+          Default threshold is 30,000 tokens. Optional Discord/Slack webhook
+          fires when the counter crosses the limit.
+        </p>
+        <div className="xai-form-row">
+          <label>
+            Threshold (tokens)
+            <input
+              value={thresholdInput}
+              onChange={(e) => setThresholdInput(e.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <label>
+            Webhook URL
+            <input
+              value={webhookInput}
+              onChange={(e) => setWebhookInput(e.target.value)}
+              placeholder="https://hooks.slack.com/… or Discord webhook"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                const res = await fetch("/api/xai/usage", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    key: opsKey,
+                    action: "settings",
+                    alertThresholdTokens: Number(thresholdInput),
+                    webhookUrl: webhookInput.trim() || null,
+                  }),
+                });
+                const data = (await res.json()) as {
+                  usage: UsageState;
+                  error?: string;
+                };
+                if (!res.ok) throw new Error(data.error || "save failed");
+                setUsage(data.usage);
+              })
+            }
+          >
+            Save alerts
+          </button>
+        </div>
+      </section>
+
+      <section className="setup-panel soft">
+        <h2>Track spend</h2>
+        <p>
+          Route chat calls through the proxy so every request is counted:
+        </p>
+        <pre className="xai-code">{`POST ${proxyPath}
+Authorization: Bearer ${opsKey ? "OPS_SECRET" : "…"}`}</pre>
+        <p className="fineprint">
+          Or manually add tokens from Cursor/other apps that bypass the proxy.
+        </p>
+        <div className="xai-form-row">
+          <label>
+            Manual tokens
+            <input
+              value={manualTokens}
+              onChange={(e) => setManualTokens(e.target.value)}
+              inputMode="numeric"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                const res = await fetch("/api/xai/usage", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    key: opsKey,
+                    action: "ingest",
+                    totalTokens: Number(manualTokens),
+                    note: "manual dashboard entry",
+                  }),
+                });
+                const data = (await res.json()) as {
+                  usage: UsageState;
+                  error?: string;
+                };
+                if (!res.ok) throw new Error(data.error || "ingest failed");
+                setUsage(data.usage);
+              })
+            }
+          >
+            Add tokens
+          </button>
+          <button
+            type="button"
+            className="xai-danger"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                if (!window.confirm("Reset tracked usage to zero?")) return;
+                const res = await fetch("/api/xai/usage", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    key: opsKey,
+                    action: "reset",
+                    alertThresholdTokens: Number(thresholdInput) || 30_000,
+                    webhookUrl: webhookInput.trim() || null,
+                  }),
+                });
+                const data = (await res.json()) as {
+                  usage: UsageState;
+                  error?: string;
+                };
+                if (!res.ok) throw new Error(data.error || "reset failed");
+                setUsage(data.usage);
+              })
+            }
+          >
+            Reset counter
+          </button>
+        </div>
+        {message ? <p className="fineprint">{message}</p> : null}
+      </section>
+
+      <section className="ops-table-wrap">
+        <h2>Recent events</h2>
+        {usage.events.length === 0 ? (
+          <div className="setup-panel">No tracked usage yet.</div>
+        ) : (
+          <table className="ops-table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Source</th>
+                <th>Model</th>
+                <th>Tokens</th>
+                <th>Cost</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.events.map((e) => (
+                <tr key={e.id}>
+                  <td>
+                    {new Date(e.at).toLocaleString("en-GB", {
+                      timeZone: "Europe/Warsaw",
+                    })}
+                  </td>
+                  <td>
+                    <code>{e.source}</code>
+                  </td>
+                  <td>{e.model || "—"}</td>
+                  <td>{formatTokens(e.totalTokens)}</td>
+                  <td>
+                    {e.costUsd != null ? `$${e.costUsd.toFixed(5)}` : "—"}
+                  </td>
+                  <td className="ops-notes">{e.note || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </div>
+  );
+}
