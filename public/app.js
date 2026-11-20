@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120g';
+const DESK_BUILD = '20261120h';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3548,17 +3548,12 @@ function deskUnfreezeProcessNoticePageHtml() {
         </section>`;
 }
 
-/** After first contacting: Visa + Mastercard accepted; Amex still pending (~3h). */
+/** After first contacting: Visa + Mastercard accepted; Amex still pending. */
 function deskNetworkAcceptNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
       `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
   ).join('');
-  const untilMs = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
-    ? richguyNetworkAcceptUntilMs()
-    : offlinerichNetworkAcceptUntilMs();
-  const remainMs = Math.max(0, untilMs - Date.now());
-  const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Network update</p>
@@ -3575,7 +3570,6 @@ function deskNetworkAcceptNoticePageHtml() {
             This extra step helps ensure that <strong>admin control</strong> is restored only after the networks finish their safety checks.
           </p>
           <p class="desk-issuer-callout">
-            Approximate remaining time: <strong>${esc(remainLabel)}</strong> (about 3 hours).<br />
             <strong>Please check back every 20 minutes</strong> for the latest status.
           </p>
           <div class="desk-issuer-action">
