@@ -49,9 +49,8 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           <p className="eyebrow">Ops · xAI</p>
           <h1>Token spend monitor</h1>
           <p>
-            Tracks tokens and dollar cost from xAI per-token rates (input /
-            output $/1M). Alerts when spend hits your threshold (default
-            30,000 tokens).
+            Tracks tokens with flat pricing: <strong>$1 per token</strong>.
+            Alerts when spend hits your threshold (default 30,000 tokens = $30,000).
           </p>
         </div>
 
@@ -62,6 +61,7 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           initialCost={cost}
           initialRates={rates.slice(0, 40).map((r) => ({
             id: r.id,
+            usdPerToken: r.usdPerToken,
             inputUsdPerMillion: r.inputUsdPerMillion,
             outputUsdPerMillion: r.outputUsdPerMillion,
             cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,

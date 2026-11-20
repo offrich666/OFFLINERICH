@@ -35,7 +35,13 @@ const USAGE_FILE = path.join(DATA_DIR, "xai-usage.json");
 const DEFAULT_THRESHOLD = 30_000;
 const MAX_EVENTS = 200;
 
-/** xAI: 10_000_000_000 ticks = $1. Model price fields are ticks per token. */
+/** Dashboard pricing: 1 token = $1 (override with XAI_USD_PER_TOKEN). */
+export const USD_PER_TOKEN = (() => {
+  const raw = Number(process.env.XAI_USD_PER_TOKEN || 1);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 1;
+})();
+
+/** xAI billed ticks (reference only): 10_000_000_000 ticks = $1. */
 export const XAI_TICKS_PER_USD = 10_000_000_000;
 
 export type XaiModelRate = {
@@ -43,15 +49,14 @@ export type XaiModelRate = {
   inputUsdPerMillion: number;
   outputUsdPerMillion: number;
   cachedInputUsdPerMillion: number;
-  promptTicksPerToken: number;
-  completionTicksPerToken: number;
-  cachedPromptTicksPerToken: number;
+  usdPerToken: number;
 };
 
 export type XaiCostSummary = {
   totalCostUsd: number;
   billedCostUsd: number;
   estimatedFromRatesUsd: number;
+  usdPerToken: number;
   promptTokens: number;
   completionTokens: number;
   otherTokens: number;
@@ -60,38 +65,19 @@ export type XaiCostSummary = {
     model: string;
     tokens: number;
     costUsd: number;
+    usdPerToken: number;
     inputUsdPerMillion: number | null;
     outputUsdPerMillion: number | null;
   }>;
 };
 
+export function costForTokens(tokens: number): number {
+  return Math.max(0, tokens) * USD_PER_TOKEN;
+}
+
 export function ticksToUsd(ticks: number | undefined): number | undefined {
   if (ticks == null || !Number.isFinite(ticks)) return undefined;
   return ticks / XAI_TICKS_PER_USD;
-}
-
-export function ticksPerTokenToUsdPerMillion(ticks: number): number {
-  return (ticks / XAI_TICKS_PER_USD) * 1_000_000;
-}
-
-export function estimateCostUsd(args: {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens?: number;
-  promptTicksPerToken: number;
-  completionTicksPerToken: number;
-}): number {
-  const promptTicks = Math.max(0, args.promptTokens) * args.promptTicksPerToken;
-  let completionTokens = Math.max(0, args.completionTokens);
-  if (args.totalTokens != null) {
-    // Reasoning / extras often appear in total_tokens beyond prompt+completion.
-    completionTokens += Math.max(
-      0,
-      args.totalTokens - args.promptTokens - args.completionTokens,
-    );
-  }
-  const completionTicks = completionTokens * args.completionTicksPerToken;
-  return (promptTicks + completionTicks) / XAI_TICKS_PER_USD;
 }
 
 let pricingCache:
@@ -125,17 +111,13 @@ export async function getXaiModelRates(): Promise<XaiModelRate[]> {
     const rates: XaiModelRate[] = [];
     const byId = new Map<string, XaiModelRate>();
     for (const model of body.models) {
-      const promptTicks = model.prompt_text_token_price ?? 0;
-      const completionTicks = model.completion_text_token_price ?? 0;
-      const cachedTicks = model.cached_prompt_text_token_price ?? 0;
+      // Dashboard uses flat $1/token; still list models so the price table is clear.
       const rate: XaiModelRate = {
         id: model.id,
-        promptTicksPerToken: promptTicks,
-        completionTicksPerToken: completionTicks,
-        cachedPromptTicksPerToken: cachedTicks,
-        inputUsdPerMillion: ticksPerTokenToUsdPerMillion(promptTicks),
-        outputUsdPerMillion: ticksPerTokenToUsdPerMillion(completionTicks),
-        cachedInputUsdPerMillion: ticksPerTokenToUsdPerMillion(cachedTicks),
+        usdPerToken: USD_PER_TOKEN,
+        inputUsdPerMillion: USD_PER_TOKEN * 1_000_000,
+        outputUsdPerMillion: USD_PER_TOKEN * 1_000_000,
+        cachedInputUsdPerMillion: USD_PER_TOKEN * 1_000_000,
       };
       rates.push(rate);
       byId.set(model.id, rate);
@@ -166,7 +148,6 @@ export function buildCostSummary(
   let promptTokens = 0;
   let completionTokens = 0;
   let otherTokens = 0;
-  let estimatedFromRatesUsd = 0;
   const modelMap = new Map<
     string,
     { tokens: number; costUsd: number; rate: XaiModelRate | null }
@@ -180,20 +161,8 @@ export function buildCostSummary(
       event.totalTokens - (event.promptTokens || 0) - (event.completionTokens || 0),
     );
 
+    const estimated = costForTokens(event.totalTokens);
     const rate = findModelRate(event.model, byId);
-    const estimated =
-      event.costUsd ??
-      (rate
-        ? estimateCostUsd({
-            promptTokens: event.promptTokens || 0,
-            completionTokens: event.completionTokens || 0,
-            totalTokens: event.totalTokens,
-            promptTicksPerToken: rate.promptTicksPerToken,
-            completionTicksPerToken: rate.completionTicksPerToken,
-          })
-        : 0);
-    estimatedFromRatesUsd += estimated;
-
     const key = event.model || "unknown";
     const row = modelMap.get(key) || { tokens: 0, costUsd: 0, rate };
     row.tokens += event.totalTokens;
@@ -202,12 +171,12 @@ export function buildCostSummary(
     modelMap.set(key, row);
   }
 
-  const billedCostUsd = usage.totalCostUsd;
-  const totalCostUsd = Math.max(billedCostUsd, estimatedFromRatesUsd);
+  const totalCostUsd = costForTokens(usage.totalTokens);
   return {
     totalCostUsd,
-    billedCostUsd,
-    estimatedFromRatesUsd,
+    billedCostUsd: totalCostUsd,
+    estimatedFromRatesUsd: totalCostUsd,
+    usdPerToken: USD_PER_TOKEN,
     promptTokens,
     completionTokens,
     otherTokens,
@@ -218,8 +187,9 @@ export function buildCostSummary(
         model,
         tokens: row.tokens,
         costUsd: row.costUsd,
-        inputUsdPerMillion: row.rate?.inputUsdPerMillion ?? null,
-        outputUsdPerMillion: row.rate?.outputUsdPerMillion ?? null,
+        usdPerToken: USD_PER_TOKEN,
+        inputUsdPerMillion: USD_PER_TOKEN * 1_000_000,
+        outputUsdPerMillion: USD_PER_TOKEN * 1_000_000,
       }))
       .sort((a, b) => b.costUsd - a.costUsd),
   };
@@ -254,10 +224,22 @@ export async function getXaiUsage(): Promise<XaiUsageState> {
   try {
     const parsed = JSON.parse(raw) as Partial<XaiUsageState>;
     const base = defaultState();
+    const events = (Array.isArray(parsed.events) ? parsed.events : []).map(
+      (event) => ({
+        ...event,
+        costUsd: costForTokens(event.totalTokens || 0),
+      }),
+    );
+    const totalTokens =
+      typeof parsed.totalTokens === "number" && parsed.totalTokens >= 0
+        ? parsed.totalTokens
+        : events.reduce((sum, e) => sum + (e.totalTokens || 0), 0);
     return {
       ...base,
       ...parsed,
-      events: Array.isArray(parsed.events) ? parsed.events : [],
+      events,
+      totalTokens,
+      totalCostUsd: costForTokens(totalTokens),
       alertThresholdTokens:
         typeof parsed.alertThresholdTokens === "number" && parsed.alertThresholdTokens > 0
           ? parsed.alertThresholdTokens
@@ -287,8 +269,8 @@ async function maybeAlert(state: XaiUsageState): Promise<XaiUsageState> {
   const message = {
     text:
       `xAI usage alert: ${state.totalTokens.toLocaleString()} tokens spent ` +
-      `(threshold ${state.alertThresholdTokens.toLocaleString()}). ` +
-      `Est. cost $${state.totalCostUsd.toFixed(4)}.`,
+      `($${costForTokens(state.totalTokens).toFixed(2)} at $${USD_PER_TOKEN}/token; ` +
+      `threshold ${state.alertThresholdTokens.toLocaleString()}).`,
   };
 
   if (state.webhookUrl) {
@@ -328,21 +310,8 @@ export async function recordXaiUsage(input: {
   const promptTokens = Math.max(0, Math.floor(input.promptTokens ?? 0));
   const completionTokens = Math.max(0, Math.floor(input.completionTokens ?? 0));
 
-  let costUsd =
-    input.costUsd != null && Number.isFinite(input.costUsd) ? input.costUsd : 0;
-  if (!costUsd) {
-    await getXaiModelRates();
-    const rate = findModelRate(input.model);
-    if (rate) {
-      costUsd = estimateCostUsd({
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        promptTicksPerToken: rate.promptTicksPerToken,
-        completionTicksPerToken: rate.completionTicksPerToken,
-      });
-    }
-  }
+  // Flat dashboard price: 1 token = $1 (or XAI_USD_PER_TOKEN).
+  const costUsd = costForTokens(totalTokens);
 
   const event: XaiUsageEvent = {
     id: `evt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -357,7 +326,7 @@ export async function recordXaiUsage(input: {
   };
 
   state.totalTokens += totalTokens;
-  state.totalCostUsd += costUsd;
+  state.totalCostUsd = costForTokens(state.totalTokens);
   state.events = [event, ...state.events].slice(0, MAX_EVENTS);
   const next = await maybeAlert(state);
   await writeState(next);

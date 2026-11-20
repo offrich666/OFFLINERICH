@@ -31,6 +31,7 @@ export async function GET(req: Request) {
     probe,
     rates: rates.slice(0, 40).map((r) => ({
       id: r.id,
+      usdPerToken: r.usdPerToken,
       inputUsdPerMillion: r.inputUsdPerMillion,
       outputUsdPerMillion: r.outputUsdPerMillion,
       cachedInputUsdPerMillion: r.cachedInputUsdPerMillion,

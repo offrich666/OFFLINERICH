@@ -46,6 +46,7 @@ type Probe = {
 
 type ModelRate = {
   id: string;
+  usdPerToken: number;
   inputUsdPerMillion: number;
   outputUsdPerMillion: number;
   cachedInputUsdPerMillion: number;
@@ -55,6 +56,7 @@ type CostSummary = {
   totalCostUsd: number;
   billedCostUsd: number;
   estimatedFromRatesUsd: number;
+  usdPerToken: number;
   promptTokens: number;
   completionTokens: number;
   otherTokens: number;
@@ -63,6 +65,7 @@ type CostSummary = {
     model: string;
     tokens: number;
     costUsd: number;
+    usdPerToken: number;
     inputUsdPerMillion: number | null;
     outputUsdPerMillion: number | null;
   }>;
@@ -81,15 +84,14 @@ function formatTokens(n: number) {
   return n.toLocaleString("en-US");
 }
 
-function formatUsd(n: number, digits = 4) {
+function formatUsd(n: number, digits = 2) {
   if (!Number.isFinite(n)) return "$0";
-  if (n > 0 && n < 0.0001) return `$${n.toFixed(6)}`;
-  return `$${n.toFixed(digits)}`;
-}
-
-function formatRate(n: number | null | undefined) {
-  if (n == null || !Number.isFinite(n)) return "—";
-  return `$${n.toFixed(2)} / 1M`;
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 export function XaiUsageDashboard({
@@ -126,12 +128,14 @@ export function XaiUsageDashboard({
     ),
   );
   const alertActive = usage.totalTokens >= usage.alertThresholdTokens;
+  const usdPerToken = cost.usdPerToken ?? rates[0]?.usdPerToken ?? 1;
   const featuredRates = (cost.byModel.length
     ? cost.byModel
     : rates.slice(0, 6).map((r) => ({
         model: r.id,
         tokens: 0,
         costUsd: 0,
+        usdPerToken: r.usdPerToken,
         inputUsdPerMillion: r.inputUsdPerMillion,
         outputUsdPerMillion: r.outputUsdPerMillion,
       }))
@@ -214,13 +218,12 @@ export function XaiUsageDashboard({
       <div className="xai-grid">
         <section className="setup-panel soft">
           <h2>Cost</h2>
-          <p className="xai-metric">{formatUsd(cost.totalCostUsd, 4)}</p>
+          <p className="xai-metric">{formatUsd(cost.totalCostUsd)}</p>
           <p className="fineprint">
-            billed {formatUsd(cost.billedCostUsd, 5)} · from rates{" "}
-            {formatUsd(cost.estimatedFromRatesUsd, 5)}
-            {cost.avgUsdPer1kTokens != null
-              ? ` · avg ${formatUsd(cost.avgUsdPer1kTokens, 5)} / 1k tokens`
-              : ""}
+            Price rule: <strong>{formatUsd(usdPerToken)} per token</strong>
+            {" · "}
+            {formatTokens(usage.totalTokens)} × {formatUsd(usdPerToken)} ={" "}
+            {formatUsd(cost.totalCostUsd)}
           </p>
           <dl className="xai-cost-breakdown">
             <div>
@@ -326,19 +329,17 @@ export function XaiUsageDashboard({
       </div>
 
       <section className="setup-panel soft">
-        <h2>Price per token (xAI rates)</h2>
+        <h2>Price per token</h2>
         <p className="fineprint">
-          Live from xAI model catalog. Prices are USD per 1 million tokens
-          (input / output). Cost for each call = tokens × these rates (API
-          billed ticks when available).
+          Flat dashboard pricing: <strong>1 token = {formatUsd(usdPerToken)}</strong>.
+          Every model uses the same rate.
         </p>
         <div className="ops-table-wrap">
           <table className="ops-table">
             <thead>
               <tr>
                 <th>Model</th>
-                <th>Input</th>
-                <th>Output</th>
+                <th>$ / token</th>
                 <th>Tracked tokens</th>
                 <th>Tracked cost</th>
               </tr>
@@ -349,10 +350,9 @@ export function XaiUsageDashboard({
                   <td>
                     <code>{row.model}</code>
                   </td>
-                  <td>{formatRate(row.inputUsdPerMillion)}</td>
-                  <td>{formatRate(row.outputUsdPerMillion)}</td>
+                  <td>{formatUsd(row.usdPerToken ?? usdPerToken)}</td>
                   <td>{formatTokens(row.tokens)}</td>
-                  <td>{formatUsd(row.costUsd, 5)}</td>
+                  <td>{formatUsd(row.costUsd)}</td>
                 </tr>
               ))}
             </tbody>
@@ -524,7 +524,11 @@ Authorization: Bearer OPS_SECRET`}</pre>
                   </td>
                   <td>{formatTokens(e.totalTokens)}</td>
                   <td>
-                    {e.costUsd != null ? formatUsd(e.costUsd, 5) : "—"}
+                    {formatUsd(
+                      e.costUsd != null
+                        ? e.costUsd
+                        : e.totalTokens * usdPerToken,
+                    )}
                   </td>
                   <td className="ops-notes">{e.note || "—"}</td>
                 </tr>
