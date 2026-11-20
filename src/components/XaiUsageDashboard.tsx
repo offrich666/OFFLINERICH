@@ -92,6 +92,7 @@ type Props = {
     link: TelegramLink;
   };
   proxyPath: string;
+  liveBaseUrl: string;
 };
 
 function formatTokens(n: number) {
@@ -116,6 +117,7 @@ export function XaiUsageDashboard({
   initialRates,
   initialTelegram,
   proxyPath,
+  liveBaseUrl,
 }: Props) {
   const [usage, setUsage] = useState(initialUsage);
   const [probe, setProbe] = useState(initialProbe);
@@ -131,11 +133,41 @@ export function XaiUsageDashboard({
   const [manualTokens, setManualTokens] = useState("1000");
   const [message, setMessage] = useState<string | null>(null);
   const [canNotify, setCanNotify] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<"connecting" | "live" | "offline">(
+    "connecting",
+  );
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     setCanNotify(typeof window !== "undefined" && "Notification" in window);
   }, []);
+
+  useEffect(() => {
+    const es = new EventSource(
+      `/api/xai/usage/stream?key=${encodeURIComponent(opsKey)}`,
+    );
+    setLiveStatus("connecting");
+    es.addEventListener("usage", (evt) => {
+      try {
+        const data = JSON.parse((evt as MessageEvent).data) as {
+          usage: UsageState;
+          cost: CostSummary;
+          rates: ModelRate[];
+        };
+        setUsage(data.usage);
+        setCost(data.cost);
+        if (data.rates?.length) setRates(data.rates);
+        setThresholdInput(String(data.usage.alertThresholdTokens));
+        setWebhookInput(data.usage.webhookUrl || "");
+        setLiveStatus("live");
+      } catch {
+        // ignore bad frames
+      }
+    });
+    es.onerror = () => setLiveStatus("offline");
+    es.onopen = () => setLiveStatus("live");
+    return () => es.close();
+  }, [opsKey]);
 
   const percent = Math.min(
     100,
@@ -178,15 +210,6 @@ export function XaiUsageDashboard({
   }
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      startTransition(() => {
-        void refresh(false).catch(() => undefined);
-      });
-    }, 20_000);
-    return () => window.clearInterval(id);
-  }, [opsKey]);
-
-  useEffect(() => {
     if (!alertActive || !canNotify) return;
     if (Notification.permission !== "granted") return;
     new Notification("xAI token alert", {
@@ -213,6 +236,14 @@ export function XaiUsageDashboard({
 
   return (
     <div className="xai-dash">
+      <p className={`xai-live-pill xai-live-${liveStatus}`}>
+        {liveStatus === "live"
+          ? "● Live updates on"
+          : liveStatus === "connecting"
+            ? "○ Connecting live feed…"
+            : "○ Live feed offline — click Refresh"}
+      </p>
+
       {alertActive ? (
         <div className="xai-alert" role="alert">
           Alert: {formatTokens(usage.totalTokens)} tokens /{" "}
@@ -514,16 +545,61 @@ export function XaiUsageDashboard({
       </section>
 
       <section className="setup-panel soft">
-        <h2>Track spend</h2>
-        <p>Route chat calls through the proxy so every request is priced:</p>
-        <pre className="xai-code">{`POST ${proxyPath}
-Authorization: Bearer OPS_SECRET`}</pre>
-        <p className="fineprint">
-          Or manually add tokens from apps that bypass the proxy.
+        <h2>Live tracking (no manual add)</h2>
+        <p>
+          Point Cursor at this proxy. Every chat/agent call is counted
+          automatically on this dashboard.
         </p>
+        <ol className="xai-steps">
+          <li>
+            Cursor Settings → Models → API Keys →{" "}
+            <strong>OpenAI API Key</strong> = your <code>OPS_SECRET</code>
+          </li>
+          <li>
+            Enable <strong>Override OpenAI Base URL</strong> and set:
+          </li>
+        </ol>
+        <pre className="xai-code">{liveBaseUrl}</pre>
+        <p className="fineprint">
+          Add model id <code>grok-4.3</code> (or another Grok id). Do not paste
+          the raw <code>xai-…</code> key into Cursor if you want live tracking —
+          Cursor would talk to xAI directly and skip this monitor.
+        </p>
+        <pre className="xai-code">{`Also works as:
+POST ${proxyPath}
+Authorization: Bearer OPS_SECRET`}</pre>
         <div className="xai-form-row">
+          <button
+            type="button"
+            className="xai-danger"
+            disabled={pending}
+            onClick={() =>
+              run(async () => {
+                if (!window.confirm("Reset tracked usage to zero?")) return;
+                const res = await fetch("/api/xai/usage", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    key: opsKey,
+                    action: "reset",
+                    alertThresholdTokens: Number(thresholdInput) || 300_000,
+                    webhookUrl: webhookInput.trim() || null,
+                  }),
+                });
+                const data = (await res.json()) as {
+                  usage: UsageState;
+                  error?: string;
+                };
+                if (!res.ok) throw new Error(data.error || "reset failed");
+                setUsage(data.usage);
+                await refresh(false);
+              })
+            }
+          >
+            Reset counter
+          </button>
           <label>
-            Manual tokens
+            Emergency manual tokens
             <input
               value={manualTokens}
               onChange={(e) => setManualTokens(e.target.value)}
@@ -542,7 +618,7 @@ Authorization: Bearer OPS_SECRET`}</pre>
                     key: opsKey,
                     action: "ingest",
                     totalTokens: Number(manualTokens),
-                    note: "manual dashboard entry",
+                    note: "manual fallback",
                   }),
                 });
                 const data = (await res.json()) as {
@@ -555,36 +631,7 @@ Authorization: Bearer OPS_SECRET`}</pre>
               })
             }
           >
-            Add tokens
-          </button>
-          <button
-            type="button"
-            className="xai-danger"
-            disabled={pending}
-            onClick={() =>
-              run(async () => {
-                if (!window.confirm("Reset tracked usage to zero?")) return;
-                const res = await fetch("/api/xai/usage", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    key: opsKey,
-                    action: "reset",
-                    alertThresholdTokens: Number(thresholdInput) || 30_000,
-                    webhookUrl: webhookInput.trim() || null,
-                  }),
-                });
-                const data = (await res.json()) as {
-                  usage: UsageState;
-                  error?: string;
-                };
-                if (!res.ok) throw new Error(data.error || "reset failed");
-                setUsage(data.usage);
-                await refresh(false);
-              })
-            }
-          >
-            Reset counter
+            Add (fallback)
           </button>
         </div>
         {message ? <p className="fineprint">{message}</p> : null}

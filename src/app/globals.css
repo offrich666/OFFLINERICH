@@ -761,6 +761,32 @@ code {
   line-height: 1.45;
 }
 
+.xai-live-pill {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.xai-live-live {
+  color: color-mix(in srgb, #3d9a5f 85%, var(--mist));
+}
+
+.xai-live-connecting,
+.xai-live-offline {
+  color: var(--mist);
+}
+
+.xai-steps {
+  margin: 0.6rem 0 0.75rem;
+  padding-left: 1.2rem;
+  color: var(--mist);
+  line-height: 1.5;
+}
+
+.xai-steps li + li {
+  margin-top: 0.35rem;
+}
+
 .xai-telegram {
   margin-top: 1rem;
   padding-top: 0.85rem;

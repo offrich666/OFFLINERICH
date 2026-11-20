@@ -10,6 +10,8 @@ const nextConfig: NextConfig = {
     "127.0.0.1",
     "localhost",
     "*.local",
+    "sorted-ellen-president-tower.trycloudflare.com",
+    "*.trycloudflare.com",
   ],
   // Force correct pk into client+server bundles (Vercel Hobby can't edit env).
   env: {

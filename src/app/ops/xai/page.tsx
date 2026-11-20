@@ -53,8 +53,13 @@ export default async function OpsXaiPage({ searchParams }: Props) {
     ? await probeXaiKey({ recordSample: false })
     : null;
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "";
-  const proxyPath = `${appUrl.replace(/\/$/, "")}/api/xai/proxy/chat/completions`;
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+  const liveBaseUrl = appUrl
+    ? `${appUrl}/api/xai/v1`
+    : "/api/xai/v1";
+  const proxyPath = appUrl
+    ? `${appUrl}/api/xai/proxy/chat/completions`
+    : "/api/xai/proxy/chat/completions";
 
   return (
     <main className="page checkout-page">
@@ -63,8 +68,8 @@ export default async function OpsXaiPage({ searchParams }: Props) {
           <p className="eyebrow">Ops · xAI</p>
           <h1>Token spend monitor</h1>
           <p>
-            Tracks tokens with flat pricing: <strong>$1 per token</strong>.
-            Telegram alert at <strong>300,000 tokens</strong> ($300,000) via
+            Live tracking via proxy — flat <strong>$1 per token</strong>.
+            Telegram alert at <strong>300,000 tokens</strong> via
             @botapilimit_bot.
           </p>
         </div>
@@ -87,7 +92,8 @@ export default async function OpsXaiPage({ searchParams }: Props) {
             botUrl: "https://t.me/botapilimit_bot",
             link: telegramLink,
           }}
-          proxyPath={proxyPath || "/api/xai/proxy/chat/completions"}
+          proxyPath={proxyPath}
+          liveBaseUrl={liveBaseUrl}
         />
       </section>
     </main>
