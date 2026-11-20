@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120e';
+const DESK_BUILD = '20261120f';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -95,7 +95,7 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * After Berlin freeze ends:
  * 1) “contacting Visa / Mastercard / Amex to unfreeze” process page
  * 2) then the platform-disabled / API revoke error page
- * offlinerich: freeze → 15:10, process 3h, then error
+ * offlinerich: freeze → 15:10, process 60 min (→ 16:10), then error
  * richguy test: freeze → 15:00, process 30 min, then error
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
@@ -108,7 +108,7 @@ const RICHGUY_FREEZE_UNTIL = Object.freeze({
   minute: 0,
   second: 0,
 });
-const UNFREEZE_PROCESS_MS = 3 * 60 * 60 * 1000; // offlinerich: 3 hours after unfreeze
+const UNFREEZE_PROCESS_MS = 60 * 60 * 1000; // offlinerich: 60 minutes after 15:10 → error at 16:10
 const RICHGUY_UNFREEZE_PROCESS_MS = 30 * 60 * 1000; // richguy test: 30 minutes then error
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
@@ -3475,7 +3475,7 @@ function deskUnfreezeProcessNoticePageHtml() {
   const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
   const durationHint = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
     ? 'about <strong>30 minutes</strong> (test)'
-    : 'about <strong>three hours</strong>';
+    : 'about <strong>60 minutes</strong>';
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Unfreeze in progress</p>
