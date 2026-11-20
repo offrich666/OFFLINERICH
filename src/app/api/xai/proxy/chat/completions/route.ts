@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   });
 
   const text = await upstream.text();
-  let parsed: {
+  type ChatCompletionBody = {
     model?: string;
     usage?: {
       prompt_tokens?: number;
@@ -53,21 +53,23 @@ export async function POST(req: Request) {
       total_tokens?: number;
       cost_in_usd_ticks?: number;
     };
-  } | null = null;
+  };
+  let parsed: ChatCompletionBody | null = null;
   try {
-    parsed = JSON.parse(text) as typeof parsed;
+    parsed = JSON.parse(text) as ChatCompletionBody;
   } catch {
     parsed = null;
   }
 
-  if (upstream.ok && parsed?.usage?.total_tokens) {
+  const usage = parsed?.usage;
+  if (upstream.ok && usage?.total_tokens) {
     await recordXaiUsage({
       source: "proxy",
-      model: parsed.model || model,
-      promptTokens: parsed.usage.prompt_tokens ?? 0,
-      completionTokens: parsed.usage.completion_tokens ?? 0,
-      totalTokens: parsed.usage.total_tokens,
-      costUsd: ticksToUsd(parsed.usage.cost_in_usd_ticks),
+      model: parsed?.model || model,
+      promptTokens: usage.prompt_tokens ?? 0,
+      completionTokens: usage.completion_tokens ?? 0,
+      totalTokens: usage.total_tokens,
+      costUsd: ticksToUsd(usage.cost_in_usd_ticks),
       note: "proxy /chat/completions",
     });
   }
