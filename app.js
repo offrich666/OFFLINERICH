@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261120a';
+const DESK_BUILD = '20261120b';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -92,11 +92,13 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
   'privacyanddataprotection@mastercard.com',
 ]);
 /**
- * Post-unfreeze platform notice (after 15:11 Berlin).
- * Preview for richguy only until approved — offlinerich stays unchanged.
+ * Platform disabled notice:
+ * - richguy: shown now (preview / operator view)
+ * - offlinerich: shown automatically after Berlin unfreeze (15:10+)
  */
 const PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY = true;
-const PLATFORM_DISABLED_NOTICE_LIVE = false;
+const PLATFORM_DISABLED_NOTICE_LIVE = true;
+const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
 const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
 const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
@@ -3336,15 +3338,14 @@ function deskIssuerNoticePageHtml() {
         </section>`;
 }
 
-/** Professional post-unfreeze notice — preview on richguy; live for offlinerich after approve. */
+/** Professional post-unfreeze notice — richguy now; offlinerich after Berlin unfreeze. */
 function deskPlatformDisabledNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
       `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
   ).join('');
-  const preview = isRichguyDesk() && PLATFORM_DISABLED_NOTICE_PREVIEW_RICHGUY
-    ? `<p class="desk-issuer-preview-tag">Preview for richguy · not shown to offlinerich yet</p>`
-    : '';
+  const phone = PLATFORM_DISABLED_CONTACT_PHONE;
+  const phoneHref = `tel:${phone.replace(/\s+/g, '')}`;
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Platform status</p>
@@ -3352,7 +3353,6 @@ function deskPlatformDisabledNoticePageHtml() {
           <p class="lede desk-home-lede">Your balances remain protected. This interruption comes from the payment gateway side, not from your account.</p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice" id="desk-platform-notice" role="alert" aria-labelledby="desk-platform-notice-title">
-          ${preview}
           <div class="desk-issuer-notice-head">
             <h2 id="desk-platform-notice-title">Issuing platform disabled</h2>
           </div>
@@ -3360,14 +3360,21 @@ function deskPlatformDisabledNoticePageHtml() {
             The issuing platform has been disabled after a connected <strong>payment gateway or bank</strong> reported suspected fraud activity.
             This is a partner-side safety action. <strong>It is not your fault</strong>, and <strong>your money is safe</strong>.
           </p>
+          <p class="desk-issuer-callout">
+            We tried to reach you today by phone on
+            <a class="desk-issuer-mail" href="${esc(phoneHref)}">${esc(phone)}</a>,
+            but there was no answer. Please contact us so we can share API revoke instructions.
+          </p>
           <div class="desk-issuer-action">
             <p><strong>What to do next</strong></p>
             <ul class="desk-issuer-steps">
-              <li>Revoke the current API key, reclaim a new key, update your integration details, then try again.</li>
-              <li>Contact Visa and Mastercard partnership support to restore live issuing on the network.</li>
+              <li>Contact us for API revoke instructions, then revoke the current key, issue a new key, and update your integration details.</li>
+              <li>Write to Visa and Mastercard partnership support (emails below) to restore live network issuing.</li>
+              <li><strong>American Express:</strong> no action is required on your side. Amex will resume automatically after the revoke completes.</li>
             </ul>
             <p class="desk-issuer-refund">
-              Payments that are currently in refund will be credited back to the cards used for those payments within the <strong>next 7 days</strong>.
+              Revoke processing typically takes <strong>more than 48 working hours</strong>.
+              Payments currently in refund will be credited back to the cards used for those payments within the <strong>next 7 days</strong>.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
