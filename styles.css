@@ -1650,6 +1650,16 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .desk-unfreeze-process a.desk-issuer-mail {
   color: #1b335c;
 }
+.desk-network-accept {
+  border-color: #b7c9b0;
+  background: linear-gradient(180deg, #f6faf4 0%, #eef5ea 100%);
+}
+.desk-network-accept .desk-issuer-action {
+  border-top-color: rgba(60, 100, 50, 0.16);
+}
+.desk-network-accept a.desk-issuer-mail {
+  color: #2f5a28;
+}
 .desk-issuer-callout {
   margin: 14px 0 0;
   padding: 12px 14px;
