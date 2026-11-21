@@ -1660,6 +1660,20 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .desk-network-accept a.desk-issuer-mail {
   color: #2f5a28;
 }
+.desk-api-revoke {
+  border-color: #b8c4d8;
+  background: linear-gradient(180deg, #f5f7fb 0%, #eef2f8 100%);
+}
+.desk-api-revoke .desk-issuer-action {
+  border-top-color: rgba(40, 60, 100, 0.14);
+}
+.desk-api-revoke-actions {
+  margin-top: 0.55rem;
+}
+.desk-api-revoke-actions .primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .desk-issuer-callout {
   margin: 14px 0 0;
   padding: 12px 14px;
