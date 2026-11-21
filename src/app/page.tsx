@@ -9,6 +9,9 @@ export default function Home() {
       <header className="topbar">
         <span className="brand-mark">OFFLINERICH</span>
         <div className="topbar-actions">
+          <Link href="/roadmap" className="ghost-link">
+            Stripe roadmap
+          </Link>
           <Link href="/babyphone" className="ghost-link">
             CribLink
           </Link>

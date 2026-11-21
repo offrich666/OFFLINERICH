@@ -59,7 +59,20 @@ export async function GET() {
       business: "G N LABS LLC",
       submitted: true,
       approved: true,
-      note: "Crypto Onramp approved — integrate in test and live mode.",
+      accepted: true,
+      product: "Stripe Crypto Onramp",
+      note: "Crypto Onramp application ACCEPTED — live + test enrollment.",
+    },
+    roadmap: {
+      page: "/roadmap",
+      doc: "/docs/CRYPTO_RECEIVE_ROADMAP.md",
+      unlocked: [
+        "POST /v1/crypto/onramp_sessions",
+        "Hosted Link Pay (crypto.link.com redirect_url)",
+        "Webhook crypto.onramp_session.updated",
+        "Settle Ethereum USDC + Bitcoin",
+        "EUR source currency with standard settlement",
+      ],
     },
     keys: {
       secretPresent: hasSecret,
@@ -71,6 +84,7 @@ export async function GET() {
     readyForOnrampUi: hasSecret && hasPublishable && publishableProbe.valid,
     paymentMethods: {
       card: true,
+      link: true,
       applePay: {
         paymentMethodDomain: "active on www.walletchainsign.com",
         onrampWidget:
@@ -97,10 +111,10 @@ export async function GET() {
         ]
       : hasSecret && hasPublishable
         ? [
-            "Pay on https://www.walletchainsign.com/checkout — stay on page",
+            "Open /roadmap for the accepted Stripe Onramp checklist",
+            "Pay on https://www.walletchainsign.com/checkout",
             "Webhook already: https://www.walletchainsign.com/api/webhooks/stripe",
             "Apple Pay missing in Onramp: email Stripe support/sales — enable Apple Pay for Crypto Onramp on acct_1UCk64QWCzdANStk (domains already active)",
-            "Card declined: bank refused crypto charge — client must try another card (prefer credit)",
           ]
         : [
             "Paste live pk_live_ / sk_live_ into Vercel env and redeploy",
@@ -110,6 +124,7 @@ export async function GET() {
       liveApiKeys: "https://dashboard.stripe.com/apikeys",
       testApiKeys: "https://dashboard.stripe.com/test/apikeys",
       domainAllowlist: "https://dashboard.stripe.com/crypto-onramp/allowlist-domains",
+      roadmapPage: "/roadmap",
       roadmap: "/docs/CRYPTO_RECEIVE_ROADMAP.md",
     },
   });

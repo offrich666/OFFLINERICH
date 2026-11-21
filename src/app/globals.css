@@ -472,6 +472,31 @@ code {
   gap: 1rem;
 }
 
+.roadmap-layout {
+  gap: 1.5rem;
+}
+
+.roadmap-panel h2 {
+  margin: 1.35rem 0 0.65rem;
+}
+
+.roadmap-steps {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--mist);
+  line-height: 1.55;
+}
+
+.roadmap-steps li + li {
+  margin-top: 0.45rem;
+}
+
+.roadmap-links {
+  margin-top: 1.25rem;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+}
+
 .setup-panel.soft {
   background: transparent;
   border: 1px solid var(--line);
