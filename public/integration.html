@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="integration-build" content="20261112m" />
+    <title>G Cards EU · Integration · USDT contracts</title>
+    <meta
+      name="description"
+      content="USDT Solana and USDT BSC contracts completed for G Cards EU deposits. Deposit after midnight; spend on card 5 hours later."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%2310203c' width='16' height='16' rx='3'/%3E%3Crect fill='%23e4c48a' x='3' y='5' width='10' height='7' rx='1'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,520;9..144,640&family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="integration.css" />
+    <script src="site.js"></script>
+  </head>
+  <body data-integration-build="20261112m">
+    <div class="atmosphere" aria-hidden="true"></div>
+    <header class="top">
+      <a class="mark" href="/">G Cards <span>EU</span></a>
+      <nav class="nav">
+        <a href="/desk">Desk</a>
+        <a href="/pay">Pay</a>
+        <a class="on" href="/integration">Integration</a>
+      </nav>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <p class="eyebrow">Rails · completed</p>
+        <h1>Contract integration</h1>
+        <p class="lede">
+          USDT deposit contracts for <strong>Solana</strong> and <strong>BSC</strong> are live.
+          Deposit after midnight. Card spend unlocks <strong>5 hours</strong> after the deposit settles.
+        </p>
+        <div class="status-row">
+          <span class="pill good">Solana USDT · completed</span>
+          <span class="pill good">BSC USDT · completed</span>
+        </div>
+      </section>
+
+      <section class="contracts" aria-label="Completed contracts">
+        <article class="contract sol">
+          <header>
+            <div>
+              <p class="chain">Solana</p>
+              <h2>USDT · Solana</h2>
+            </div>
+            <span class="badge">Completed</span>
+          </header>
+          <p class="note">Official Tether mint on Solana. Use this contract when depositing USDT to fund your G Cards EU card.</p>
+          <div class="address-block">
+            <small>Contract address</small>
+            <code id="sol-addr">Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB</code>
+            <button type="button" class="copy" data-copy="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB">Copy</button>
+          </div>
+          <ul class="meta">
+            <li><span>Network</span><strong>Solana mainnet</strong></li>
+            <li><span>Asset</span><strong>USDT</strong></li>
+            <li><span>Status</span><strong class="ok">Integration completed</strong></li>
+          </ul>
+        </article>
+
+        <article class="contract bsc">
+          <header>
+            <div>
+              <p class="chain">BNB Smart Chain</p>
+              <h2>USDT · BSC</h2>
+            </div>
+            <span class="badge">Completed</span>
+          </header>
+          <p class="note">Tether USD on BNB Chain (BEP-20). Use this contract when depositing USDT from BSC wallets.</p>
+          <div class="address-block">
+            <small>Contract address</small>
+            <code id="bsc-addr">0x55d398326f99059fF775485246999027B3197955</code>
+            <button type="button" class="copy" data-copy="0x55d398326f99059fF775485246999027B3197955">Copy</button>
+          </div>
+          <ul class="meta">
+            <li><span>Network</span><strong>BSC · chain id 56</strong></li>
+            <li><span>Asset</span><strong>USDT</strong></li>
+            <li><span>Status</span><strong class="ok">Integration completed</strong></li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="timeline" aria-label="Deposit and spend schedule">
+        <p class="eyebrow">Schedule · Europe/Belgrade</p>
+        <h2>When you can deposit and spend</h2>
+        <p class="lede narrow">
+          Deposits with the contracts above open <strong>after midnight</strong>.
+          Once a deposit is credited, card spending unlocks <strong>5 hours later</strong>.
+        </p>
+
+        <div class="clocks">
+          <article class="clock">
+            <small>Next deposit window</small>
+            <strong id="deposit-window">After midnight</strong>
+            <p id="deposit-countdown" class="count">—</p>
+          </article>
+          <article class="clock">
+            <small>Spend unlock after deposit</small>
+            <strong>+5 hours</strong>
+            <p class="count">Funds settle → wait 5h → spend on card</p>
+          </article>
+        </div>
+
+        <ol class="steps">
+          <li>
+            <span class="n">1</span>
+            <div>
+              <strong>Wait until after midnight</strong>
+              <p>Deposit window opens at 00:00 Europe/Belgrade. Before then, contracts are visible but deposits are held.</p>
+            </div>
+          </li>
+          <li>
+            <span class="n">2</span>
+            <div>
+              <strong>Send USDT to the matching contract rail</strong>
+              <p>Solana USDT or BSC USDT only — use the completed addresses on this page.</p>
+            </div>
+          </li>
+          <li>
+            <span class="n">3</span>
+            <div>
+              <strong>Wait 5 hours after deposit</strong>
+              <p>When the transfer is credited, a 5-hour cool-down starts. After that, spend on your issued card.</p>
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <section class="cta">
+        <div>
+          <h2>Ready when the window opens</h2>
+          <p>Open the desk to issue or top up after midnight, then spend 5 hours after your deposit.</p>
+        </div>
+        <div class="cta-actions">
+          <a class="primary" href="/desk">Open desk</a>
+          <a class="ghost" href="/pay">Pay gateway</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot wrap">
+      <span>G Cards EU · integration</span>
+      <span id="local-now">—</span>
+    </footer>
+    <script src="integration.js"></script>
+  </body>
+</html>

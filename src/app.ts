@@ -13,6 +13,7 @@ import { createPriceClient, type PriceClient } from './prices.ts';
 import { qrSvg } from './qr.ts';
 import * as service from './service.ts';
 import { openStore, type Store } from './store.ts';
+import { createStripeIssuingClient } from './stripe-issuing.ts';
 
 const cookieName = 'or_session';
 
@@ -108,6 +109,12 @@ export function createApp(options: CreateAppOptions = {}) {
           fetchImpl,
         })
       : null,
+    stripe: config.stripeReady
+      ? createStripeIssuingClient({
+          secretKey: config.stripeSecretKey,
+          fetchImpl,
+        })
+      : null,
     now: options.now ?? (() => Date.now()),
   };
   const app = express();
@@ -157,14 +164,23 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.get('/api/config', (_req, res) => {
-    const issuer = config.pay2Ready ? 'pay2' : config.livemode ? 'immersve' : 'unconfigured';
+    const issuer = config.stripeReady
+      ? 'stripe'
+      : config.pay2Ready
+        ? 'pay2'
+        : config.livemode
+          ? 'immersve'
+          : 'unconfigured';
     res.json({
       issuer,
       livemode: config.livemode,
+      stripeReady: config.stripeReady,
+      stripeCurrency: config.stripeCurrency,
+      stripePublishableKey: config.stripePublishableKey || '',
       pay2Ready: config.pay2Ready,
       pay2AccountNumber: config.pay2Ready ? config.pay2AccountNumber : '',
       pay2BinNumber: config.pay2Ready ? config.pay2BinNumber : '',
-      currency: 'usd',
+      currency: config.stripeReady ? config.stripeCurrency : 'usd',
       feeBps: config.feeBps,
       treasuryAddress: config.treasuryAddress,
       network: config.immersveNetwork,
@@ -253,6 +269,11 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post('/api/setup/pay2', asyncRoute(async (req, res) => {
     service.requireAdmin(ctx, sessionUser(req));
     res.json(await service.connectPay2(ctx, req.body ?? {}));
+  }));
+
+  app.post('/api/setup/stripe', asyncRoute(async (req, res) => {
+    service.requireAdmin(ctx, sessionUser(req));
+    res.json(await service.connectStripe(ctx, req.body ?? {}));
   }));
 
   app.get('/api/upgrade', (_req, res) => {

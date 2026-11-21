@@ -576,3 +576,120 @@ test('Pay2.House connect issues a client card and shows the number', async () =>
     await started.close();
   }
 });
+
+test('Stripe Issuing connect issues a client card and shows the number', async () => {
+  const stripe = {
+    calls: [] as Array<{ method: string; url: string }>,
+    async fetchImpl(input: RequestInfo | URL, init?: RequestInit) {
+      const url = String(input);
+      const method = String(init?.method || 'GET').toUpperCase();
+      stripe.calls.push({ method, url });
+      if (url.includes('/v1/balance') && method === 'GET') {
+        return new Response(
+          JSON.stringify({
+            object: 'balance',
+            issuing: { available: [{ amount: 2500, currency: 'eur' }] },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/v1/issuing/cardholders') && method === 'POST') {
+        return new Response(
+          JSON.stringify({ id: 'ich_test_1', object: 'issuing.cardholder', status: 'active' }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/v1/issuing/cards') && method === 'POST') {
+        return new Response(
+          JSON.stringify({
+            id: 'ic_test_1',
+            object: 'issuing.card',
+            brand: 'Mastercard',
+            last4: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            status: 'active',
+            currency: 'eur',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      if (url.includes('/v1/issuing/cards/ic_test_1') && method === 'GET') {
+        return new Response(
+          JSON.stringify({
+            id: 'ic_test_1',
+            brand: 'Mastercard',
+            last4: '4242',
+            exp_month: 12,
+            exp_year: 2030,
+            number: '5450200000004242',
+            cvc: '321',
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      return new Response(JSON.stringify({ error: { message: `unexpected ${method} ${url}` } }), { status: 500 });
+    },
+  };
+  const started = await listen({
+    dbPath: ':memory:',
+    fetchImpl: stripe.fetchImpl as typeof fetch,
+    env: { SELF_SIGNUP: '' },
+  });
+  try {
+    const signedIn = await call(started.base, '/api/login', undefined, {
+      username: ADMIN_USERNAME,
+      password: ADMIN_PASSWORD,
+    });
+    const token = String((signedIn.data as { token: string }).token);
+    const connected = await call(started.base, '/api/setup/stripe', token, {
+      secretKey: 'sk_test_stripe_issuing_mock',
+      publishableKey: 'pk_test_stripe_issuing_mock',
+      currency: 'eur',
+    });
+    assert.equal(connected.status, 200);
+    assert.equal((connected.data as { issuer: string }).issuer, 'stripe');
+    assert.equal((connected.data as { issuingAvailableCents: number }).issuingAvailableCents, 2500);
+    const created = await call(started.base, '/api/admin/clients', token, { email: 'stripeclient@example.com' });
+    assert.equal(created.status, 201);
+    const clientId = String((created.data as { client: { id: string } }).client.id);
+    const issued = await call(
+      started.base,
+      '/api/card',
+      token,
+      {
+        firstName: 'G',
+        lastName: 'Cards',
+        email: 'stripeclient@example.com',
+        phone: '+353871112222',
+        dob: '1990-01-15',
+        line1: '1 Grand Canal Street Lower',
+        city: 'Dublin',
+        state: 'D',
+        postalCode: 'D02',
+        country: 'IE',
+        type: 'virtual',
+        acceptedTerms: true,
+      },
+      { 'x-client-id': clientId },
+    );
+    assert.equal(issued.status, 201);
+    assert.equal((issued.data as { status: string }).status, 'issued');
+    assert.equal((issued.data as { card: { last4: string; issuerMode: string } }).card.last4, '4242');
+    assert.equal((issued.data as { card: { issuerMode: string } }).card.issuerMode, 'stripe');
+    assert.equal((issued.data as { secrets: { pan: string; cvv: string } }).secrets.pan, '5450200000004242');
+    assert.equal((issued.data as { secrets: { cvv: string } }).secrets.cvv, '321');
+    const secure = await call(started.base, '/api/wallets/secure-details', token, {}, { 'x-client-id': clientId });
+    assert.equal(secure.status, 200);
+    assert.equal((secure.data as { mode: string }).mode, 'stripe');
+    assert.match(String((secure.data as { pan: string }).pan), /5450/);
+    const cfg = await fetch(`${started.base}/api/config`);
+    const body = (await cfg.json()) as { issuer: string; stripeReady: boolean; currency: string };
+    assert.equal(body.issuer, 'stripe');
+    assert.equal(body.stripeReady, true);
+    assert.equal(body.currency, 'eur');
+    assert.equal(JSON.stringify(body).includes('sk_test_stripe_issuing_mock'), false);
+  } finally {
+    await started.close();
+  }
+});

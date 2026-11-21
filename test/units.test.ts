@@ -121,3 +121,56 @@ test('reads a transfer log for the treasury', () => {
   assert.equal(transfers[0]?.to, to);
   assert.equal(transfers[0]?.amount, 10n ** 18n);
 });
+
+test('Stripe Issuing client creates a virtual card and returns PAN', async () => {
+  const { createStripeIssuingClient } = await import('../src/stripe-issuing.ts');
+  const calls: string[] = [];
+  const fetchImpl: typeof fetch = async (url, init) => {
+    const method = String(init?.method || 'GET').toUpperCase();
+    calls.push(`${method} ${url}`);
+    if (String(url).includes('/balance')) {
+      return new Response(JSON.stringify({ issuing: { available: [{ amount: 100, currency: 'eur' }] } }), {
+        status: 200,
+      });
+    }
+    if (String(url).includes('/issuing/cardholders') && method === 'POST') {
+      return new Response(JSON.stringify({ id: 'ich_1' }), { status: 200 });
+    }
+    if (String(url).includes('/issuing/cards') && method === 'POST') {
+      return new Response(
+        JSON.stringify({ id: 'ic_1', brand: 'Mastercard', last4: '9999', exp_month: 1, exp_year: 2031, status: 'active' }),
+        { status: 200 },
+      );
+    }
+    if (String(url).includes('/issuing/cards/ic_1')) {
+      return new Response(
+        JSON.stringify({ number: '5555555555554444', cvc: '999', exp_month: 1, exp_year: 2031, brand: 'Mastercard', last4: '4444' }),
+        { status: 200 },
+      );
+    }
+    return new Response('{}', { status: 500 });
+  };
+  const client = createStripeIssuingClient({ secretKey: 'sk_test_x', fetchImpl });
+  const probe = await client.probe();
+  assert.equal(probe.issuingAvailableCents, 100);
+  const card = await client.issueVirtualCard({
+    name: 'G Cards',
+    email: 'a@b.com',
+    phone: '+353871112222',
+    firstName: 'G',
+    lastName: 'Cards',
+    dobDay: 15,
+    dobMonth: 1,
+    dobYear: 1990,
+    line1: '1 Street',
+    city: 'Dublin',
+    state: 'D',
+    postalCode: 'D02',
+    country: 'IE',
+    currency: 'eur',
+  });
+  assert.equal(card.cardId, 'ic_1');
+  assert.equal(card.pan, '5555555555554444');
+  assert.equal(card.cvv, '999');
+  assert.ok(calls.some((row) => row.includes('POST') && row.includes('/issuing/cardholders')));
+});

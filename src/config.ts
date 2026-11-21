@@ -45,6 +45,10 @@ export type Config = {
   pay2AccountNumber: string;
   pay2BinNumber: string;
   pay2Ready: boolean;
+  stripeSecretKey: string;
+  stripePublishableKey: string;
+  stripeReady: boolean;
+  stripeCurrency: string;
   upgradeUsdcAddress: string;
   upgradePriceUsd: number;
   publicBaseUrl: string;
@@ -79,6 +83,8 @@ export function loadConfig(env: Env): Config {
   const pay2PrivateKeyPem = (env.PAY2_PRIVATE_KEY_PEM ?? '').replace(/\\n/g, '\n').trim();
   const pay2AccountNumber = env.PAY2_ACCOUNT_NUMBER?.trim() ?? '';
   const pay2BinNumber = env.PAY2_BIN_NUMBER?.trim() ?? '';
+  const stripeSecretKey = env.STRIPE_SECRET_KEY?.trim() ?? '';
+  const stripePublishableKey = env.STRIPE_PUBLISHABLE_KEY?.trim() ?? '';
   return {
     port: integer(env.PORT, 8787),
     databasePath: env.DATABASE_PATH?.trim() || './data/offlinerich.sqlite',
@@ -121,6 +127,10 @@ export function loadConfig(env: Env): Config {
     pay2AccountNumber,
     pay2BinNumber,
     pay2Ready: Boolean(pay2ApiKey && pay2KeyId && pay2PrivateKeyPem && pay2AccountNumber),
+    stripeSecretKey,
+    stripePublishableKey,
+    stripeReady: Boolean(stripeSecretKey.startsWith('sk_')),
+    stripeCurrency: (env.STRIPE_ISSUING_CURRENCY?.trim() || 'eur').toLowerCase(),
     upgradeUsdcAddress: env.UPGRADE_USDC_ADDRESS?.trim() || env.UPGRADE_USDT_ADDRESS?.trim() || '',
     upgradePriceUsd: Math.max(1, integer(env.UPGRADE_PRICE_USD, 1300)),
     publicBaseUrl: (env.PUBLIC_BASE_URL ?? '').trim().replace(/\/$/, ''),
@@ -190,12 +200,20 @@ export function overlaySaved(config: Config, saved: Record<string, string>, env:
   config.pay2Ready = Boolean(
     config.pay2ApiKey && config.pay2KeyId && config.pay2PrivateKeyPem && config.pay2AccountNumber,
   );
+  fillSaved(env.STRIPE_SECRET_KEY, saved.stripe_secret_key, (value) => {
+    config.stripeSecretKey = value;
+  });
+  fillSaved(env.STRIPE_PUBLISHABLE_KEY, saved.stripe_publishable_key, (value) => {
+    config.stripePublishableKey = value;
+  });
+  config.stripeReady = Boolean(config.stripeSecretKey.startsWith('sk_'));
 }
 
 export function readiness(config: Config): ReadinessItem[] {
   const live = config.livemode;
   const pay2 = config.pay2Ready;
-  const canIssue = live || pay2;
+  const stripe = config.stripeReady;
+  const canIssue = live || pay2 || stripe;
   const visa = Boolean(config.visaApiKey && config.visaSharedSecret);
   const issuerDetail = live
     ? 'Live Immersve keys are connected. Immersve issues the Mastercard and checks the on-chain deposit before a merchant charge.'
@@ -203,6 +221,14 @@ export function readiness(config: Config): ReadinessItem[] {
       ? 'A test key is present. Replace it with the live Immersve key pair. Test keys cannot be spent at a merchant or added to Apple Pay.'
       : 'Connect the live Immersve API key, API secret, partner account, card program, and funding channel. That account issues the card.';
   return [
+    {
+      id: 'stripe_issuer',
+      ready: stripe,
+      title: 'Stripe Issuing (G Cards EU website)',
+      detail: stripe
+        ? `Stripe Issuing secret key is connected (${config.stripeCurrency.toUpperCase()}). Issue virtual cards from the desk after the Issuing balance is funded and Issuing TOS is accepted in the Stripe Dashboard.`
+        : 'Connect Stripe Issuing: activate Issuing at dashboard.stripe.com/issuing/overview, accept card issuing terms, fund the Issuing balance, then set STRIPE_SECRET_KEY.',
+    },
     {
       id: 'pay2_issuer',
       ready: pay2,
@@ -221,13 +247,15 @@ export function readiness(config: Config): ReadinessItem[] {
       id: 'treasury',
       ready: canIssue,
       title: 'Card funding',
-      detail: pay2
-        ? 'Fund the Pay2.House USD wallet (USDT TRC20 address from wallets), then top up each issued card from that account.'
-        : live
-          ? config.immersveFundsStorageAddress
-            ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
-            : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
-          : 'Connect Pay2.House to issue today, or Immersve Universal EVM for wallet-native funding.',
+      detail: stripe
+        ? 'Fund the Stripe Issuing balance (EUR/USD), then spend on website-issued virtual cards.'
+        : pay2
+          ? 'Fund the Pay2.House USD wallet (USDT TRC20 address from wallets), then top up each issued card from that account.'
+          : live
+            ? config.immersveFundsStorageAddress
+              ? `Universal EVM Funds Storage is ${config.immersveFundsStorageAddress}. Send the funded ERC-20 there from the linked wallet after the Funding Source exists.`
+              : 'After the card is issued, send the funded ERC-20 to the Immersve Funds Storage / deposit address shown on the quote.'
+            : 'Connect Stripe Issuing (preferred for g-cards.eu), or Immersve / Pay2.',
     },
     {
       id: 'prices',
@@ -240,7 +268,7 @@ export function readiness(config: Config): ReadinessItem[] {
       id: 'apple_pay',
       ready: canIssue,
       title: 'Apple Pay',
-      detail: pay2
+      detail: stripe || pay2
         ? 'Show the card number, then on iPhone open Wallet → + → Debit or Credit Card → Enter Card Details Manually.'
         : 'The iPhone app uses PassKit and POST /api/wallets/apple. Immersve returns encryptedPassData, ephemeralPublicKey, and activationData. Apple Pay is added in the app, and only with live keys.',
     },
