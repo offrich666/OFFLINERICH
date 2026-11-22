@@ -54,12 +54,11 @@ export default async function OpsXaiPage({ searchParams }: Props) {
     : null;
 
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
-  const liveBaseUrl = appUrl
-    ? `${appUrl}/api/xai/v1`
-    : "/api/xai/v1";
+  // Prefer short OpenAI-style /v1 (rewritten to /api/xai/v1).
+  const liveBaseUrl = appUrl ? `${appUrl}/v1` : "/v1";
   const proxyPath = appUrl
-    ? `${appUrl}/api/xai/proxy/chat/completions`
-    : "/api/xai/proxy/chat/completions";
+    ? `${appUrl}/api/xai/v1/chat/completions`
+    : "/api/xai/v1/chat/completions";
 
   return (
     <main className="page checkout-page">

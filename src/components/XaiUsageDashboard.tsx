@@ -28,6 +28,7 @@ type Probe = {
   ok: boolean;
   keyName?: string;
   keyBlocked?: boolean;
+  keyDisabled?: boolean;
   teamBlocked?: boolean;
   redactedKey?: string;
   rateLimit?: {
@@ -260,6 +261,22 @@ export function XaiUsageDashboard({
             : "○ Live feed offline — click Refresh"}
       </p>
 
+      {probe?.keyDisabled ? (
+        <div className="xai-alert" role="alert">
+          xAI API key is DISABLED — enable it at{" "}
+          <a
+            href="https://console.x.ai/team/3e3c1db2-85d9-4542-a81f-91dc85f67d2b/api-keys"
+            target="_blank"
+            rel="noreferrer"
+          >
+            console.x.ai → API Keys
+          </a>{" "}
+          (key {probe.redactedKey || "xai-…0UBi"}
+          {probe.keyName ? ` · ${probe.keyName}` : ""}). Cursor cannot spend
+          until this is ON.
+        </div>
+      ) : null}
+
       {alertActive ? (
         <div className="xai-alert" role="alert">
           Alert: {formatTokens(usage.totalTokens)} tokens /{" "}
@@ -326,7 +343,11 @@ export function XaiUsageDashboard({
               </p>
               <p className="fineprint">
                 {probe.ok ? "Live probe OK" : `Probe failed: ${probe.error}`}
-                {probe.keyBlocked || probe.teamBlocked ? " · BLOCKED" : ""}
+                {probe.keyDisabled
+                  ? " · DISABLED"
+                  : probe.keyBlocked || probe.teamBlocked
+                    ? " · BLOCKED"
+                    : ""}
               </p>
               {probe.rateLimit?.remainingTokens != null ? (
                 <p className="fineprint">
@@ -568,27 +589,32 @@ export function XaiUsageDashboard({
         </p>
         <ol className="xai-steps">
           <li>
-            OpenAI API Key = <code>xai-monitor-demo</code> and toggle{" "}
+            OpenAI API Key = <code>xai-monitor-demo</code> — turn{" "}
             <strong>Use OpenAI API Key</strong> ON
           </li>
           <li>
-            Override OpenAI Base URL ON — paste exactly:
+            Override OpenAI Base URL ON — clear the field and paste exactly:
           </li>
         </ol>
         <pre className="xai-code">{liveBaseUrl}</pre>
         <ol className="xai-steps" start={3}>
           <li>
-            Models → <strong>Add Custom Model</strong> → name{" "}
-            <code>grok-4.3</code> → enable it
+            Models → <strong>Add Custom Model</strong> →{" "}
+            <code>grok-4.3</code> → enable the toggle for it
           </li>
           <li>
-            New chat → pick model <code>grok-4.3</code> (not Auto / Composer /
-            Claude) → send any message
+            Open a <strong>new</strong> chat → select model{" "}
+            <code>grok-4.3</code> only (not Auto / Composer / Claude) → send
+            “hi”
+          </li>
+          <li>
+            Watch <strong>Cursor Hits</strong> below — a row must appear within
+            ~2s
           </li>
         </ol>
         <p className="fineprint">
-          If Cursor Hits below stays empty, Cursor is not calling this proxy.
-          Proxy path: <code>{proxyPath}</code>
+          Empty hits = Cursor is not using this Base URL. Also works via{" "}
+          <code>{proxyPath}</code>
         </p>
       </section>
 

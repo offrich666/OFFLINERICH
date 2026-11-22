@@ -375,6 +375,7 @@ export type XaiProbeResult = {
   ok: boolean;
   keyName?: string;
   keyBlocked?: boolean;
+  keyDisabled?: boolean;
   teamBlocked?: boolean;
   redactedKey?: string;
   rateLimit?: {
@@ -409,6 +410,7 @@ export async function probeXaiKey(options?: {
     const meta = (await metaRes.json().catch(() => null)) as {
       name?: string;
       api_key_blocked?: boolean;
+      api_key_disabled?: boolean;
       team_blocked?: boolean;
       redacted_api_key?: string;
       error?: { message?: string };
@@ -418,6 +420,19 @@ export async function probeXaiKey(options?: {
       return {
         ok: false,
         error: meta?.error?.message || `api-key probe HTTP ${metaRes.status}`,
+      };
+    }
+
+    if (meta?.api_key_disabled) {
+      return {
+        ok: false,
+        keyName: meta.name,
+        keyBlocked: Boolean(meta.api_key_blocked),
+        keyDisabled: true,
+        teamBlocked: Boolean(meta.team_blocked),
+        redactedKey: meta.redacted_api_key,
+        error:
+          "API key is DISABLED in xAI console. Re-enable it at console.x.ai → API Keys, then retry.",
       };
     }
 
@@ -456,6 +471,7 @@ export async function probeXaiKey(options?: {
         ok: false,
         keyName: meta?.name,
         keyBlocked: meta?.api_key_blocked,
+        keyDisabled: Boolean(meta?.api_key_disabled),
         teamBlocked: meta?.team_blocked,
         redactedKey: meta?.redacted_api_key,
         error: body?.error?.message || `chat probe HTTP ${chatRes.status}`,
@@ -486,6 +502,7 @@ export async function probeXaiKey(options?: {
       ok: true,
       keyName: meta?.name,
       keyBlocked: Boolean(meta?.api_key_blocked),
+      keyDisabled: Boolean(meta?.api_key_disabled),
       teamBlocked: Boolean(meta?.team_blocked),
       redactedKey: meta?.redacted_api_key,
       rateLimit: {
