@@ -1674,6 +1674,24 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   opacity: 0.55;
   cursor: not-allowed;
 }
+.desk-api-wait {
+  border-color: #c4b896;
+  background: linear-gradient(180deg, #fbf8f1 0%, #f3eee3 100%);
+}
+.desk-api-wait .desk-issuer-action {
+  border-top-color: rgba(100, 80, 40, 0.14);
+}
+.desk-api-countdown {
+  text-align: center;
+}
+.desk-api-countdown-value {
+  display: inline-block;
+  margin-top: 0.35rem;
+  font-size: 1.55rem;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  color: #3a2f14;
+}
 .desk-issuer-callout {
   margin: 14px 0 0;
   padding: 12px 14px;
