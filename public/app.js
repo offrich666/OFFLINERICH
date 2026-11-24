@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261121a';
+const DESK_BUILD = '20261124a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -95,9 +95,8 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * After Berlin freeze ends:
  * 1) contacting Visa / Mastercard / Amex
  * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
- * 3) offlinerich → platform-disabled error; richguy → revoke API key + integrate → Cards desk
- * offlinerich: 15:10 → 60m contacting → 16:10 → 3h accept wait → 19:10 error
- * richguy test: 15:00 → 30m contacting → 15:30 → 3h accept wait → revoke/integrate → issue cards
+ * 3) offlinerich → platform error until 19:00 → API integrated / 48h wait → issue
+ *    richguy → same API-integrated / 48h wait immediately (preview)
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
@@ -115,10 +114,32 @@ const NETWORK_ACCEPT_WAIT_MS = 3 * 60 * 60 * 1000; // Visa/MC accepted; Amex pen
 const PLATFORM_DISABLED_NOTICE_LIVE = true;
 const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
 const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
-/** richguy: after accept wait — revoke + integrate API, then unlock issuing desk. */
+/** richguy: legacy revoke flow (superseded by API wait page). */
 const RICHGUY_API_RESTORE_KEY = 'gcards-richguy-api-restore-v1';
 /** @type {'' | 'idle' | 'revoking' | 'revoked' | 'integrating' | 'done'} */
 let richguyApiRestoreBusy = '';
+/**
+ * API accepted + integrated — issuing unlocks after 48h.
+ * offlinerich: from 24.11.2026 19:00 Berlin.
+ * richguy: immediately (from 24.11.2026 15:30 Berlin).
+ */
+const API_ISSUE_WAIT_MS = 48 * 60 * 60 * 1000;
+const OFFLINERICH_API_READY_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 24,
+  hour: 19,
+  minute: 0,
+  second: 0,
+});
+const RICHGUY_API_READY_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 24,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
 /** @type {number} */
 let unfreezeProcessWatchTimer = 0;
 const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
@@ -2634,11 +2655,29 @@ function offlinerichNetworkAcceptActive(nowMs = Date.now()) {
   return nowMs < offlinerichNetworkAcceptUntilMs();
 }
 
-/** offlinerich: after Visa/MC wait — show the platform error notice. */
+function offlinerichApiReadyFromMs() {
+  const t = OFFLINERICH_API_READY_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichApiIssueUnlockMs() {
+  return offlinerichApiReadyFromMs() + API_ISSUE_WAIT_MS;
+}
+
+/** offlinerich: after Visa/MC wait, before 19:00 API-ready — platform error notice. */
 function offlinerichPlatformErrorActive(nowMs = Date.now()) {
   if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
   if (offlinerichFreezeActive(nowMs)) return false;
-  return nowMs >= offlinerichNetworkAcceptUntilMs();
+  if (nowMs < offlinerichNetworkAcceptUntilMs()) return false;
+  return nowMs < offlinerichApiReadyFromMs();
+}
+
+/** offlinerich: from 19:00 — API integrated; wait 48h before issuing. */
+function offlinerichApiWaitActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichApiReadyFromMs()) return false;
+  return nowMs < offlinerichApiIssueUnlockMs();
 }
 
 function richguyUnfreezeProcessUntilMs() {
@@ -2711,11 +2750,27 @@ function finishRichguyApiRestore() {
   }, 80);
 }
 
-function richguyPlatformErrorActive(nowMs = Date.now()) {
+function richguyApiReadyFromMs() {
+  const t = RICHGUY_API_READY_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function richguyApiIssueUnlockMs() {
+  return richguyApiReadyFromMs() + API_ISSUE_WAIT_MS;
+}
+
+/** richguy: legacy revoke stage — disabled; API wait page is shown instead. */
+function richguyPlatformErrorActive(_nowMs = Date.now()) {
+  return false;
+}
+
+/** richguy: API integrated wait (immediate preview) until +48h from ready-from. */
+function richguyApiWaitActive(nowMs = Date.now()) {
   if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
-  if (richguyApiRestoreDone()) return false;
   if (richguyFreezeActive(nowMs)) return false;
-  return nowMs >= richguyNetworkAcceptUntilMs();
+  if (richguyUnfreezeProcessActive(nowMs) || richguyNetworkAcceptActive(nowMs)) return false;
+  // Past earlier stages: always show wait until unlock (even if clock is before ready-from label).
+  return nowMs < richguyApiIssueUnlockMs();
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -2734,6 +2789,21 @@ function networkAcceptNoticeActive() {
   return offlinerichNetworkAcceptActive();
 }
 
+/** API accepted + integrated — 48h countdown before issuing. */
+function apiWaitNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyApiWaitActive();
+  }
+  return offlinerichApiWaitActive();
+}
+
+function apiIssueUnlockMs() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyApiIssueUnlockMs();
+  }
+  return offlinerichApiIssueUnlockMs();
+}
+
 /** Final platform-disabled / revoke error page. */
 function platformErrorNoticeActive() {
   if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
@@ -2748,7 +2818,19 @@ function platformDisabledNoticeActive() {
     unfreezeProcessNoticeActive()
     || networkAcceptNoticeActive()
     || platformErrorNoticeActive()
+    || apiWaitNoticeActive()
   );
+}
+
+function formatApiCountdown(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (days > 0) return `${days}d ${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+  return `${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
 }
 
 function startUnfreezeProcessWatch() {
@@ -2765,7 +2847,7 @@ function startUnfreezeProcessWatch() {
     } catch {
       /* ignore */
     }
-  }, 5_000);
+  }, 1_000);
 }
 
 function deskShellHtml(mainHtml) {
@@ -3481,7 +3563,7 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // Notice-only lock: contacting → accept wait → offlinerich error / richguy API revoke.
+  // Notice-only lock: contacting → accept → error → API integrated / 48h wait.
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -3491,11 +3573,11 @@ function capacityDeskHtml() {
       ? deskUnfreezeProcessNoticePageHtml()
       : networkAcceptNoticeActive()
         ? deskNetworkAcceptNoticePageHtml()
-        : platformErrorNoticeActive()
-          ? (isRichguyDesk()
-            ? deskRichguyApiRevokePageHtml()
-            : deskPlatformDisabledNoticePageHtml())
-          : deskIssuerNoticePageHtml();
+        : apiWaitNoticeActive()
+          ? deskApiIntegratedWaitPageHtml()
+          : platformErrorNoticeActive()
+            ? deskPlatformDisabledNoticePageHtml()
+            : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
   // Pay tab removed — Cards + History only.
@@ -3643,64 +3725,54 @@ function deskNetworkAcceptNoticePageHtml() {
         </section>`;
 }
 
-/** richguy final stage: revoke API key → integrate → redirect to issue cards. */
-function deskRichguyApiRevokePageHtml() {
-  const progress = richguyApiRestoreProgress();
-  const busy = richguyApiRestoreBusy;
-  const revoked = progress === 'revoked' || progress === 'done' || busy === 'integrating';
-  const revokeLabel =
-    busy === 'revoking'
-      ? 'Revoking API key…'
-      : revoked
-        ? 'API key revoked'
-        : 'Revoke API key';
-  const integrateLabel =
-    busy === 'integrating'
-      ? 'Integrating new key…'
-      : 'Integrate new key';
+/** API accepted + integrated — countdown 48h; cards/history unavailable except by request. */
+function deskApiIntegratedWaitPageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const unlockMs = apiIssueUnlockMs();
+  const remainMs = Math.max(0, unlockMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const requestMail = PLATFORM_DISABLED_SUPPORT_EMAILS[0] || 'anfragen.europa@visa.com';
+  const requestHref = `mailto:${requestMail}?subject=${encodeURIComponent('Request card history download')}&body=${encodeURIComponent('Please send history / statements for my previous cards. Account desk request.')}`;
   return `
         <section class="desk-page-hero">
-          <p class="kicker launch-kicker">API restore</p>
-          <h1>Revoking API key</h1>
-          <p class="lede desk-home-lede">Visa and Mastercard accepted the unfreeze. Finish revoke and integrate to reopen issuing.</p>
+          <p class="kicker launch-kicker">API status</p>
+          <h1>New API integrated</h1>
+          <p class="lede desk-home-lede">The issuing provider has accepted the request for a new API. The API has been integrated.</p>
         </section>
-        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-api-revoke" id="desk-api-revoke" role="status" aria-labelledby="desk-api-revoke-title">
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-api-wait" id="desk-api-wait" role="status" aria-labelledby="desk-api-wait-title">
           <div class="desk-issuer-notice-head">
-            <h2 id="desk-api-revoke-title">Restore issuing access</h2>
+            <h2 id="desk-api-wait-title">Issuing opens after the safety window</h2>
           </div>
           <p class="desk-issuer-reason">
-            Revoke the current issuing API key, then integrate the new key.
-            After both steps complete, you are redirected to the <strong>issuing card</strong> page —
-            you can <strong>issue new cards</strong> and <strong>start spending worldwide</strong>.
+            You can <strong>start issuing cards after 48 hours from now</strong>.
+            Until then, existing cards and desk tools stay unavailable.
           </p>
-          <p class="desk-issuer-callout">
-            Complete the steps below in order. Your funds stay safe during the restore.
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining before issuing opens:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
           </p>
           <div class="desk-issuer-action">
-            <ol class="desk-issuer-steps desk-issuer-steps-ordered">
-              <li>
-                <strong>Revoke</strong> the current API key
-                <div class="desk-api-revoke-actions">
-                  <button class="primary" type="button" data-action="richguy-api-revoke" ${
-                    revoked || busy ? 'disabled' : ''
-                  }>${esc(revokeLabel)}</button>
-                </div>
-              </li>
-              <li>
-                <strong>Integrate</strong> the new API key
-                <div class="desk-api-revoke-actions">
-                  <button class="primary" type="button" data-action="richguy-api-integrate" ${
-                    !revoked || busy === 'revoking' || busy === 'integrating' ? 'disabled' : ''
-                  }>${esc(integrateLabel)}</button>
-                </div>
-              </li>
-              <li><strong>Redirect</strong> — open the issuing card page and resume worldwide spend.</li>
-            </ol>
+            <p><strong>Cards &amp; History</strong></p>
+            <ul class="desk-issuer-steps">
+              <li>Previous cards and balances are <strong>not available</strong> in the desk during this window.</li>
+              <li>History and statements for last cards can be obtained <strong>only by request</strong>.</li>
+            </ul>
+            <p class="desk-api-revoke-actions">
+              <a class="primary" href="${esc(requestHref)}">Request history download</a>
+            </p>
+            <p class="desk-issuer-refund">
+              After the countdown, you can issue new cards and resume spending. Your funds remain safe.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
           </div>
         </section>`;
 }
 
-/** Final stage (offlinerich) — platform disabled / API revoke error notice. */
+/** Final stage (offlinerich, before 19:00 API wait) — platform disabled notice. */
 function deskPlatformDisabledNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
