@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261124b';
+const DESK_BUILD = '20261124c';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -120,7 +120,7 @@ const RICHGUY_API_RESTORE_KEY = 'gcards-richguy-api-restore-v1';
 let richguyApiRestoreBusy = '';
 /**
  * API accepted + integrated — issuing unlocks after 48h.
- * offlinerich: from 24.11.2026 19:08 Berlin.
+ * offlinerich: from 24.11.2026 20:43 Berlin.
  * richguy: immediately (from 24.11.2026 15:00 Berlin).
  */
 const API_ISSUE_WAIT_MS = 48 * 60 * 60 * 1000;
@@ -128,8 +128,8 @@ const OFFLINERICH_API_READY_FROM = Object.freeze({
   year: 2026,
   month: 11,
   day: 24,
-  hour: 19,
-  minute: 8,
+  hour: 20,
+  minute: 43,
   second: 0,
 });
 const RICHGUY_API_READY_FROM = Object.freeze({
