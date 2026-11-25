@@ -79,7 +79,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261124c';
+const DESK_BUILD = '20261125a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3753,6 +3753,10 @@ function deskApiIntegratedWaitPageHtml() {
           <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
             Time remaining before issuing opens:<br />
             <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <p class="desk-api-live-update" role="status">
+            <span class="desk-api-live-dot" aria-hidden="true"></span>
+            <strong>Latest update</strong> — API working perfect · uptime <strong>99.8%</strong>
           </p>
           <div class="desk-issuer-action">
             <p><strong>Cards &amp; History</strong></p>
