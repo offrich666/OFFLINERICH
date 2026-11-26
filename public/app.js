@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126i';
+const DESK_BUILD = '20261126j';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -125,10 +125,20 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * After Berlin freeze ends:
  * 1) contacting Visa / Mastercard / Amex
  * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
- * 3) offlinerich → platform error until 19:00 → API integrated / 48h wait → issue
- *    richguy → same API-integrated / 48h wait immediately (preview)
+ * 3) offlinerich → platform error → API integrated / 48h wait
+ * 4) issuer implementation notice → issuing + direct spend opens at ISSUER_PROGRAM_OPEN_FROM
+ *    richguy → same issuer notice immediately (no wait for offlinerich's API countdown)
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
+/** Issuing program + direct spend opens at this Berlin civil time. */
+const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 27,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
 const RICHGUY_FREEZE_UNTIL = Object.freeze({
   year: 2026,
@@ -2919,9 +2929,41 @@ function richguyPlatformErrorActive(_nowMs = Date.now()) {
   return false;
 }
 
-/** richguy: countdown removed — issuing is open. */
+/** richguy: skip offlinerich's API 48h wait — issuer notice is shown instead. */
 function richguyApiWaitActive(_nowMs = Date.now()) {
   return false;
+}
+
+function issuerProgramOpenFromMs() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function issuerProgramOpenLabel() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** offlinerich: after API 48h countdown — issuer implementation until tomorrow 15:00. */
+function offlinerichIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichApiIssueUnlockMs()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+/** richguy: show the issuer implementation message immediately (preview). */
+function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isRichguyDesk()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+function issuerImplNoticeActive(nowMs = Date.now()) {
+  return offlinerichIssuerImplNoticeActive(nowMs) || richguyIssuerImplNoticeActive(nowMs);
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -2970,6 +3012,7 @@ function platformDisabledNoticeActive() {
     || networkAcceptNoticeActive()
     || platformErrorNoticeActive()
     || apiWaitNoticeActive()
+    || issuerImplNoticeActive()
   );
 }
 
@@ -2990,7 +3033,7 @@ function startUnfreezeProcessWatch() {
   unfreezeProcessWatchTimer = window.setInterval(() => {
     try {
       if (!deskSessionOpen()) return;
-      if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      if (platformDisabledNoticeActive() || issuerImplNoticeActive()) {
         render();
         return;
       }
@@ -3952,12 +3995,8 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // richguy: Off Grid–style desk shell (Home / Activity / Cards / Settings).
-  if (isRichguyDesk()) {
-    if (platformDisabledNoticeActive()) startUnfreezeProcessWatch();
-    return richguyOffgridDeskHtml();
-  }
-  // Notice-only lock: contacting → accept → error → API integrated / 48h wait.
+  // Notice-only lock: contacting → accept → API wait → issuer implementation.
+  // richguy sees the issuer implementation message immediately; Off Grid desk opens at 15:00.
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -3969,10 +4008,16 @@ function capacityDeskHtml() {
         ? deskNetworkAcceptNoticePageHtml()
         : apiWaitNoticeActive()
           ? deskApiIntegratedWaitPageHtml()
-          : platformErrorNoticeActive()
-            ? deskPlatformDisabledNoticePageHtml()
-            : deskIssuerNoticePageHtml();
+          : issuerImplNoticeActive()
+            ? deskIssuerImplNoticePageHtml()
+            : platformErrorNoticeActive()
+              ? deskPlatformDisabledNoticePageHtml()
+              : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
+  }
+  // richguy: Off Grid issuing desk (after issuer program opens).
+  if (isRichguyDesk()) {
+    return richguyOffgridDeskHtml();
   }
   // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
@@ -4564,6 +4609,55 @@ function deskNetworkAcceptNoticePageHtml() {
         </section>`;
 }
 
+/** After API wait (offlinerich) / immediately (richguy): issuer implementation until tomorrow 15:00. */
+function deskIssuerImplNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const openMs = issuerProgramOpenFromMs();
+  const remainMs = Math.max(0, openMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const openLabel = issuerProgramOpenLabel();
+  const privateLimit = money(PRIVATE_DAILY_LIMIT_CENTS, 'EUR');
+  const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
+  const who = isRichguyDesk() ? 'richguy' : 'offlinerich';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Issuer implementation</p>
+          <h1>Starting the issuing program</h1>
+          <p class="lede desk-home-lede">We are implementing the issuer so you can start issuing cards and using direct spend with your program limits.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-impl" role="status" aria-labelledby="desk-issuer-impl-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-issuer-impl-title">Issuing opens tomorrow at 15:00</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            The issuer is being implemented for account <strong>${esc(who)}</strong>.
+            You can <strong>issue new cards starting ${esc(openLabel)}</strong>.
+            Until then, the desk stays on this status page while the issuing program is prepared.
+          </p>
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining until issuing opens:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Issuing program (ready at open)</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>Issue cards</strong> — Visa, Mastercard, American Express (Private &amp; Corporate)</li>
+              <li><strong>Direct spend</strong> — authorizations against issued cards with your daily limits</li>
+              <li><strong>Private daily limit</strong> — ${esc(privateLimit)}</li>
+              <li><strong>Corporate daily limit</strong> — ${esc(corporateLimit)}</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              After ${esc(openLabel)}, open the desk to issue cards and spend directly under those limits. Your funds remain safe during implementation.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
 /** API accepted + integrated — countdown 48h; cards/history unavailable except by request. */
 function deskApiIntegratedWaitPageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
@@ -4607,7 +4701,7 @@ function deskApiIntegratedWaitPageHtml() {
               <a class="primary" href="${esc(requestHref)}">Request history download</a>
             </p>
             <p class="desk-issuer-refund">
-              After the countdown, you can issue new cards and resume spending. Your funds remain safe.
+              After this countdown, issuer implementation starts. You can issue cards and use direct spend from <strong>${esc(issuerProgramOpenLabel())}</strong> with Private / Corporate daily limits. Your funds remain safe.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>

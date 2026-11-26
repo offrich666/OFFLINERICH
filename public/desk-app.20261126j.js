@@ -1,0 +1,8253 @@
+const state = {
+  config: null,
+  me: null,
+  tokens: [],
+  activity: [],
+  flash: null,
+  admin: null,
+  clientId: '',
+  newClient: false,
+  search: '',
+  selectedTokenId: '',
+  walletNote: '',
+  quote: null,
+  amount: '',
+  walletSignature: '',
+  desk: null,
+  keyAddress: '',
+  holdings: null,
+  payQr: null,
+  secureUrl: '',
+  kycUrl: '',
+  pay2Secrets: null,
+  /** @type {null | { phase: 'trying', step: number } | { phase: 'blocked' } | { phase: 'held' }} */
+  hostGate: null,
+  /** @type {null | 'richguy' | 'offlinerich'} */
+  deskUser: null,
+  /** G Cards EU cards issued from this website desk. */
+  deskCards: [],
+  deskIssuing: false,
+  deskRevealSecrets: true,
+  deskBalanceCents: 0,
+  deskBalanceSeeded: false,
+  deskDepositToken: 'USDT_SOL',
+  deskDepositAmount: '',
+  deskDepositBusy: false,
+  deskDeposits: [],
+  deskSpends: [],
+  deskTransfers: [],
+  deskTopupCardId: '',
+  deskCardFundAmount: '',
+  deskMoveFromId: '',
+  deskMoveToId: '',
+  deskMoveAmount: '',
+  deskDetailCardId: '',
+  deskSelectedCardId: '',
+  /** @type {'home' | 'card' | 'payments' | 'history' | 'issuer' | 'activity' | 'cards' | 'settings'} */
+  deskView: 'home',
+  /** richguy Off Grid–style nav: home | activity | cards | settings */
+  richNav: 'home',
+  /** richguy money desk amounts */
+  richDeskAddAmount: '',
+  richFundAmount: '',
+  richMoveAmount: '',
+  /** @type {'own' | 'external'} */
+  richSendMode: 'external',
+  richSendExt: {
+    firstName: '',
+    lastName: '',
+    country: '',
+    countryQuery: '',
+    brand: 'visa',
+    pan: '',
+  },
+  /** richguy 3DS via authenticator apps: google | duo */
+  rich3dsMethod: 'google',
+  /** @type {'idle' | 'waiting_app' | 'active'} */
+  rich3dsPhase: 'idle',
+  rich3dsBusy: false,
+  spendFilterCardId: '',
+  spendFilterQuery: '',
+  spendFilterGateway: '',
+  spendFilterStatus: '',
+  spendFilterRange: 'all',
+  spendDetailId: '',
+  tokenPrices: { USDT_SOL: 1, USDT_BSC: 1 },
+  tokenPriceUpdatedAt: 0,
+  /** USD→EUR FX used to credit desk balance from USDT deposits. */
+  usdToEur: 0.92,
+  spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS', kind: 'payment' },
+  issueDraft: {
+    brand: 'visa',
+    kind: 'private',
+    firstName: '',
+    lastName: '',
+    country: '',
+    countryQuery: '',
+  },
+  /** @type {null | { bin: string, loading?: boolean, country?: string, bank?: string, scheme?: string, error?: string }} */
+  binLookup: null,
+  statementDraft: { cardId: '', from: '', to: '' },
+};
+
+const PAYMENT_GATEWAYS = [
+  'TEB BNP PARIBAS',
+  'RBKO Raiffeisen',
+  'NLB Banka',
+];
+const EXAMPLE_SPEND_ID = 'spend-example-cb-int-digital';
+const IPKO_SPEND_ID = 'spend-ipko-ecommerce-388964';
+const GJIRAFA_SPEND_ID = 'spend-1794823980000-1955-759800';
+const GJIRAFA_SPEND_AUTH = '790924';
+const GJIRAFA_SPEND_AMOUNT_CENTS = 759_800; // €7,598.00
+const CB_INT_7598_SPEND_ID = 'spend-1794835200000-1955-759800-cb';
+const CB_INT_7598_AUTH = '791033';
+const CB_INT_3599_SPEND_ID = 'spend-cb-int-3599-515114';
+const CB_INT_3599_AUTH = '515114';
+const CB_INT_3599_AMOUNT_CENTS = 3_599; // €35.99
+const CB_INT_3599_ORDER = '1676770599066';
+const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
+const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
+
+const DESK_BUILD = '20261126j';
+const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
+/** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
+const ISSUER_FRAUD_NOTICE_ENABLED = false;
+const ISSUER_FRAUD_NOTICE_CODE = '59';
+const ISSUER_FRAUD_NOTICE_GATEWAY = 'TEB BNP PARIBAS';
+const ISSUER_FRAUD_NOTICE_REASON =
+  'One of the banks or partners reported your system to the issuing platform — Fraud.';
+const ISSUER_SUPPORT_EMAILS = Object.freeze([
+  'anfragen.europa@visa.com',
+  'privacyanddataprotection@mastercard.com',
+]);
+/**
+ * After Berlin freeze ends:
+ * 1) contacting Visa / Mastercard / Amex
+ * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
+ * 3) offlinerich → platform error → API integrated / 48h wait
+ * 4) issuer implementation notice → issuing + direct spend opens at ISSUER_PROGRAM_OPEN_FROM
+ *    richguy → same issuer notice immediately (no wait for offlinerich's API countdown)
+ */
+const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
+/** Issuing program + direct spend opens at this Berlin civil time. */
+const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 27,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
+/** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
+const RICHGUY_FREEZE_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 20,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
+const UNFREEZE_PROCESS_MS = 60 * 60 * 1000; // offlinerich: 60 minutes after 15:10 → 16:10
+const RICHGUY_UNFREEZE_PROCESS_MS = 30 * 60 * 1000; // richguy test: 30 minutes
+const NETWORK_ACCEPT_WAIT_MS = 3 * 60 * 60 * 1000; // Visa/MC accepted; Amex pending ~3h
+const PLATFORM_DISABLED_NOTICE_LIVE = true;
+const PLATFORM_DISABLED_CONTACT_PHONE = '+358 45 490 8601';
+const PLATFORM_DISABLED_SUPPORT_EMAILS = ISSUER_SUPPORT_EMAILS;
+/** richguy: legacy revoke flow (superseded by API wait page). */
+const RICHGUY_API_RESTORE_KEY = 'gcards-richguy-api-restore-v1';
+/** @type {'' | 'idle' | 'revoking' | 'revoked' | 'integrating' | 'done'} */
+let richguyApiRestoreBusy = '';
+/**
+ * API accepted + integrated — issuing unlocks after 48h.
+ * offlinerich: from 24.11.2026 20:43 Berlin.
+ * richguy: immediately (from 24.11.2026 15:00 Berlin).
+ */
+const API_ISSUE_WAIT_MS = 48 * 60 * 60 * 1000;
+const OFFLINERICH_API_READY_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 24,
+  hour: 20,
+  minute: 43,
+  second: 0,
+});
+const RICHGUY_API_READY_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 24,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
+/** @type {number} */
+let unfreezeProcessWatchTimer = 0;
+const DESK_SECURITY_HOLD_KEY = 'gcards-desk-security-hold-until';
+const DESK_SECURITY_HOLD_MS = 5 * 60 * 60 * 1000; // 5 hours
+const DESK_SECURITY_LOCKOUT_HOURS = 24;
+const DESK_SECURITY_FREEZE_KEY = 'gcards-desk-security-freeze-until';
+const DESK_SECURITY_FREEZE_MS = 24 * 60 * 60 * 1000; // 24 hours (richguy)
+const DESK_FREEZE_TZ = 'Europe/Berlin';
+/** offlinerich cards/History unusable until this Berlin civil time. */
+const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 20,
+  hour: 15,
+  minute: 10,
+  second: 0,
+});
+const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
+/** richguy clean issuing desk: no seed cards; fundable wallet. */
+const RICHGUY_CLEAN_ISSUE_DESK = true;
+const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26i';
+const RICHGUY_DESK_START_CENTS = 10_000_000; // €100,000.00 starting desk wallet
+/** ISO country list for richguy issuing / external sends (searchable). */
+const WORLD_COUNTRIES = Object.freeze([
+  ['AF','Afghanistan'],['AL','Albania'],['DZ','Algeria'],['AD','Andorra'],['AO','Angola'],
+  ['AG','Antigua and Barbuda'],['AR','Argentina'],['AM','Armenia'],['AU','Australia'],['AT','Austria'],
+  ['AZ','Azerbaijan'],['BS','Bahamas'],['BH','Bahrain'],['BD','Bangladesh'],['BB','Barbados'],
+  ['BY','Belarus'],['BE','Belgium'],['BZ','Belize'],['BJ','Benin'],['BT','Bhutan'],
+  ['BO','Bolivia'],['BA','Bosnia and Herzegovina'],['BW','Botswana'],['BR','Brazil'],['BN','Brunei'],
+  ['BG','Bulgaria'],['BF','Burkina Faso'],['BI','Burundi'],['CV','Cabo Verde'],['KH','Cambodia'],
+  ['CM','Cameroon'],['CA','Canada'],['CF','Central African Republic'],['TD','Chad'],['CL','Chile'],
+  ['CN','China'],['CO','Colombia'],['KM','Comoros'],['CG','Congo'],['CD','Congo (DRC)'],
+  ['CR','Costa Rica'],['CI','Côte d\'Ivoire'],['HR','Croatia'],['CU','Cuba'],['CY','Cyprus'],
+  ['CZ','Czechia'],['DK','Denmark'],['DJ','Djibouti'],['DM','Dominica'],['DO','Dominican Republic'],
+  ['EC','Ecuador'],['EG','Egypt'],['SV','El Salvador'],['GQ','Equatorial Guinea'],['ER','Eritrea'],
+  ['EE','Estonia'],['SZ','Eswatini'],['ET','Ethiopia'],['FJ','Fiji'],['FI','Finland'],
+  ['FR','France'],['GA','Gabon'],['GM','Gambia'],['GE','Georgia'],['DE','Germany'],
+  ['GH','Ghana'],['GR','Greece'],['GD','Grenada'],['GT','Guatemala'],['GN','Guinea'],
+  ['GW','Guinea-Bissau'],['GY','Guyana'],['HT','Haiti'],['HN','Honduras'],['HU','Hungary'],
+  ['IS','Iceland'],['IN','India'],['ID','Indonesia'],['IR','Iran'],['IQ','Iraq'],
+  ['IE','Ireland'],['IL','Israel'],['IT','Italy'],['JM','Jamaica'],['JP','Japan'],
+  ['JO','Jordan'],['KZ','Kazakhstan'],['KE','Kenya'],['KI','Kiribati'],['KW','Kuwait'],
+  ['KG','Kyrgyzstan'],['LA','Laos'],['LV','Latvia'],['LB','Lebanon'],['LS','Lesotho'],
+  ['LR','Liberia'],['LY','Libya'],['LI','Liechtenstein'],['LT','Lithuania'],['LU','Luxembourg'],
+  ['MG','Madagascar'],['MW','Malawi'],['MY','Malaysia'],['MV','Maldives'],['ML','Mali'],
+  ['MT','Malta'],['MH','Marshall Islands'],['MR','Mauritania'],['MU','Mauritius'],['MX','Mexico'],
+  ['FM','Micronesia'],['MD','Moldova'],['MC','Monaco'],['MN','Mongolia'],['ME','Montenegro'],
+  ['MA','Morocco'],['MZ','Mozambique'],['MM','Myanmar'],['NA','Namibia'],['NR','Nauru'],
+  ['NP','Nepal'],['NL','Netherlands'],['NZ','New Zealand'],['NI','Nicaragua'],['NE','Niger'],
+  ['NG','Nigeria'],['KP','North Korea'],['MK','North Macedonia'],['NO','Norway'],['OM','Oman'],
+  ['PK','Pakistan'],['PW','Palau'],['PS','Palestine'],['PA','Panama'],['PG','Papua New Guinea'],
+  ['PY','Paraguay'],['PE','Peru'],['PH','Philippines'],['PL','Poland'],['PT','Portugal'],
+  ['QA','Qatar'],['RO','Romania'],['RU','Russia'],['RW','Rwanda'],['KN','Saint Kitts and Nevis'],
+  ['LC','Saint Lucia'],['VC','Saint Vincent and the Grenadines'],['WS','Samoa'],['SM','San Marino'],
+  ['ST','Sao Tome and Principe'],['SA','Saudi Arabia'],['SN','Senegal'],['RS','Serbia'],['SC','Seychelles'],
+  ['SL','Sierra Leone'],['SG','Singapore'],['SK','Slovakia'],['SI','Slovenia'],['SB','Solomon Islands'],
+  ['SO','Somalia'],['ZA','South Africa'],['KR','South Korea'],['SS','South Sudan'],['ES','Spain'],
+  ['LK','Sri Lanka'],['SD','Sudan'],['SR','Suriname'],['SE','Sweden'],['CH','Switzerland'],
+  ['SY','Syria'],['TW','Taiwan'],['TJ','Tajikistan'],['TZ','Tanzania'],['TH','Thailand'],
+  ['TL','Timor-Leste'],['TG','Togo'],['TO','Tonga'],['TT','Trinidad and Tobago'],['TN','Tunisia'],
+  ['TR','Türkiye'],['TM','Turkmenistan'],['TV','Tuvalu'],['UG','Uganda'],['UA','Ukraine'],
+  ['AE','United Arab Emirates'],['GB','United Kingdom'],['US','United States'],['UY','Uruguay'],['UZ','Uzbekistan'],
+  ['VU','Vanuatu'],['VA','Vatican City'],['VE','Venezuela'],['VN','Vietnam'],['YE','Yemen'],
+  ['ZM','Zambia'],['ZW','Zimbabwe'],['XK','Kosovo'],['HK','Hong Kong'],['MO','Macao'],
+  ['PR','Puerto Rico'],['RE','Réunion'],['GP','Guadeloupe'],['MQ','Martinique'],['GF','French Guiana'],
+  ['NC','New Caledonia'],['PF','French Polynesia'],['GL','Greenland'],['FO','Faroe Islands'],
+]);
+const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
+const PRIMARY_1955_PAN = '5450200087251955';
+const PRIMARY_1955_HOLDER = 'Azem Hasanaj';
+const SEED_MC_5289_PAN = '5399002104755289';
+const SEED_MC_5289_ID = 'card-seed-mc-5289';
+const SEED_MC_5289_EXPIRY = '09/29';
+const SEED_MC_5289_CVV = '275';
+const SEED_MC_5289_HOLDER = 'Adem Hysiqi';
+const SEED_MC_5289_BALANCE_CENTS = 5_000_000; // €50,000
+/**
+ * Canonical card grid for offlinerich / richguy (same last4 + balances on every browser).
+ * Order matches the live Choose card tiles.
+ */
+const CANONICAL_DESK_CARD_SEEDS = Object.freeze([
+  {
+    id: SEED_MC_5289_ID,
+    brand: 'mastercard',
+    kind: 'private',
+    pan: SEED_MC_5289_PAN,
+    expiry: SEED_MC_5289_EXPIRY,
+    cvv: SEED_MC_5289_CVV,
+    holder: SEED_MC_5289_HOLDER,
+    balanceCents: SEED_MC_5289_BALANCE_CENTS,
+  },
+  {
+    id: 'card-endless-1955',
+    endless: true,
+    brand: 'mastercard',
+    kind: 'private',
+    pan: PRIMARY_1955_PAN,
+    expiry: '12/35',
+    cvv: '195',
+    holder: PRIMARY_1955_HOLDER,
+    balanceCents: PRIMARY_1955_BALANCE_CENTS,
+  },
+  {
+    id: 'card-seed-amex-5910',
+    brand: 'amex',
+    kind: 'private',
+    pan: '378282000065910',
+    expiry: '08/29',
+    cvv: '1842',
+    holder: 'G Cards Member',
+    balanceCents: 200_000_000, // $2,000,000.00 USD
+  },
+  {
+    id: 'card-seed-visa-8881',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000068881',
+    expiry: '11/29',
+    cvv: '441',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-1673',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000031673',
+    expiry: '03/30',
+    cvv: '612',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-4702',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000034702',
+    expiry: '06/29',
+    cvv: '308',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-1867',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000091867',
+    expiry: '01/30',
+    cvv: '917',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-7041',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000067041',
+    expiry: '10/29',
+    cvv: '554',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-mc-0000',
+    brand: 'mastercard',
+    kind: 'private',
+    pan: '5450200000000000',
+    expiry: '04/30',
+    cvv: '220',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+  {
+    id: 'card-seed-visa-7525',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000007525',
+    expiry: '07/29',
+    cvv: '783',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_050, // €50,000.50
+  },
+  {
+    id: 'card-seed-visa-7491',
+    brand: 'visa',
+    kind: 'private',
+    pan: '4532000000007491',
+    expiry: '02/30',
+    cvv: '136',
+    holder: 'G Cards Member',
+    balanceCents: 5_000_000,
+  },
+]);
+/** Daily spend caps in minor units (cents). Private €/US$100k · Corporate €/US$1M. */
+const PRIVATE_DAILY_LIMIT_CENTS = 10_000_000;
+const CORPORATE_DAILY_LIMIT_CENTS = 100_000_000;
+const G_CORP_STATEMENT = {
+  /** Issuer brand shown on PDF letterheads and plastic. */
+  legalName: 'G Cards',
+  /** Legal entity line (no registry / VAT on customer PDFs). */
+  entity: 'G Cards Europe Oy',
+  tagline: 'Card account statements and transaction information',
+  address: ['Aleksanterinkatu 52 B', '00100 Helsinki', 'Finland'],
+  programme: 'Europe Card Issuing',
+};
+const USDT_SOL_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
+const USDT_BSC_CONTRACT = '0x55d398326f99059fF775485246999027B3197955';
+const SOLANA_RPCS = [
+  'https://solana-rpc.publicnode.com',
+];
+const BSC_RPCS = [
+  'https://bsc-rpc.publicnode.com',
+  'https://1rpc.io/bnb',
+  'https://bsc-dataseed.binance.org',
+];
+const MIN_CHAIN_MATCH_AMOUNT = 0.01;
+const ERC20_TRANSFER_TOPIC =
+  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+function panPassesLuhn(pan) {
+  const digits = String(pan || '').replace(/\D/g, '');
+  // Visa/MC 16 · Amex 15
+  if (!/^\d{15,16}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = digits.length - 1, alt = false; i >= 0; i -= 1) {
+    let n = Number(digits[i]);
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+
+function normalizeBrand(brand) {
+  const b = String(brand || '').toLowerCase().replace(/\s+/g, '');
+  if (b === 'visa') return 'visa';
+  if (b === 'amex' || b === 'americanexpress' || b === 'americanexpress') return 'amex';
+  if (b.startsWith('amex')) return 'amex';
+  return 'mastercard';
+}
+
+function brandLabel(brand) {
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return 'Visa';
+  if (b === 'amex') return 'Amex';
+  return 'Mastercard';
+}
+
+function plasticClass(brand) {
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return 'visa';
+  if (b === 'amex') return 'amex';
+  return 'master';
+}
+
+function normalizeKind(kind) {
+  return String(kind || '').toLowerCase() === 'corporate' ? 'corporate' : 'private';
+}
+
+function kindLabel(kind) {
+  return normalizeKind(kind) === 'corporate' ? 'Corporate' : 'Private';
+}
+
+function cardProductMeta(brand, kind) {
+  const b = normalizeBrand(brand);
+  const k = normalizeKind(kind);
+  return {
+    brand: b,
+    kind: k,
+    currency: b === 'amex' ? 'USD' : 'EUR',
+    dailyLimitCents: k === 'corporate' ? CORPORATE_DAILY_LIMIT_CENTS : PRIVATE_DAILY_LIMIT_CENTS,
+  };
+}
+
+function cardCurrency(card) {
+  if (!card) return 'EUR';
+  if (card.endless) return 'EUR';
+  if (card.currency === 'USD' || card.currency === 'EUR') return card.currency;
+  return normalizeBrand(card.brand) === 'amex' ? 'USD' : 'EUR';
+}
+
+function cardDailyLimitCents(card) {
+  if (typeof card?.dailyLimitCents === 'number' && card.dailyLimitCents > 0) return card.dailyLimitCents;
+  return cardProductMeta(card?.brand, card?.kind).dailyLimitCents;
+}
+
+function belgradeYmd(ms) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Belgrade',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms));
+}
+
+function cardSpentOnDayCents(card, dayYmd) {
+  if (!card) return 0;
+  const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
+  return state.deskSpends
+    .filter((s) => {
+      if (isSpendRefund(s)) return false;
+      const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
+      if (!match) return false;
+      const ts = spendTimestamp(s);
+      return ts && belgradeYmd(ts) === dayYmd;
+    })
+    .reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+}
+
+function cardSpentTodayCents(card) {
+  return cardSpentOnDayCents(card, belgradeYmd(Date.now()));
+}
+
+function eurCentsToUsdCents(eurCents) {
+  const rate = usdToEurRate();
+  return Math.round(Number(eurCents || 0) / rate);
+}
+
+function usdCentsToEurCents(usdCents) {
+  return Math.round(Number(usdCents || 0) * usdToEurRate());
+}
+
+function countryName(code) {
+  const row = WORLD_COUNTRIES.find((c) => c[0] === String(code || '').toUpperCase());
+  return row ? row[1] : String(code || '').trim();
+}
+
+function issuableCountryCodes() {
+  return Object.keys(COUNTRY_ISSUE_BINS);
+}
+
+function brandsForIssueCountry(countryCode) {
+  const row = COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(countryCode)] || null;
+  if (!row) return [];
+  return ['visa', 'mastercard', 'amex'].filter((b) => String(row[b] || '').replace(/\D/g, '').length >= 4);
+}
+
+function filterWorldCountries(query, limit = 12, { issuableOnly = false } = {}) {
+  const q = String(query || '').trim().toLowerCase();
+  const base = issuableOnly
+    ? WORLD_COUNTRIES.filter(([code]) => Boolean(COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(code)]))
+    : WORLD_COUNTRIES;
+  const rows = !q
+    ? base.slice(0, limit)
+    : base
+        .filter(
+          ([code, name]) =>
+            name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
+        )
+        .slice(0, limit);
+  return rows;
+}
+
+function countryPickerHtml({
+  query = '',
+  selected = '',
+  queryAction = 'rich-country-query',
+  pickAction = 'rich-country-pick',
+  inputId = 'rich-country-query',
+  scope = 'issue',
+  issuableOnly = false,
+} = {}) {
+  const selectedName = selected ? countryName(selected) : '';
+  const rows = filterWorldCountries(query || selectedName, 10, { issuableOnly });
+  const list = rows
+    .map(
+      ([code, name]) =>
+        `<button type="button" class="og-country-option ${code === selected ? 'on' : ''}" data-action="${pickAction}" data-scope="${esc(scope)}" data-code="${esc(code)}" data-name="${esc(name)}">${esc(name)} <small>${esc(code)}</small></button>`,
+    )
+    .join('');
+  const brands = selected ? brandsForIssueCountry(selected) : [];
+  const brandHint = brands.length
+    ? `<p class="og-country-selected">BIN networks for ${esc(selectedName)}: <strong>${esc(brands.map(brandLabel).join(' · '))}</strong></p>`
+    : '';
+  return `
+    <div class="og-country-picker" data-scope="${esc(scope)}">
+      <label class="og-3ds-label" for="${esc(inputId)}">Country</label>
+      <input
+        class="og-3ds-input og-country-input"
+        id="${esc(inputId)}"
+        type="search"
+        autocomplete="off"
+        placeholder="${issuableOnly ? 'Search issuable countries…' : 'Search all countries…'}"
+        value="${esc(query || selectedName)}"
+        data-action-input="${esc(queryAction)}"
+        data-scope="${esc(scope)}"
+      />
+      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)}) — PAN BIN matches this country on BIN check</p>` : `<p class="og-country-selected muted">${issuableOnly ? 'Select a country with a verified issuer BIN' : 'Select a country to issue from'}</p>`}
+      ${brandHint}
+      <div class="og-country-list" role="listbox">${list || '<p class="muted">No countries match.</p>'}</div>
+    </div>`;
+}
+
+function normalizeDeskCard(card) {
+  if (!card || typeof card !== 'object') return null;
+  const brand = normalizeBrand(card.brand);
+  const kind = normalizeKind(card.kind || card.productKind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const endless = Boolean(card.endless);
+  const firstName = String(card.firstName || '').trim();
+  const lastName = String(card.lastName || '').trim();
+  const holderFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
+  return {
+    ...card,
+    brand: endless ? 'mastercard' : meta.brand,
+    kind: endless ? 'private' : meta.kind,
+    currency: endless ? 'EUR' : meta.currency,
+    dailyLimitCents: endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents,
+    balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
+    endless,
+    firstName,
+    lastName,
+    country: normalizeIssueCountryCode(card.country || ''),
+    countryName: card.countryName || countryName(card.country),
+    issuerBank: String(card.issuerBank || '').trim(),
+    bin: String(card.bin || '').replace(/\D/g, ''),
+    holder:
+      card.holder
+      || holderFromParts
+      || (endless
+        ? PRIMARY_1955_HOLDER
+        : meta.kind === 'corporate'
+          ? 'G CARDS EUROPE'
+          : 'G Cards Member'),
+  };
+}
+
+function cardsOnCardsCents() {
+  return state.deskCards.reduce((sum, row) => sum + Number(row.balanceCents || 0), 0);
+}
+
+function isPrimary1955(card) {
+  return Boolean(card?.endless || String(card?.pan || '').replace(/\D/g, '').endsWith('1955'));
+}
+
+/** Drop leftover e-commerce Fraud tryout rows from older desk builds. */
+function isRemovedFraudTryoutSpend(spend) {
+  if (!spend || typeof spend !== 'object') return false;
+  if (spend.tryout || spend.ecommerceTryout || spend.declineCode) return true;
+  const kind = String(spend.kind || '').toLowerCase();
+  if (kind === 'tryout') return true;
+  const id = String(spend.id || '');
+  if (id.startsWith('tryout-')) return true;
+  const status = String(spend.status || '');
+  if (/fraud|declin/i.test(status)) return true;
+  return false;
+}
+
+function purgeRemovedFraudTryouts() {
+  const before = state.deskSpends.length;
+  state.deskSpends = state.deskSpends.filter((s) => !isRemovedFraudTryoutSpend(s));
+  return state.deskSpends.length !== before;
+}
+
+function applyLedgerPayload(data, { migrateHouse = false } = {}) {
+  if (Array.isArray(data.deskCards) && data.deskCards.length) {
+    state.deskCards = data.deskCards
+      .filter((card) => panPassesLuhn(card?.pan))
+      .map((card) => normalizeDeskCard(card))
+      .filter(Boolean);
+  }
+  if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
+  if (typeof data.deskBalanceSeeded === 'boolean') state.deskBalanceSeeded = data.deskBalanceSeeded;
+  if (Array.isArray(data.deskDeposits)) state.deskDeposits = data.deskDeposits;
+  if (Array.isArray(data.deskSpends)) {
+    state.deskSpends = data.deskSpends
+      .map(normalizeStoredSpend)
+      .filter(Boolean)
+      .filter((s) => !isRemovedFraudTryoutSpend(s));
+  }
+  if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
+  if (migrateHouse) {
+    const onCards = cardsOnCardsCents();
+    if (state.deskBalanceCents === onCards && onCards > 0) {
+      // v5 treated house balance as the sum of card balances — keep funds on cards.
+      state.deskBalanceCents = 0;
+    }
+  }
+}
+
+function makeAuthNr() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function normalizeSpendKind(row) {
+  const raw = String(row?.kind || row?.direction || row?.entryType || row?.status || '')
+    .toLowerCase()
+    .trim();
+  if (
+    raw === 'refund'
+    || raw === 'credit'
+    || raw === 'in'
+    || raw.includes('refund')
+    || raw.includes('credit')
+  ) {
+    return 'refund';
+  }
+  return 'payment';
+}
+
+function isSpendRefund(spend) {
+  return normalizeSpendKind(spend) === 'refund';
+}
+
+/** Signed amount for totals: payments − · refunds +. */
+function spendSignedCents(spend) {
+  const amount = Math.abs(Number(spend?.amountCents || 0));
+  return isSpendRefund(spend) ? amount : -amount;
+}
+
+function formatSpendAmountHtml(spend, currency = 'EUR') {
+  const amount = Math.abs(Number(spend?.amountCents || 0));
+  const refund = isSpendRefund(spend);
+  const cls = refund ? 'desk-tx-in plus' : 'desk-tx-out minus';
+  const sign = refund ? '+' : '−';
+  return `<strong class="${cls}">${sign}${esc(money(amount, currency))}</strong>`;
+}
+
+function normalizeStoredSpend(row) {
+  if (!row || typeof row !== 'object') return null;
+  const amountCents = Math.abs(Number(row.amountCents));
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return null;
+  const merchant = String(row.merchant || '').trim();
+  if (!merchant) return null;
+  const cardLast4 = String(row.cardLast4 || '').replace(/\D/g, '').slice(-4);
+  const whenIso = row.whenIso || row.createdAt || '';
+  const gateway = String(row.gateway || PAYMENT_GATEWAYS[0]).trim() || PAYMENT_GATEWAYS[0];
+  const kind = normalizeSpendKind(row);
+  const status = String(row.status || (kind === 'refund' ? 'Refunded' : 'Completed')).trim()
+    || (kind === 'refund' ? 'Refunded' : 'Completed');
+  const authNr = String(row.authNr || row.authCode || '').replace(/\D/g, '').slice(0, 12) || makeAuthNr();
+  const threeDs = String(row.threeDs || 'not_required').trim() || 'not_required';
+  const paymentId = String(row.paymentId || '').trim();
+  const orderNr = String(row.orderNr || row.orderNumber || '').trim();
+  return {
+    id: String(row.id || `spend-${whenIso || Date.now()}-${cardLast4 || 'xxxx'}-${amountCents}`),
+    when: String(row.when || ''),
+    whenIso: whenIso ? String(whenIso) : '',
+    merchant,
+    amountCents,
+    kind,
+    cardId: String(row.cardId || ''),
+    cardLast4,
+    network: String(row.network || 'card'),
+    status,
+    gateway,
+    authNr,
+    threeDs,
+    paymentId,
+    orderNr,
+    createdAt: Number(row.createdAt) || Date.now(),
+  };
+}
+
+function threeDsLabel(value) {
+  const key = String(value || 'not_required').toLowerCase();
+  if (key === 'not_required' || key === 'frictionless' || key === 'skipped') {
+    return 'Not required';
+  }
+  return String(value || 'Not required');
+}
+
+/** Prefer the payment's own time (when / whenIso), not when it was saved. */
+function spendTimestamp(s) {
+  if (!s || typeof s !== 'object') return 0;
+  const iso = Date.parse(String(s.whenIso || ''));
+  if (Number.isFinite(iso) && iso > 0) return iso;
+  const when = String(s.when || '').trim();
+  // en-GB desk format: "14/11/2026, 16:51:03" (Europe/Belgrade)
+  const m = when.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const day = Number(m[1]);
+    const month = Number(m[2]) - 1;
+    const year = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const second = Number(m[6] || 0);
+    const local = new Date(year, month, day, hour, minute, second);
+    if (!Number.isNaN(local.getTime())) return local.getTime();
+  }
+  const parsed = Date.parse(when);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  const created = Number(s.createdAt);
+  return Number.isFinite(created) && created > 0 ? created : 0;
+}
+
+function filteredDeskSpends() {
+  const filterId = state.spendFilterCardId || '';
+  const filterCard = filterId ? state.deskCards.find((c) => c.id === filterId) : null;
+  const filterLast4 = filterCard ? String(filterCard.pan).slice(-4) : '';
+  const query = String(state.spendFilterQuery || '').trim().toLowerCase();
+  const gateway = String(state.spendFilterGateway || '').trim();
+  const status = String(state.spendFilterStatus || '').trim().toLowerCase();
+  const range = String(state.spendFilterRange || 'all');
+  const now = Date.now();
+  const rangeMs =
+    range === 'today'
+      ? 24 * 60 * 60 * 1000
+      : range === '7d'
+        ? 7 * 24 * 60 * 60 * 1000
+        : range === '30d'
+          ? 30 * 24 * 60 * 60 * 1000
+          : 0;
+
+  return state.deskSpends
+    .filter((s) => {
+      if (filterId) {
+        const cardMatch = (s.cardId && s.cardId === filterId) || (filterLast4 && s.cardLast4 === filterLast4);
+        if (!cardMatch) return false;
+      }
+      if (gateway && String(s.gateway || '') !== gateway) return false;
+      if (status && String(s.status || 'Completed').toLowerCase() !== status) return false;
+      if (rangeMs) {
+        const ts = spendTimestamp(s);
+        if (!ts || now - ts > rangeMs) return false;
+      }
+      if (query) {
+        const hay = [
+          s.merchant,
+          s.gateway,
+          s.authNr,
+          s.status,
+          s.cardLast4,
+          s.when,
+          threeDsLabel(s.threeDs),
+        ]
+          .join(' ')
+          .toLowerCase();
+        if (!hay.includes(query)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => spendTimestamp(b) - spendTimestamp(a));
+}
+
+function ensureExampleSpend(primary) {
+  if (!primary) return;
+  const existing = state.deskSpends.find(
+    (s) => s.id === EXAMPLE_SPEND_ID || String(s.authNr || '') === '389274',
+  );
+  const whenDate = new Date('2026-11-17T17:13:45+01:00');
+  const payload = {
+    id: EXAMPLE_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'CB INT DIGITAL JSC',
+    amountCents: 3798,
+    kind: 'payment',
+    cardId: primary.id,
+    cardLast4: String(primary.pan).replace(/\D/g, '').slice(-4) || '1955',
+    network: String(primary.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: '389274',
+    threeDs: 'not_required',
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
+  }
+}
+
+function clearHistoryFilters() {
+  state.spendFilterCardId = '';
+  state.spendFilterQuery = '';
+  state.spendFilterGateway = '';
+  state.spendFilterStatus = '';
+  state.spendFilterRange = 'all';
+  state.spendDetailId = '';
+}
+
+/** Full offlinerich ledger seed on ····1955 — History shows every entry. */
+function ensureFullDeskHistory() {
+  const primary1955 = state.deskCards.find(isPrimary1955) || ensureEndless1955Card();
+  ensureExampleSpend(primary1955);
+  ensureIpkoSpend(primary1955);
+  ensureGjirafaSpend(primary1955);
+  purgeCbIntDigital7598();
+  ensureCbIntDigital3599Spend(primary1955);
+  saveDeskLedger();
+  return primary1955;
+}
+
+function refundAndDropSpends(predicate) {
+  const kept = [];
+  const removed = [];
+  for (const s of state.deskSpends) {
+    if (predicate(s)) removed.push(s);
+    else kept.push(s);
+  }
+  if (!removed.length) return false;
+  state.deskSpends = kept;
+  for (const s of removed) {
+    const last4 = String(s.cardLast4 || '').replace(/\D/g, '').slice(-4);
+    const card =
+      state.deskCards.find((c) => c.id && c.id === s.cardId)
+      || state.deskCards.find((c) => last4 && String(c.pan).replace(/\D/g, '').slice(-4) === last4)
+      || state.deskCards.find((c) => c.endless);
+    if (card) {
+      card.balanceCents = Number(card.balanceCents || 0) + Number(s.amountCents || 0);
+    }
+  }
+  if (state.spendDetailId && removed.some((s) => s.id === state.spendDetailId)) {
+    state.spendDetailId = '';
+  }
+  return true;
+}
+
+/** Drop the old €25 Gjirafa seed only (keep GJIRAFA INC €7,598). */
+function purgeGjirafa25Only() {
+  return refundAndDropSpends(
+    (s) =>
+      Number(s.amountCents) === 2500
+      && String(s.merchant || '').toLowerCase().includes('gjirafa'),
+  );
+}
+
+/**
+ * Keep GJIRAFA INC €7,598.00 (auth 790924) on ····1955 permanently.
+ * Matches the Card Transaction Information PDF the user added.
+ */
+function ensureGjirafaSpend(card) {
+  if (!card) return;
+  purgeGjirafa25Only();
+  const existing = state.deskSpends.find(
+    (s) =>
+      s.id === GJIRAFA_SPEND_ID
+      || String(s.authNr || '') === GJIRAFA_SPEND_AUTH
+      || (Number(s.amountCents) === GJIRAFA_SPEND_AMOUNT_CENTS
+        && String(s.merchant || '').toUpperCase().includes('GJIRAFA')),
+  );
+  const whenDate = new Date('2026-11-16T11:13:00+01:00');
+  const payload = {
+    id: GJIRAFA_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'GJIRAFA INC',
+    amountCents: GJIRAFA_SPEND_AMOUNT_CENTS,
+    kind: 'payment',
+    cardId: card.id,
+    cardLast4: String(card.pan).replace(/\D/g, '').slice(-4) || '1955',
+    network: String(card.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: GJIRAFA_SPEND_AUTH,
+    threeDs: 'not_required',
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
+  }
+}
+
+/** Drop CB INT DIGITAL JSC €7,598 auth 791033 (user asked to remove). */
+function purgeCbIntDigital7598() {
+  return refundAndDropSpends(
+    (s) =>
+      s.id === CB_INT_7598_SPEND_ID
+      || String(s.authNr || '') === CB_INT_7598_AUTH
+      || (Number(s.amountCents) === 759_800
+        && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
+  );
+}
+
+/**
+ * TEB success: CB INT DIGITAL JSC €35.99 on ····1955 (Azem Hasanaj).
+ * Auth 515114 / order 1676770599066 / payment id …_58747297.
+ */
+function ensureCbIntDigital3599Spend(card) {
+  if (!card) return;
+  const existing = state.deskSpends.find(
+    (s) =>
+      s.id === CB_INT_3599_SPEND_ID
+      || String(s.authNr || '') === CB_INT_3599_AUTH
+      || String(s.paymentId || '') === CB_INT_3599_PAYMENT_ID
+      || String(s.orderNr || '') === CB_INT_3599_ORDER
+      || (Number(s.amountCents) === CB_INT_3599_AMOUNT_CENTS
+        && String(s.merchant || '').toUpperCase().includes('CB INT DIGITAL')),
+  );
+  const whenDate = new Date('2026-11-16T22:12:00+01:00');
+  const last4 = String(card.pan).replace(/\D/g, '').slice(-4) || '1955';
+  const payload = {
+    id: CB_INT_3599_SPEND_ID,
+    when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+    whenIso: whenDate.toISOString(),
+    merchant: 'CB INT DIGITAL JSC',
+    amountCents: CB_INT_3599_AMOUNT_CENTS,
+    kind: 'payment',
+    cardId: card.id,
+    cardLast4: last4,
+    network: String(card.brand || 'mastercard'),
+    status: 'Completed',
+    gateway: 'TEB BNP PARIBAS',
+    authNr: CB_INT_3599_AUTH,
+    threeDs: 'not_required',
+    paymentId: CB_INT_3599_PAYMENT_ID,
+    orderNr: CB_INT_3599_ORDER,
+    createdAt: whenDate.getTime(),
+  };
+  if (existing) {
+    Object.assign(existing, payload);
+  } else {
+    state.deskSpends = [payload, ...state.deskSpends];
+  }
+  if (isPrimary1955(card)) {
+    card.balanceCents = PRIMARY_1955_BALANCE_CENTS;
+  }
+}
+
+/** Seed IPKO E-COMMERCE €5.00 on ····1955 (13.11.2026 17:55, Auth 388964). */
+function ensureIpkoSpend(primary) {
+  if (!primary) return;
+  if (
+    state.deskSpends.some(
+      (s) =>
+        s.id === IPKO_SPEND_ID
+        || (String(s.authNr || '') === '388964' && String(s.merchant || '').toUpperCase().includes('IPKO')),
+    )
+  ) {
+    return;
+  }
+  const whenDate = new Date('2026-11-13T17:55:00+01:00');
+  const amountCents = 500;
+  const bal = Number(primary.balanceCents || 0);
+  if (bal >= amountCents) {
+    primary.balanceCents = bal - amountCents;
+  }
+  state.deskSpends = [
+    {
+      id: IPKO_SPEND_ID,
+      when: whenDate.toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+      whenIso: whenDate.toISOString(),
+      merchant: 'IPKO E-COMMERCE',
+      amountCents,
+      kind: 'payment',
+      cardId: primary.id,
+      cardLast4: String(primary.pan).slice(-4) || '1955',
+      network: String(primary.brand || 'mastercard'),
+      status: 'Completed',
+      gateway: 'TEB BNP PARIBAS',
+      authNr: '388964',
+      threeDs: 'not_required',
+      createdAt: whenDate.getTime(),
+    },
+    ...state.deskSpends,
+  ];
+}
+
+function loadDeskLedger() {
+  try {
+    try {
+      localStorage.removeItem('gcards-desk-ledger-v3');
+      localStorage.removeItem('gcards-desk-ledger-v4');
+      // Drop ledgers that may still hold Fraud tryout rows from build 20261119g.
+      localStorage.removeItem('gcards-desk-ledger-v22');
+      localStorage.removeItem('gcards-desk-ledger-v23');
+      localStorage.removeItem('gcards-desk-ledger-v24');
+    } catch {
+      /* ignore */
+    }
+    const rawCurrent = localStorage.getItem(DESK_LEDGER_KEY);
+    if (rawCurrent) {
+      applyLedgerPayload(JSON.parse(rawCurrent));
+      if (purgeRemovedFraudTryouts()) saveDeskLedger();
+      return;
+    }
+    const rawV21 = localStorage.getItem('gcards-desk-ledger-v21');
+    if (rawV21) {
+      applyLedgerPayload(JSON.parse(rawV21));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v21');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV20 = localStorage.getItem('gcards-desk-ledger-v20');
+    if (rawV20) {
+      applyLedgerPayload(JSON.parse(rawV20));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v20');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV19 = localStorage.getItem('gcards-desk-ledger-v19');
+    if (rawV19) {
+      applyLedgerPayload(JSON.parse(rawV19));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v19');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV18 = localStorage.getItem('gcards-desk-ledger-v18');
+    if (rawV18) {
+      applyLedgerPayload(JSON.parse(rawV18));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v18');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV17 = localStorage.getItem('gcards-desk-ledger-v17');
+    if (rawV17) {
+      applyLedgerPayload(JSON.parse(rawV17));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v17');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV16 = localStorage.getItem('gcards-desk-ledger-v16');
+    if (rawV16) {
+      applyLedgerPayload(JSON.parse(rawV16));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v16');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV15 = localStorage.getItem('gcards-desk-ledger-v15');
+    if (rawV15) {
+      applyLedgerPayload(JSON.parse(rawV15));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v15');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV14 = localStorage.getItem('gcards-desk-ledger-v14');
+    if (rawV14) {
+      applyLedgerPayload(JSON.parse(rawV14));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v14');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV13 = localStorage.getItem('gcards-desk-ledger-v13');
+    if (rawV13) {
+      applyLedgerPayload(JSON.parse(rawV13));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v13');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV12 = localStorage.getItem('gcards-desk-ledger-v12');
+    if (rawV12) {
+      applyLedgerPayload(JSON.parse(rawV12));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v12');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV11 = localStorage.getItem('gcards-desk-ledger-v11');
+    if (rawV11) {
+      applyLedgerPayload(JSON.parse(rawV11));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v11');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV10 = localStorage.getItem('gcards-desk-ledger-v10');
+    if (rawV10) {
+      applyLedgerPayload(JSON.parse(rawV10));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v10');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV9 = localStorage.getItem('gcards-desk-ledger-v9');
+    if (rawV9) {
+      applyLedgerPayload(JSON.parse(rawV9));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v9');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV8 = localStorage.getItem('gcards-desk-ledger-v8');
+    if (rawV8) {
+      applyLedgerPayload(JSON.parse(rawV8));
+      state.deskBalanceSeeded = false; // re-apply primary card zero-balance seed
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v8');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV7 = localStorage.getItem('gcards-desk-ledger-v7');
+    if (rawV7) {
+      applyLedgerPayload(JSON.parse(rawV7));
+      state.deskBalanceSeeded = false;
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v7');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV6 = localStorage.getItem('gcards-desk-ledger-v6');
+    if (rawV6) {
+      applyLedgerPayload(JSON.parse(rawV6));
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v6');
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    const rawV5 = localStorage.getItem('gcards-desk-ledger-v5');
+    if (rawV5) {
+      applyLedgerPayload(JSON.parse(rawV5), { migrateHouse: true });
+      saveDeskLedger();
+      try {
+        localStorage.removeItem('gcards-desk-ledger-v5');
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function saveDeskLedger() {
+  try {
+    localStorage.setItem(
+      DESK_LEDGER_KEY,
+      JSON.stringify({
+        deskCards: state.deskCards,
+        deskBalanceCents: state.deskBalanceCents,
+        deskBalanceSeeded: state.deskBalanceSeeded,
+        deskDeposits: state.deskDeposits,
+        deskSpends: state.deskSpends,
+        deskTransfers: state.deskTransfers,
+      }),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Re-read ledger from storage so Pay always shows the latest saved rows. */
+function reloadStoredSpends() {
+  try {
+    const raw = localStorage.getItem(DESK_LEDGER_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data.deskSpends)) {
+      state.deskSpends = data.deskSpends
+        .map(normalizeStoredSpend)
+        .filter(Boolean)
+        .filter((s) => !isRemovedFraudTryoutSpend(s));
+    }
+    if (Array.isArray(data.deskTransfers)) state.deskTransfers = data.deskTransfers;
+    if (typeof data.deskBalanceCents === 'number') state.deskBalanceCents = data.deskBalanceCents;
+    if (Array.isArray(data.deskCards) && data.deskCards.length) {
+      state.deskCards = data.deskCards
+        .filter((card) => panPassesLuhn(card?.pan))
+        .map((card) => normalizeDeskCard(card))
+        .filter(Boolean);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+loadDeskLedger();
+enforceDeskBuildStamp();
+
+const DESK_DEPOSIT_TOKENS = [
+  {
+    id: 'USDT_SOL',
+    name: 'Tether',
+    chain: 'Solana',
+    symbol: 'USDT',
+    contract: USDT_SOL_MINT,
+    llama: `solana:${USDT_SOL_MINT}`,
+    usd: 1,
+  },
+  {
+    id: 'USDT_BSC',
+    name: 'Tether',
+    chain: 'BSC',
+    symbol: 'USDT',
+    contract: USDT_BSC_CONTRACT,
+    llama: `bsc:${USDT_BSC_CONTRACT}`,
+    usd: 1,
+  },
+];
+
+let busy = false;
+let mountGeneration = 0;
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+}
+
+function money(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  return new Intl.NumberFormat(cur === 'USD' ? 'en-US' : 'de-DE', {
+    style: 'currency',
+    currency: cur,
+  }).format((cents || 0) / 100);
+}
+
+function cardMoney(card, cents = card?.balanceCents) {
+  return money(cents, cardCurrency(card));
+}
+
+/** WinAnsi code points we need in Helvetica (incl. euro at 0x80). */
+const PDF_WINANSI_EXTRA = {
+  '€': 0x80,
+  '‚': 0x82,
+  'ƒ': 0x83,
+  '„': 0x84,
+  '…': 0x85,
+  '†': 0x86,
+  '‡': 0x87,
+  'ˆ': 0x88,
+  '‰': 0x89,
+  'Š': 0x8a,
+  '‹': 0x8b,
+  'Œ': 0x8c,
+  'Ž': 0x8e,
+  '‘': 0x91,
+  '’': 0x92,
+  '“': 0x93,
+  '”': 0x94,
+  '•': 0x95,
+  '–': 0x96,
+  '—': 0x97,
+  '˜': 0x98,
+  '™': 0x99,
+  'š': 0x9a,
+  '›': 0x9b,
+  'œ': 0x9c,
+  'ž': 0x9e,
+  'Ÿ': 0x9f,
+  '¡': 0xa1,
+  '¢': 0xa2,
+  '£': 0xa3,
+  '¤': 0xa4,
+  '¥': 0xa5,
+  '¦': 0xa6,
+  '§': 0xa7,
+  '¨': 0xa8,
+  '©': 0xa9,
+  'ª': 0xaa,
+  '«': 0xab,
+  '¬': 0xac,
+  '®': 0xae,
+  '¯': 0xaf,
+  '°': 0xb0,
+  '±': 0xb1,
+  '²': 0xb2,
+  '³': 0xb3,
+  '´': 0xb4,
+  'µ': 0xb5,
+  '¶': 0xb6,
+  '·': 0xb7,
+  '¸': 0xb8,
+  '¹': 0xb9,
+  'º': 0xba,
+  '»': 0xbb,
+  '¼': 0xbc,
+  '½': 0xbd,
+  '¾': 0xbe,
+  '¿': 0xbf,
+  '×': 0xd7,
+  '÷': 0xf7,
+};
+
+function pdfLiteral(text) {
+  let out = '';
+  const raw = String(text ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[−–—]/g, '-')
+    .replace(/[•·]/g, '.')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"');
+  for (const ch of raw) {
+    const code = ch.codePointAt(0);
+    if (ch === '\\' || ch === '(' || ch === ')') {
+      out += `\\${ch}`;
+      continue;
+    }
+    if (code >= 0x20 && code <= 0x7e) {
+      out += ch;
+      continue;
+    }
+    const mapped = PDF_WINANSI_EXTRA[ch];
+    if (typeof mapped === 'number') {
+      out += `\\${mapped.toString(8).padStart(3, '0')}`;
+      continue;
+    }
+    // Latin-1 range maps 1:1 in WinAnsi for most letters (À-ÿ except gaps).
+    if (code >= 0xa0 && code <= 0xff) {
+      out += `\\${code.toString(8).padStart(3, '0')}`;
+      continue;
+    }
+    out += '?';
+  }
+  return out;
+}
+
+function pdfMoney(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  const amount = (Number(cents) || 0) / 100;
+  const num = new Intl.NumberFormat(cur === 'USD' ? 'en-US' : 'de-DE', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount);
+  // Keep the real currency glyph — WinAnsi encodes € as \200.
+  return cur === 'USD' ? `$${num}` : `€${num}`;
+}
+
+function pdfColor(rgb = [0.12, 0.16, 0.22]) {
+  const [r, g, b] = rgb;
+  return `${Number(r).toFixed(3)} ${Number(g).toFixed(3)} ${Number(b).toFixed(3)}`;
+}
+
+function pdfTextWidth(text, size = 10) {
+  // Helvetica average glyph width ≈ 0.5em — enough for right-align on statements.
+  return String(text || '').length * size * 0.5;
+}
+
+function pdfRightX(text, size, rightEdge) {
+  return rightEdge - pdfTextWidth(text, size);
+}
+
+/** Download a Blob on Safari, Chrome, Firefox, and mobile (iOS-safe). */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const ua = String(navigator.userAgent || '');
+  const isIos =
+    /iPad|iPhone|iPod/i.test(ua)
+    || (navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+  try {
+    if (isIos) {
+      // iOS often ignores <a download> for blobs — open the file instead.
+      const opened = window.open(url, '_blank');
+      if (!opened) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+  } catch {
+    window.location.href = url;
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function enforceDeskBuildStamp() {
+  try {
+    const meta = document.querySelector('meta[name="desk-build"]');
+    const htmlBuild = meta?.getAttribute('content') || document.body?.dataset?.deskBuild || '';
+    if (htmlBuild && htmlBuild !== DESK_BUILD) {
+      const key = `gcards-desk-stale-${DESK_BUILD}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        const u = new URL(location.href);
+        u.searchParams.set('v', DESK_BUILD);
+        location.replace(u.toString());
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function pdfCircleOps(cx, cy, r, fillRgb, { multiply = false } = {}) {
+  const k = 0.5522847498 * r;
+  const ops = [];
+  if (multiply) ops.push('/GS1 gs');
+  ops.push(`${pdfColor(fillRgb)} rg`);
+  ops.push(`${(cx - r).toFixed(2)} ${cy.toFixed(2)} m`);
+  ops.push(
+    `${(cx - r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx - k).toFixed(2)} ${(cy + r).toFixed(2)} ${cx.toFixed(2)} ${(cy + r).toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx + k).toFixed(2)} ${(cy + r).toFixed(2)} ${(cx + r).toFixed(2)} ${(cy + k).toFixed(2)} ${(cx + r).toFixed(2)} ${cy.toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx + r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx + k).toFixed(2)} ${(cy - r).toFixed(2)} ${cx.toFixed(2)} ${(cy - r).toFixed(2)} c`,
+  );
+  ops.push(
+    `${(cx - k).toFixed(2)} ${(cy - r).toFixed(2)} ${(cx - r).toFixed(2)} ${(cy - k).toFixed(2)} ${(cx - r).toFixed(2)} ${cy.toFixed(2)} c`,
+  );
+  ops.push('h f');
+  if (multiply) ops.push('/GS0 gs');
+  return ops;
+}
+
+/** Official-style network marks for Visa / Mastercard / Amex on PDF pages. */
+function pdfNetworkLogoItems(brand, x, y, { compact = false, onDark = false } = {}) {
+  const b = normalizeBrand(brand);
+  const items = [];
+  if (b === 'visa') {
+    // Visa blue wordmark + gold wing bar (statement-style)
+    const visaBlue = onDark ? [1, 1, 1] : [0.102, 0.122, 0.443]; // #1A1F71
+    const visaGold = [0.953, 0.647, 0.227]; // #F3A53A
+    items.push({
+      text: 'VISA',
+      x,
+      y: y + (compact ? 2 : 4),
+      size: compact ? 14 : 18,
+      italic: true,
+      bold: true,
+      color: visaBlue,
+    });
+    items.push({
+      rect: true,
+      x,
+      y: y - (compact ? 4 : 6),
+      w: compact ? 42 : 54,
+      h: compact ? 2.2 : 2.8,
+      fill: visaGold,
+    });
+    return items;
+  }
+  if (b === 'amex') {
+    const amexBlue = [0.004, 0.435, 0.816]; // #016FD0
+    const w = compact ? 52 : 72;
+    const h = compact ? 18 : 24;
+    items.push({ rect: true, x, y: y - 2, w, h, fill: onDark ? [1, 1, 1] : amexBlue });
+    items.push({
+      text: compact ? 'AMEX' : 'AMERICAN EXPRESS',
+      x: x + (compact ? 10 : 6),
+      y: y + (compact ? 4 : 6),
+      size: compact ? 9 : 8,
+      bold: true,
+      color: onDark ? amexBlue : [1, 1, 1],
+    });
+    return items;
+  }
+  // Mastercard interlocking circles (official mark colours)
+  const r = compact ? 9 : 11;
+  const cy = y + r - 2;
+  items.push({ circle: true, cx: x + r, cy, r, fill: [0.922, 0.0, 0.106], multiply: false }); // #EB001B
+  items.push({ circle: true, cx: x + r * 1.85, cy, r, fill: [0.969, 0.62, 0.106], multiply: true }); // #F79E1B
+  if (!compact) {
+    items.push({
+      text: 'mastercard',
+      x: x + 1,
+      y: y - 12,
+      size: 7,
+      bold: true,
+      color: onDark ? [1, 1, 1] : [0.15, 0.15, 0.15],
+    });
+  }
+  return items;
+}
+
+/**
+ * Multi-page PDF writer for G Cards statements.
+ * Page items: {text,x,y,size,bold,italic,color} | {rect} | {circle} | {rule}
+ */
+function buildPdfDocument(pages) {
+  const encoder = new TextEncoder();
+  const objects = [];
+  const add = (body) => {
+    objects.push(body);
+    return objects.length;
+  };
+  const fontRegular = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+  );
+  const fontBold = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+  );
+  const fontItalic = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Oblique /Encoding /WinAnsiEncoding >>',
+  );
+  const fontBoldItalic = add(
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-BoldOblique /Encoding /WinAnsiEncoding >>',
+  );
+  const gsNormal = add('<< /Type /ExtGState /BM /Normal /ca 1 >>');
+  const gsMultiply = add('<< /Type /ExtGState /BM /Multiply /ca 1 >>');
+  const contentIds = [];
+  const pageIds = [];
+
+  for (const page of pages) {
+    const ops = [];
+    for (const item of page) {
+      if (item.rect) {
+        ops.push(`${pdfColor(item.fill || [0.95, 0.95, 0.96])} rg`);
+        ops.push(`${item.x} ${item.y} ${item.w} ${item.h} re f`);
+        continue;
+      }
+      if (item.circle) {
+        ops.push(
+          ...pdfCircleOps(item.cx, item.cy, item.r, item.fill || [0.2, 0.2, 0.2], {
+            multiply: Boolean(item.multiply),
+          }),
+        );
+        continue;
+      }
+      if (item.rule) {
+        ops.push(`${pdfColor(item.color || [0.75, 0.78, 0.82])} RG`);
+        ops.push(`${Number(item.width || 0.6).toFixed(2)} w`);
+        ops.push(`${item.x1} ${item.y1} m ${item.x2} ${item.y2} l S`);
+      }
+    }
+    ops.push('BT');
+    for (const item of page) {
+      if (item.rect || item.rule || item.circle || item.text == null) continue;
+      const size = item.size || 10;
+      const x = item.x ?? 48;
+      const y = item.y ?? 750;
+      let font = 'FR';
+      if (item.bold && item.italic) font = 'FBI';
+      else if (item.bold) font = 'FB';
+      else if (item.italic) font = 'FI';
+      ops.push(`${pdfColor(item.color || [0.12, 0.16, 0.22])} rg`);
+      ops.push(`/${font} ${size} Tf`);
+      ops.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
+      ops.push(`(${pdfLiteral(item.text)}) Tj`);
+    }
+    ops.push('ET');
+    const full = ops.join('\n');
+    const bytes = encoder.encode(full);
+    contentIds.push(add(`<< /Length ${bytes.length} >>\nstream\n${full}\nendstream`));
+  }
+
+  const pagesObjIndex = objects.length;
+  add('<< /Type /Pages /Kids [] /Count 0 >>');
+  const resources =
+    `/Font << /FR ${fontRegular} 0 R /FB ${fontBold} 0 R /FI ${fontItalic} 0 R /FBI ${fontBoldItalic} 0 R >> `
+    + `/ExtGState << /GS0 ${gsNormal} 0 R /GS1 ${gsMultiply} 0 R >>`;
+  for (let i = 0; i < pages.length; i += 1) {
+    pageIds[i] = add(
+      `<< /Type /Page /Parent ${pagesObjIndex + 1} 0 R /MediaBox [0 0 595 842] /Contents ${contentIds[i]} 0 R /Resources << ${resources} >> >>`,
+    );
+  }
+  objects[pagesObjIndex] =
+    `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+  const catalogId = add(`<< /Type /Catalog /Pages ${pagesObjIndex + 1} 0 R >>`);
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let i = 0; i < objects.length; i += 1) {
+    offsets.push(encoder.encode(pdf).length);
+    pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+  const xrefPos = encoder.encode(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += '0000000000 65535 f \n';
+  for (let i = 1; i <= objects.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+function statementPeriodBounds(fromStr, toStr) {
+  const from = Date.parse(`${fromStr}T00:00:00+01:00`);
+  const to = Date.parse(`${toStr}T23:59:59+01:00`);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) {
+    throw new Error('Choose a valid statement period (from ≤ to).');
+  }
+  return { from, to };
+}
+
+function spendsForCardInPeriod(card, fromMs, toMs) {
+  const last4 = String(card.pan || '').replace(/\D/g, '').slice(-4);
+  return state.deskSpends
+    .filter((s) => {
+      const match = (s.cardId && s.cardId === card.id) || (last4 && s.cardLast4 === last4);
+      if (!match) return false;
+      const ts = spendTimestamp(s);
+      return ts >= fromMs && ts <= toMs;
+    })
+    .sort((a, b) => spendTimestamp(a) - spendTimestamp(b));
+}
+
+function formatStatementDate(ms) {
+  return new Date(ms).toLocaleString('en-GB', {
+    timeZone: 'Europe/Belgrade',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function formatStatementDay(isoDate) {
+  const ms = Date.parse(`${isoDate}T12:00:00+01:00`);
+  if (!Number.isFinite(ms)) return isoDate;
+  return new Date(ms).toLocaleDateString('en-US', {
+    timeZone: 'Europe/Belgrade',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** SolCard-style day label, e.g. "Sep 24, 2026". */
+function formatSolcardDay(ms) {
+  const t = Number(ms);
+  if (!Number.isFinite(t)) return '—';
+  return new Date(t).toLocaleDateString('en-US', {
+    timeZone: 'Europe/Belgrade',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** Amount as "12.34 EUR" / "12.34 USD" (SolCard statement style). */
+function pdfMoneyCode(cents, currency = 'EUR') {
+  const cur = String(currency || 'EUR').toUpperCase() === 'USD' ? 'USD' : 'EUR';
+  const amount = (Number(cents) || 0) / 100;
+  const num = new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(amount));
+  return `${num} ${cur}`;
+}
+
+function pdfSignedMoneyCode(cents, currency = 'EUR') {
+  const n = Number(cents) || 0;
+  const body = pdfMoneyCode(Math.abs(n), currency);
+  if (n > 0) return `+${body}`;
+  if (n < 0) return `-${body}`;
+  return body;
+}
+
+function makeStatementId() {
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, '0');
+  return `${hex()}${hex()}-${hex()}-${hex()}-${hex()}-${hex()}${hex()}${hex()}`;
+}
+
+function ensureStatementDraft(cardId = '') {
+  if (!state.statementDraft) state.statementDraft = { cardId: '', from: '', to: '' };
+  if (cardId) state.statementDraft.cardId = cardId;
+  if (!state.statementDraft.cardId && state.deskCards[0]) {
+    state.statementDraft.cardId = state.deskSelectedCardId || state.deskCards[0].id;
+  }
+  if (!state.statementDraft.from || !state.statementDraft.to) {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(to.getDate() - 30);
+    state.statementDraft.from = from.toISOString().slice(0, 10);
+    state.statementDraft.to = to.toISOString().slice(0, 10);
+  }
+  return state.statementDraft;
+}
+
+function deskStatementFormHtml({ cardId = '', embedCardSelect = false, formId = 'desk-statement-form' } = {}) {
+  const draft = ensureStatementDraft(cardId);
+  const selectedId = draft.cardId || cardId || '';
+  const cardField = embedCardSelect
+    ? `<label>Card
+        <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
+          ${deskCardSelectOptions(selectedId, { emptyLabel: 'Choose card' })}
+        </select>
+      </label>`
+    : `<input type="hidden" name="cardId" value="${esc(selectedId)}" />`;
+  return `
+        <section class="desk-statement-panel" id="desk-statement">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">G Cards</p>
+              <h2>Download statement</h2>
+              <p class="muted desk-panel-help">Clean card statement PDF — summary, cardholder, and itemised transactions.</p>
+            </div>
+          </div>
+          <form id="${esc(formId)}" class="desk-statement-form ${embedCardSelect ? 'desk-statement-form-wide' : ''}">
+            ${cardField}
+            <label>From
+              <input name="from" type="date" value="${esc(draft.from)}" required />
+            </label>
+            <label>To
+              <input name="to" type="date" value="${esc(draft.to)}" required />
+            </label>
+            <button class="primary" type="submit">Download PDF</button>
+          </form>
+        </section>`;
+}
+
+function downloadGCorpStatementPdf(card, fromStr, toStr) {
+  const { from, to } = statementPeriodBounds(fromStr, toStr);
+  const spends = spendsForCardInPeriod(card, from, to);
+  const cur = cardCurrency(card);
+  const last4 = String(card.pan).replace(/\D/g, '').slice(-4);
+  const brand = brandLabel(card.brand);
+  const holder = String(card.holder || 'Cardholder').toUpperCase();
+  const statusKey = cardStatusKey(card);
+  const statusLabel =
+    statusKey === 'deactivated' ? 'Off' : statusKey === 'frozen' ? 'Frozen' : 'Normal';
+  const stmtId = makeStatementId();
+  const generated = formatSolcardDay(Date.now());
+  const periodLabel = `${formatStatementDay(fromStr)} – ${formatStatementDay(toStr)}`;
+
+  const payments = spends.filter((s) => !isSpendRefund(s));
+  const refunds = spends.filter((s) => isSpendRefund(s));
+  const spendTotal = payments.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+  const refundTotal = refunds.reduce((sum, s) => sum + Number(s.amountCents || 0), 0);
+
+  const last4Match = (t) =>
+    (t.cardId && t.cardId === card.id)
+    || (last4 && String(t.cardLast4 || '').replace(/\D/g, '').slice(-4) === last4);
+
+  const transfersInPeriod = (state.deskTransfers || []).filter((t) => {
+    if (!last4Match(t)) return false;
+    const ts = Date.parse(t.whenIso || t.createdAt || t.when || '') || 0;
+    if (!ts) return true;
+    return ts >= from && ts <= to;
+  });
+  const depositTotal = transfersInPeriod.reduce((sum, t) => sum + Number(t.amountCents || 0), 0);
+  const closing = Number(card.balanceCents || 0);
+  const opening = closing - depositTotal - refundTotal + spendTotal;
+
+  const ink = [0.07, 0.08, 0.1];
+  const muted = [0.45, 0.47, 0.5];
+  const soft = [0.96, 0.96, 0.97];
+  const line = [0.88, 0.89, 0.91];
+  const left = 48;
+  const right = 547;
+
+  const lineItems = [];
+  for (const t of transfersInPeriod) {
+    const ts = Date.parse(t.whenIso || t.createdAt || t.when || '') || Date.now();
+    const token = String(t.tokenId || '').includes('BSC') ? 'USDT on BSC' : 'Desk funding';
+    lineItems.push({
+      ts,
+      date: formatSolcardDay(ts),
+      title: 'Top-up',
+      detail: token,
+      status: 'Completed',
+      amount: pdfSignedMoneyCode(Number(t.amountCents || 0), cur),
+      credit: true,
+    });
+  }
+  for (const s of spends) {
+    const refund = isSpendRefund(s);
+    const ts = spendTimestamp(s);
+    const merchant = String(s.merchant || 'Purchase').slice(0, 42);
+    const billed = `Billed as ${merchant.toUpperCase()}`;
+    lineItems.push({
+      ts,
+      date: formatSolcardDay(ts),
+      title: merchant,
+      detail: `${refund ? 'Refund' : 'Purchase'}  ${billed}`,
+      status: refund ? 'Refunded' : String(s.status || 'Completed'),
+      amount: pdfSignedMoneyCode(refund ? Number(s.amountCents || 0) : -Number(s.amountCents || 0), cur),
+      credit: refund,
+    });
+  }
+  lineItems.sort((a, b) => a.ts - b.ts);
+  if (!lineItems.length) {
+    lineItems.push({
+      ts: 0,
+      date: '—',
+      title: 'No transactions',
+      detail: 'No posted activity in this statement period',
+      status: '—',
+      amount: pdfMoneyCode(0, cur),
+      credit: false,
+    });
+  }
+
+  const firstPageRows = 6;
+  const nextPageRows = 14;
+  const pageCount =
+    lineItems.length <= firstPageRows
+      ? 1
+      : 1 + Math.ceil((lineItems.length - firstPageRows) / nextPageRows);
+
+  const drawBrandMark = (page, x, y) => {
+    // Small diamond mark + gcards wordmark (SolCard-style header)
+    page.push({ rect: true, x, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ rect: true, x: x + 5, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ rect: true, x: x + 10, y: y - 2, w: 3.2, h: 10, fill: ink });
+    page.push({ text: 'gcards', x: x + 18, y, size: 14, bold: true, color: ink });
+  };
+
+  const drawFooter = (page, pageNo) => {
+    page.push({
+      text: `G Cards · Statement ${stmtId} · Page ${pageNo} of ${pageCount}`,
+      x: left,
+      y: 28,
+      size: 7.5,
+      color: muted,
+    });
+  };
+
+  const drawTableHeader = (page, y) => {
+    page.push({ text: 'DATE', x: left, y, size: 7.5, bold: true, color: muted });
+    page.push({ text: 'DESCRIPTION', x: 130, y, size: 7.5, bold: true, color: muted });
+    page.push({ text: 'STATUS', x: 390, y, size: 7.5, bold: true, color: muted });
+    page.push({
+      text: 'AMOUNT',
+      x: pdfRightX('AMOUNT', 7.5, right),
+      y,
+      size: 7.5,
+      bold: true,
+      color: muted,
+    });
+    page.push({ rule: true, x1: left, y1: y - 8, x2: right, y2: y - 8, color: line, width: 0.6 });
+    return y - 28;
+  };
+
+  const drawRows = (page, slice, startY) => {
+    let y = startY;
+    slice.forEach((row) => {
+      page.push({ text: row.date, x: left, y, size: 9, color: ink });
+      page.push({ text: row.title.slice(0, 36), x: 130, y, size: 9.5, bold: true, color: ink });
+      page.push({ text: row.detail.slice(0, 58), x: 130, y: y - 12, size: 7.5, color: muted });
+      page.push({ text: row.status, x: 390, y, size: 9, color: ink });
+      page.push({
+        text: row.amount,
+        x: pdfRightX(row.amount, 9.5, right),
+        y,
+        size: 9.5,
+        color: ink,
+      });
+      page.push({ rule: true, x1: left, y1: y - 22, x2: right, y2: y - 22, color: line, width: 0.45 });
+      y -= 36;
+    });
+    return y;
+  };
+
+  const pages = [];
+  let cursor = 0;
+  for (let p = 0; p < pageCount; p += 1) {
+    const page = [];
+    drawFooter(page, p + 1);
+
+    if (p === 0) {
+      drawBrandMark(page, left, 800);
+      page.push({
+        text: `Generated ${generated}`,
+        x: pdfRightX(`Generated ${generated}`, 8, right),
+        y: 808,
+        size: 8,
+        color: muted,
+      });
+      page.push({
+        text: `Statement ${stmtId}`,
+        x: pdfRightX(`Statement ${stmtId}`, 8, right),
+        y: 794,
+        size: 8,
+        color: muted,
+      });
+
+      page.push({ text: 'Card Statement', x: left, y: 760, size: 22, bold: true, color: ink });
+      page.push({ text: periodLabel, x: left, y: 738, size: 11, color: ink });
+      page.push({ rule: true, x1: left, y1: 724, x2: right, y2: 724, color: line, width: 0.7 });
+
+      // Soft info panel — cardholder / card / status (no email, no VAT)
+      page.push({ rect: true, x: left, y: 638, w: right - left, h: 72, fill: soft });
+      page.push({ text: 'Cardholder', x: left + 14, y: 692, size: 8, color: muted });
+      page.push({ text: holder.slice(0, 32), x: left + 14, y: 676, size: 11, bold: true, color: ink });
+      page.push({ text: 'Card', x: left + 14, y: 656, size: 8, color: muted });
+      page.push({
+        text: `${brand} .... ${last4}`,
+        x: left + 14,
+        y: 640,
+        size: 10,
+        color: ink,
+      });
+      page.push({ text: 'Status', x: 360, y: 692, size: 8, color: muted });
+      page.push({ text: statusLabel, x: 360, y: 676, size: 11, color: ink });
+      page.push({ text: 'Issuer', x: 360, y: 656, size: 8, color: muted });
+      page.push({ text: G_CORP_STATEMENT.legalName, x: 360, y: 640, size: 10, color: ink });
+
+      // Summary (SolCard-style stacked rows)
+      page.push({ text: 'Summary', x: left, y: 612, size: 13, bold: true, color: ink });
+      const summaryRows = [
+        ['Opening balance', pdfMoneyCode(opening, cur), false],
+        ['Deposits', pdfMoneyCode(depositTotal, cur), false],
+        ['Refunds', pdfMoneyCode(refundTotal, cur), false],
+        ['Spend', pdfMoneyCode(spendTotal, cur), false],
+        ['Closing balance', pdfMoneyCode(closing, cur), true],
+      ];
+      let sy = 588;
+      summaryRows.forEach((row) => {
+        if (row[2]) {
+          page.push({ rule: true, x1: left, y1: sy + 14, x2: right, y2: sy + 14, color: line, width: 0.8 });
+        }
+        page.push({ text: row[0], x: left, y: sy, size: 10, bold: row[2], color: ink });
+        page.push({
+          text: row[1],
+          x: pdfRightX(row[1], 10, right),
+          y: sy,
+          size: 10,
+          bold: row[2],
+          color: ink,
+        });
+        sy -= 22;
+      });
+
+      page.push({ text: 'Transactions', x: left, y: sy - 4, size: 13, bold: true, color: ink });
+      let y = drawTableHeader(page, sy - 24);
+      const slice = lineItems.slice(0, firstPageRows);
+      cursor = slice.length;
+      y = drawRows(page, slice, y);
+
+      if (pageCount === 1) {
+        page.push({
+          text: 'Transaction statuses reflect their state at the time this statement was generated; balances reflect the statement period.',
+          x: left,
+          y: Math.max(56, y - 8),
+          size: 7.5,
+          color: muted,
+        });
+        page.push({
+          text: 'This statement was generated electronically and is valid without signature.',
+          x: left,
+          y: Math.max(42, y - 22),
+          size: 7.5,
+          color: muted,
+        });
+      }
+    } else {
+      let y = drawTableHeader(page, 800);
+      const slice = lineItems.slice(cursor, cursor + nextPageRows);
+      cursor += slice.length;
+      y = drawRows(page, slice, y);
+      if (p === pageCount - 1) {
+        page.push({
+          text: 'Transaction statuses reflect their state at the time this statement was generated; balances reflect the statement period.',
+          x: left,
+          y: Math.max(56, y - 10),
+          size: 7.5,
+          color: muted,
+        });
+        page.push({
+          text: 'This statement was generated electronically and is valid without signature.',
+          x: left,
+          y: Math.max(42, y - 24),
+          size: 7.5,
+          color: muted,
+        });
+      }
+    }
+
+    pages.push(page);
+  }
+
+  downloadBlob(buildPdfDocument(pages), `gcards-statement-${stmtId}.pdf`);
+}
+
+/** Bank-style single-transaction information PDF (card issuer format). */
+function downloadGCorpTransactionPdf(spend) {
+  if (!spend) throw new Error('Choose a transaction to download.');
+  const card =
+    state.deskCards.find((c) => c.id === spend.cardId)
+    || state.deskCards.find(
+      (c) => String(c.pan).replace(/\D/g, '').slice(-4) === String(spend.cardLast4 || ''),
+    )
+    || deskActiveCard();
+  const cur = card ? cardCurrency(card) : 'EUR';
+  const refund = isSpendRefund(spend);
+  const amountAbs = Math.abs(Number(spend.amountCents || 0));
+  const amountPlain = pdfMoney(amountAbs, cur);
+  const signedAmount = `${refund ? '+' : '-'}${amountPlain}`;
+  const last4 = String(spend.cardLast4 || (card ? String(card.pan).slice(-4) : '') || '----');
+  const brand = card ? brandLabel(card.brand) : String(spend.network || 'Card');
+  const product = card ? kindLabel(card.kind) : 'Private';
+  const auth = String(spend.authNr || '000000').padStart(6, '0').slice(0, 12);
+  const ts = spendTimestamp(spend) || Date.now();
+  const dayKey = belgradeYmd(ts).replace(/-/g, '');
+  const docRef = `DOC${dayKey}${last4}${auth.slice(-4)}`;
+  const arn = `${dayKey}${String(auth).padStart(6, '0')}${last4}`.slice(0, 23);
+  const issuedAt = formatStatementDate(Date.now());
+  const txnDate = spend.when || formatStatementDate(ts);
+  const postingDate = formatStatementDate(ts);
+  const merchant = String(spend.merchant || 'Merchant').trim();
+  const gateway = String(spend.gateway || PAYMENT_GATEWAYS[0]);
+  const holder = String(card?.holder || 'G Cards Member');
+  const cardStatus = String(cardStatusKey(card) || 'active');
+  const available = card ? pdfMoney(card.balanceCents || 0, cur) : pdfMoney(0, cur);
+
+  const ink = [0.08, 0.1, 0.14];
+  const muted = [0.4, 0.44, 0.5];
+  const navy = [0.07, 0.14, 0.26];
+  const soft = [0.95, 0.96, 0.97];
+  const line = [0.78, 0.8, 0.84];
+  const white = [1, 1, 1];
+  const accent = [0.72, 0.58, 0.32];
+  const left = 48;
+  const right = 547;
+  const labelX = left + 12;
+  const valueX = 248;
+
+  const page = [];
+
+  // Letterhead — issuer (Finland) + network logo (Visa / Mastercard / Amex)
+  page.push({ rect: true, x: 0, y: 800, w: 595, h: 42, fill: navy });
+  page.push({ text: G_CORP_STATEMENT.legalName.toUpperCase(), x: left, y: 824, size: 12, bold: true, color: white });
+  page.push({
+    text: G_CORP_STATEMENT.entity,
+    x: left,
+    y: 810,
+    size: 7.5,
+    color: [0.82, 0.86, 0.9],
+  });
+  page.push(...pdfNetworkLogoItems(brand, right - 72, 812, { compact: true, onDark: true }));
+  page.push({ rect: true, x: 0, y: 796, w: 595, h: 3, fill: accent });
+
+  page.push({
+    text: G_CORP_STATEMENT.address.join(', '),
+    x: left,
+    y: 782,
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: `Document no. ${docRef}`,
+    x: pdfRightX(`Document no. ${docRef}`, 7, right),
+    y: 782,
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: `Issued ${issuedAt}`,
+    x: pdfRightX(`Issued ${issuedAt}`, 7, right),
+    y: 770,
+    size: 7,
+    color: muted,
+  });
+  page.push({ rule: true, x1: left, y1: 762, x2: right, y2: 762, color: line, width: 0.5 });
+
+  // Title
+  page.push({
+    text: 'CARD TRANSACTION INFORMATION',
+    x: left,
+    y: 744,
+    size: 11,
+    bold: true,
+    color: navy,
+  });
+  page.push({
+    text: refund ? 'Card credit (posted)' : 'Card purchase (posted)',
+    x: left,
+    y: 728,
+    size: 9,
+    color: muted,
+  });
+
+  // Account panel + second network mark
+  page.push({ rect: true, x: left, y: 660, w: 248, h: 54, fill: soft });
+  page.push({ rule: true, x1: left, y1: 714, x2: left + 248, y2: 714, color: accent, width: 1.1 });
+  page.push({ text: 'CARD ACCOUNT', x: left + 10, y: 702, size: 6.5, bold: true, color: muted });
+  page.push({ text: holder.slice(0, 28), x: left + 10, y: 686, size: 10, bold: true, color: ink });
+  page.push({ text: `${brand} ${product}  ****${last4}`, x: left + 10, y: 670, size: 8.5, color: ink });
+
+  page.push({ rect: true, x: 310, y: 660, w: right - 310, h: 54, fill: soft });
+  page.push({ rule: true, x1: 310, y1: 714, x2: right, y2: 714, color: accent, width: 1.1 });
+  page.push({ text: 'BILLING CURRENCY', x: 320, y: 702, size: 6.5, bold: true, color: muted });
+  page.push({ text: cur, x: 320, y: 686, size: 10, bold: true, color: ink });
+  page.push({ text: `Available balance  ${available}`, x: 320, y: 670, size: 8, color: ink });
+  page.push(...pdfNetworkLogoItems(brand, 430, 688, { compact: true }));
+
+  // Amount band
+  page.push({ rect: true, x: left, y: 592, w: right - left, h: 56, fill: navy });
+  page.push({ text: 'TRANSACTION AMOUNT', x: left + 14, y: 632, size: 7, bold: true, color: [0.7, 0.75, 0.82] });
+  page.push({ text: signedAmount, x: left + 14, y: 608, size: 20, bold: true, color: white });
+  page.push({
+    text: refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted',
+    x: pdfRightX(refund ? 'Credit  ·  Posted' : 'Debit  ·  Posted', 9, right - 14),
+    y: 610,
+    size: 9,
+    bold: true,
+    color: [0.85, 0.88, 0.92],
+  });
+
+  // Section: Transaction details
+  page.push({ text: 'TRANSACTION DETAILS', x: left, y: 572, size: 8.5, bold: true, color: navy });
+  page.push({ rule: true, x1: left, y1: 564, x2: right, y2: 564, color: navy, width: 0.9 });
+
+  const detailRows = [
+    ['Merchant / description', merchant.slice(0, 48)],
+    ['Transaction type', refund ? 'Credit (refund / reversal)' : 'Purchase (card present / e-commerce)'],
+    ['Transaction date', txnDate],
+    ['Posting date', postingDate],
+    ['Billing amount', amountPlain],
+    ['Transaction currency', cur],
+    ['Authorisation code', auth],
+    ['Order number', String(spend.orderNr || '—').slice(0, 28)],
+    ['Payment ID', String(spend.paymentId || '—').slice(0, 36)],
+    ['Acquirer / gateway', gateway],
+    ['Authentication (3-D Secure)', threeDsLabel(spend.threeDs)],
+    ['Processing status', String(spend.status || (refund ? 'Refunded' : 'Completed'))],
+    ['Card number', `${brand} ending ${last4}`],
+    ['Card product', `${product} · ${cur}`],
+    ['Cardholder', holder.slice(0, 40)],
+    ['Account reference', `····${last4} · ${cardStatus}`],
+    ['Acquirer reference (ARN)', arn],
+    ['Internal reference', String(spend.id || docRef).slice(0, 42)],
+  ];
+
+  let y = 548;
+  detailRows.forEach((row, idx) => {
+    if (idx % 2 === 0) {
+      page.push({ rect: true, x: left, y: y - 5, w: right - left, h: 18, fill: soft });
+    }
+    page.push({ text: row[0], x: labelX, y, size: 7.5, color: muted });
+    page.push({
+      text: String(row[1]),
+      x: valueX,
+      y,
+      size: 9,
+      bold: row[0] === 'Billing amount' || row[0] === 'Merchant / description',
+      color: ink,
+    });
+    y -= 18;
+  });
+
+  // Notes box
+  y -= 8;
+  page.push({ rect: true, x: left, y: Math.max(88, y - 52), w: right - left, h: 56, fill: soft });
+  page.push({
+    text: 'IMPORTANT INFORMATION',
+    x: left + 12,
+    y: Math.max(128, y - 8),
+    size: 7,
+    bold: true,
+    color: navy,
+  });
+  page.push({
+    text: 'Please retain this document for your records. Amounts are shown in the billing currency of the card.',
+    x: left + 12,
+    y: Math.max(114, y - 22),
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: 'If you do not recognise this transaction, notify G Cards without delay.',
+    x: left + 12,
+    y: Math.max(100, y - 36),
+    size: 7,
+    color: muted,
+  });
+  page.push({
+    text: 'This is an issuer record of a posted card transaction. It is not a merchant cash receipt.',
+    x: left + 12,
+    y: Math.max(86, y - 50),
+    size: 7,
+    color: muted,
+  });
+
+  // Footer — issuer name and address only (no VAT / business ID)
+  page.push({ rule: true, x1: left, y1: 64, x2: right, y2: 64, color: line, width: 0.5 });
+  page.push({
+    text: `${G_CORP_STATEMENT.legalName}  ·  ${G_CORP_STATEMENT.entity}`,
+    x: left,
+    y: 50,
+    size: 6.5,
+    color: muted,
+  });
+  page.push({
+    text: G_CORP_STATEMENT.address.join(', '),
+    x: left,
+    y: 38,
+    size: 6.5,
+    color: muted,
+  });
+  page.push({
+    text: 'Confidential — for the named cardholder only. Unauthorised copying or distribution is prohibited.',
+    x: left,
+    y: 26,
+    size: 6.5,
+    color: muted,
+  });
+  page.push({
+    text: 'Page 1 of 1',
+    x: pdfRightX('Page 1 of 1', 6.5, right),
+    y: 26,
+    size: 6.5,
+    color: muted,
+  });
+
+  downloadBlob(
+    buildPdfDocument([page]),
+    `G-Cards-Transaction-Information-${last4}-${auth}.pdf`,
+  );
+}
+
+function usdToEurRate() {
+  const rate = Number(state.usdToEur);
+  return Number.isFinite(rate) && rate > 0 ? rate : 0.92;
+}
+
+function tokenPriceEur(tokenOrUsd) {
+  const usd = typeof tokenOrUsd === 'number' ? tokenOrUsd : Number(tokenOrUsd?.usd ?? 1);
+  return (Number.isFinite(usd) && usd > 0 ? usd : 1) * usdToEurRate();
+}
+
+/** Convert a desk EUR amount into approximate USDT for on-chain TX matching. */
+function eurToUsdtAmount(amountEur, tokenId) {
+  const eur = Number(amountEur);
+  if (!Number.isFinite(eur) || eur <= 0) return 0;
+  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
+  const eurPerToken = tokenPriceEur(token);
+  return eurPerToken > 0 ? eur / eurPerToken : eur;
+}
+
+async function api(path, options = {}) {
+  const headers = { 'content-type': 'application/json' };
+  if (state.clientId && !options.noClient) headers['x-client-id'] = state.clientId;
+  const response = await fetch(path, {
+    method: options.method || 'GET',
+    credentials: 'same-origin',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || 'Request failed.');
+  return data;
+}
+
+async function refresh() {
+  const [me, tokens, activity] = await Promise.all([
+    api('/api/me'),
+    api('/api/tokens'),
+    api('/api/activity'),
+  ]);
+  state.me = me;
+  state.holdings = me.wallet ? await api('/api/wallet/holdings').catch(() => null) : null;
+  state.tokens = tokens.tokens;
+  state.activity = activity.activity;
+  if (!state.selectedTokenId || !state.tokens.some((token) => token.id === state.selectedTokenId)) {
+    const preferred = state.tokens.find((token) => token.symbol === 'LFUSD' && token.chainId === 1)
+      || state.tokens.find((token) => token.symbol === 'USDC' && token.chainId === 8453);
+    state.selectedTokenId = (preferred || state.tokens[0] || {}).id || '';
+  }
+}
+
+function flashHtml() {
+  if (!state.flash) return '';
+  return `<div class="flash ${state.flash.kind === 'error' ? 'error' : 'ok'}" role="status">${esc(state.flash.text)}</div>`;
+}
+
+function readinessHtml() {
+  const items = state.config?.readiness || [];
+  return `<div class="ready">${items
+    .map(
+      (item) => `<article>
+        <i class="dot ${item.ready ? 'on' : ''}"></i>
+        <div><strong>${esc(item.title)}</strong><div class="muted">${esc(item.detail)}</div></div>
+      </article>`,
+    )
+    .join('')}</div>`;
+}
+
+function linksHtml() {
+  const links = state.config?.links || [];
+  if (!links.length) return '';
+  return `<section class="panel">
+      <h2>Open GG Card on this PC</h2>
+      <p class="lede">Use one of these addresses in the browser on this computer. Another computer on the same network can use the address that starts with 192, 10, or 172.</p>
+      <ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul>
+    </section>`;
+}
+
+const HOST_CHECK_STEPS = [
+  'Connection established',
+  'Contacting issuing host',
+  'Mounting platform 31.2.7',
+];
+
+function formatPan(pan) {
+  const digits = String(pan || '').replace(/\D/g, '');
+  if (digits.length === 15) {
+    // Amex: 4-6-5
+    return `${digits.slice(0, 4)} ${digits.slice(4, 10)} ${digits.slice(10)}`.trim();
+  }
+  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+}
+
+function deskActiveCard() {
+  const id = state.deskDetailCardId || state.deskSelectedCardId || state.deskTopupCardId;
+  return state.deskCards.find((c) => c.id === id) || state.deskCards[0] || null;
+}
+
+function berlinWallClock(ms = Date.now()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: DESK_FREEZE_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(ms))
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value]),
+  );
+  const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  const second = Number(parts.second);
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour,
+    minute,
+    second,
+    minuteOfDay: hour * 60 + minute,
+  };
+}
+
+/** UTC ms for a Europe/Berlin civil date-time. */
+function berlinLocalToUtcMs(year, month, day, hour, minute, second = 0) {
+  let guess = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let i = 0; i < 8; i += 1) {
+    const wall = berlinWallClock(guess);
+    const wantDay = Date.UTC(year, month - 1, day);
+    const gotDay = Date.UTC(wall.year, wall.month - 1, wall.day);
+    const wantSec = hour * 3600 + minute * 60 + second;
+    const gotSec = wall.hour * 3600 + wall.minute * 60 + wall.second;
+    const deltaMs = (wantDay - gotDay) + (wantSec - gotSec) * 1000;
+    if (deltaMs === 0) break;
+    guess += deltaMs;
+  }
+  return guess;
+}
+
+function addBerlinCalendarDays(year, month, day, deltaDays) {
+  const base = new Date(Date.UTC(year, month - 1, day + deltaDays));
+  return {
+    year: base.getUTCFullYear(),
+    month: base.getUTCMonth() + 1,
+    day: base.getUTCDate(),
+  };
+}
+
+/** Absolute offlinerich freeze end (20.11.2026 15:10 Europe/Berlin) as UTC ms. */
+function offlinerichFreezeUntilMs() {
+  const t = OFFLINERICH_FREEZE_UNTIL;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichFreezeUntilLabel() {
+  const t = OFFLINERICH_FREEZE_UNTIL;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** True while offlinerich cards/History stay frozen (until 20.11.2026 15:10 Berlin). */
+function offlinerichFreezeActive(nowMs = Date.now()) {
+  return nowMs < offlinerichFreezeUntilMs();
+}
+
+/** @deprecated name kept for older call sites — same as offlinerichFreezeActive. */
+function berlinOvernightFreezeActive(nowMs = Date.now()) {
+  return offlinerichFreezeActive(nowMs);
+}
+
+function berlinOvernightFreezeEndMs(nowMs = Date.now()) {
+  const end = offlinerichFreezeUntilMs();
+  return nowMs < end ? end : 0;
+}
+
+function securityFreezeUntilMs() {
+  try {
+    const until = Number(localStorage.getItem(DESK_SECURITY_FREEZE_KEY) || 0);
+    return Number.isFinite(until) ? until : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function clearSecurityFreezeWindow() {
+  try {
+    localStorage.removeItem(DESK_SECURITY_FREEZE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function richguyFreezeUntilMs() {
+  const t = RICHGUY_FREEZE_UNTIL;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function richguyFreezeUntilLabel() {
+  const t = RICHGUY_FREEZE_UNTIL;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** richguy freeze cleared — professional issuing desk is open. */
+function richguyFreezeActive(_nowMs = Date.now()) {
+  return false;
+}
+
+function securityFreezeRemainingMs() {
+  try {
+    // offlinerich countdown is the fixed Berlin deadline (works on every browser).
+    if (isOfflinerichDesk()) {
+      const end = offlinerichFreezeUntilMs();
+      return end > Date.now() ? end - Date.now() : 0;
+    }
+    // richguy preview: same style countdown until demo unfreeze.
+    if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      const end = richguyFreezeUntilMs();
+      return end > Date.now() ? end - Date.now() : 0;
+    }
+    const until = securityFreezeUntilMs();
+    if (!until || until <= Date.now()) {
+      localStorage.removeItem(DESK_SECURITY_FREEZE_KEY);
+      return 0;
+    }
+    return until - Date.now();
+  } catch {
+    return 0;
+  }
+}
+
+function securityFreezeActive() {
+  if (isOfflinerichDesk()) {
+    return offlinerichFreezeActive();
+  }
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyFreezeActive();
+  }
+  return securityFreezeRemainingMs() > 0;
+}
+
+function isOfflinerichDesk() {
+  return state.deskUser === DESK_ADMIN_USERNAME;
+}
+
+function isRichguyDesk() {
+  return state.deskUser === DESK_OPERATOR_USERNAME;
+}
+
+/** offlinerich lockdown until 20.11.2026 15:10 Berlin — cards frozen, History hidden, not usable.
+ *  richguy preview freeze uses the same lockdown UI until RICHGUY_FREEZE_UNTIL.
+ */
+function offlinerichLockdownActive() {
+  return (isOfflinerichDesk() && offlinerichFreezeActive())
+    || (isRichguyDesk() && richguyFreezeActive());
+}
+
+function activeFreezeUntilLabel() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) return richguyFreezeUntilLabel();
+  return offlinerichFreezeUntilLabel();
+}
+
+function securityFreezeLabel() {
+  if (isOfflinerichDesk() || (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY)) {
+    const left = securityFreezeRemainingMs();
+    const until = activeFreezeUntilLabel();
+    return left > 0
+      ? `until ${until} · ${formatHoldRemaining(left)} left`
+      : `cleared after ${until}`;
+  }
+  return `24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`;
+}
+
+/**
+ * Arm security freeze.
+ * offlinerich → fixed Berlin deadline 20.11.2026 15:10.
+ * richguy → rolling 24h from now (keep existing if later).
+ */
+function armSecurityFreezeWindow(mode = 'auto') {
+  try {
+    const existing = securityFreezeUntilMs();
+    let until = 0;
+    const resolved =
+      mode === 'berlin' || (mode === 'auto' && isOfflinerichDesk())
+        ? 'berlin'
+        : mode === 'day' || (mode === 'auto' && isRichguyDesk())
+          ? 'day'
+          : offlinerichFreezeActive()
+            ? 'berlin'
+            : 'day';
+    if (resolved === 'berlin') {
+      if (!offlinerichFreezeActive()) {
+        clearSecurityFreezeWindow();
+        return;
+      }
+      until = offlinerichFreezeUntilMs();
+      localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(until));
+      return;
+    }
+    until = Date.now() + DESK_SECURITY_FREEZE_MS;
+    if (!Number.isFinite(existing) || existing <= Date.now() || until > existing) {
+      localStorage.setItem(DESK_SECURITY_FREEZE_KEY, String(until));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Freeze every card for the active security window. */
+function freezeAllCardsForSecurity({ arm = true, mode = 'auto' } = {}) {
+  if (arm) armSecurityFreezeWindow(mode);
+  let changed = false;
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    if (!card.frozen || card.status !== 'frozen' || card.ready || !card.securityFreeze) {
+      card.frozen = true;
+      card.status = 'frozen';
+      card.ready = false;
+      card.securityFreeze = true;
+      card.activatesAt = 0;
+      changed = true;
+    }
+  }
+  if (changed) saveDeskLedger();
+  return changed;
+}
+
+/** Clear security freeze flags so offlinerich is fully usable after 04:00 Berlin. */
+function releaseSecurityFreezeOnCards() {
+  let changed = false;
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    if (!card.securityFreeze && card.status !== 'frozen' && !card.frozen) continue;
+    if (card.securityFreeze || (card.frozen && card.status === 'frozen')) {
+      card.securityFreeze = false;
+      card.frozen = false;
+      card.status = 'active';
+      card.ready = true;
+      card.activatesAt = 0;
+      changed = true;
+    }
+  }
+  if (changed) saveDeskLedger();
+  return changed;
+}
+
+function syncCardStatuses() {
+  let changed = false;
+  const securityOn = securityFreezeActive();
+  for (const card of state.deskCards) {
+    if (!card) continue;
+    if (card.deactivated || card.status === 'deactivated') {
+      if (card.status !== 'deactivated' || card.ready) {
+        card.deactivated = true;
+        card.status = 'deactivated';
+        card.ready = false;
+        changed = true;
+      }
+      continue;
+    }
+    // Security 24h freeze — keep every operable card frozen while the window is open.
+    if (securityOn) {
+      if (!card.frozen || card.status !== 'frozen' || card.ready || !card.securityFreeze) {
+        card.frozen = true;
+        card.status = 'frozen';
+        card.ready = false;
+        card.securityFreeze = true;
+        card.activatesAt = 0;
+        changed = true;
+      }
+      continue;
+    }
+    if (card.securityFreeze) {
+      card.securityFreeze = false;
+      card.frozen = false;
+      card.status = 'active';
+      card.ready = true;
+      card.activatesAt = 0;
+      changed = true;
+      continue;
+    }
+    if (card.frozen || card.status === 'frozen') {
+      if (card.status !== 'frozen' || card.ready) {
+        card.frozen = true;
+        card.status = 'frozen';
+        card.ready = false;
+        changed = true;
+      }
+      continue;
+    }
+    if (card.status !== 'active' || !card.ready || Number(card.activatesAt || 0) !== 0) {
+      card.status = 'active';
+      card.ready = true;
+      card.deactivated = false;
+      card.frozen = false;
+      card.activatesAt = 0;
+      if (card.label && String(card.label).toLowerCase().includes('activating')) {
+        const brand = brandLabel(card.brand);
+        const kind = kindLabel(card.kind);
+        card.label = card.endless ? 'Active · ····1955' : `Active · ${brand} · ${kind}`;
+      }
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function cardStatusKey(card) {
+  if (!card) return 'inactive';
+  if (card.deactivated || card.status === 'deactivated') return 'deactivated';
+  if (card.frozen || card.status === 'frozen') return 'frozen';
+  return 'active';
+}
+
+function cardIsOperable(card) {
+  return cardStatusKey(card) === 'active';
+}
+
+function activationRemainingLabel(card) {
+  const left = Number(card?.activatesAt || 0) - Date.now();
+  if (!Number.isFinite(left) || left <= 0) return '';
+  const mins = Math.max(1, Math.ceil(left / 60000));
+  if (mins >= 60) {
+    const hours = Math.floor(mins / 60);
+    const rem = mins % 60;
+    return rem ? `~${hours}h ${rem}m` : `~${hours}h`;
+  }
+  return `~${mins} min`;
+}
+
+function cardStatusPill(card) {
+  const key = cardStatusKey(card);
+  if (key === 'deactivated') return '<span class="pill bad">Deactivated</span>';
+  if (key === 'frozen') {
+    if (card?.securityFreeze || securityFreezeActive()) {
+      return isOfflinerichDesk()
+        ? `<span class="pill bad">Frozen · until ${esc(activeFreezeUntilLabel())}</span>`
+        : '<span class="pill bad">Frozen · security 24h</span>';
+    }
+    return '<span class="pill bad">Frozen</span>';
+  }
+  if (key === 'activating') {
+    const left = activationRemainingLabel(card);
+    return `<span class="pill warn">Activating${left ? ` · ${esc(left)}` : ''}</span>`;
+  }
+  if (isPrimary1955(card)) return '<span class="pill good">Active · 1955</span>';
+  return '<span class="pill good">Active</span>';
+}
+
+function deskCardMenuLabel(c) {
+  const brand = brandLabel(c.brand);
+  const kind = kindLabel(c.kind);
+  const bal = cardMoney(c);
+  const key = cardStatusKey(c);
+  const holder = String(c.holder || '').trim();
+  const tag = isPrimary1955(c)
+    ? '1955'
+    : key === 'deactivated'
+      ? `${brand} ${kind} off`
+      : key === 'frozen'
+        ? `${brand} ${kind} frozen`
+        : `${brand} ${kind}`;
+  const who = holder ? `${holder} · ` : '';
+  return `${who}${tag} ····${String(c.pan).slice(-4)} · ${bal}`;
+}
+
+function offlinerichUnfreezeProcessUntilMs() {
+  return offlinerichFreezeUntilMs() + UNFREEZE_PROCESS_MS;
+}
+
+function offlinerichNetworkAcceptUntilMs() {
+  return offlinerichUnfreezeProcessUntilMs() + NETWORK_ACCEPT_WAIT_MS;
+}
+
+/** offlinerich: freeze ended, still in first contacting window (→ 16:10). */
+function offlinerichUnfreezeProcessActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk()) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  return nowMs < offlinerichUnfreezeProcessUntilMs();
+}
+
+/** offlinerich: Visa/MC accepted; Amex pending (~3h after 16:10). */
+function offlinerichNetworkAcceptActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichUnfreezeProcessUntilMs()) return false;
+  return nowMs < offlinerichNetworkAcceptUntilMs();
+}
+
+function offlinerichApiReadyFromMs() {
+  const t = OFFLINERICH_API_READY_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichApiIssueUnlockMs() {
+  return offlinerichApiReadyFromMs() + API_ISSUE_WAIT_MS;
+}
+
+/** offlinerich: after Visa/MC wait, before 19:00 API-ready — platform error notice. */
+function offlinerichPlatformErrorActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichNetworkAcceptUntilMs()) return false;
+  return nowMs < offlinerichApiReadyFromMs();
+}
+
+/** offlinerich: from 19:00 — API integrated; wait 48h before issuing. */
+function offlinerichApiWaitActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichApiReadyFromMs()) return false;
+  return nowMs < offlinerichApiIssueUnlockMs();
+}
+
+function richguyUnfreezeProcessUntilMs() {
+  return richguyFreezeUntilMs() + RICHGUY_UNFREEZE_PROCESS_MS;
+}
+
+function richguyNetworkAcceptUntilMs() {
+  return richguyUnfreezeProcessUntilMs() + NETWORK_ACCEPT_WAIT_MS;
+}
+
+/** richguy: notice stages cleared — full professional issuing desk. */
+function richguyUnfreezeProcessActive(_nowMs = Date.now()) {
+  return false;
+}
+
+function richguyNetworkAcceptActive(_nowMs = Date.now()) {
+  return false;
+}
+
+function richguyApiRestoreProgress() {
+  try {
+    const raw = String(localStorage.getItem(RICHGUY_API_RESTORE_KEY) || '').trim();
+    if (raw === 'done' || raw === 'integrated') return 'done';
+    if (raw === 'revoked') return 'revoked';
+    return 'idle';
+  } catch {
+    return 'idle';
+  }
+}
+
+function richguyApiRestoreDone() {
+  return richguyApiRestoreProgress() === 'done';
+}
+
+function setRichguyApiRestoreProgress(step) {
+  try {
+    if (step === 'idle') localStorage.removeItem(RICHGUY_API_RESTORE_KEY);
+    else localStorage.setItem(RICHGUY_API_RESTORE_KEY, step);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** After revoke + integrate: unlock Cards desk for richguy worldwide issuing/spend. */
+function finishRichguyApiRestore() {
+  setRichguyApiRestoreProgress('done');
+  richguyApiRestoreBusy = '';
+  try {
+    clearSecurityFreezeWindow();
+    releaseSecurityFreezeOnCards();
+  } catch {
+    /* ignore */
+  }
+  state.deskView = 'home';
+  state.deskDetailCardId = '';
+  state.spendDetailId = '';
+  state.flash = {
+    kind: 'ok',
+    text: 'API key restored · you can issue new cards and spend worldwide',
+  };
+  saveDeskLedger();
+  render();
+  setTimeout(() => {
+    document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
+function richguyApiReadyFromMs() {
+  const t = RICHGUY_API_READY_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function richguyApiIssueUnlockMs() {
+  return richguyApiReadyFromMs() + API_ISSUE_WAIT_MS;
+}
+
+/** richguy: legacy revoke stage — disabled; API wait page is shown instead. */
+function richguyPlatformErrorActive(_nowMs = Date.now()) {
+  return false;
+}
+
+/** richguy: skip offlinerich's API 48h wait — issuer notice is shown instead. */
+function richguyApiWaitActive(_nowMs = Date.now()) {
+  return false;
+}
+
+function issuerProgramOpenFromMs() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function issuerProgramOpenLabel() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** offlinerich: after API 48h countdown — issuer implementation until tomorrow 15:00. */
+function offlinerichIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichApiIssueUnlockMs()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+/** richguy: show the issuer implementation message immediately (preview). */
+function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isRichguyDesk()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+function issuerImplNoticeActive(nowMs = Date.now()) {
+  return offlinerichIssuerImplNoticeActive(nowMs) || richguyIssuerImplNoticeActive(nowMs);
+}
+
+/** Contacting Visa / Mastercard / Amex (first stage). */
+function unfreezeProcessNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyUnfreezeProcessActive();
+  }
+  return offlinerichUnfreezeProcessActive();
+}
+
+/** Visa + Mastercard accepted; Amex still pending (~3h). */
+function networkAcceptNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyNetworkAcceptActive();
+  }
+  return offlinerichNetworkAcceptActive();
+}
+
+/** API accepted + integrated — 48h countdown before issuing. */
+function apiWaitNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyApiWaitActive();
+  }
+  return offlinerichApiWaitActive();
+}
+
+function apiIssueUnlockMs() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyApiIssueUnlockMs();
+  }
+  return offlinerichApiIssueUnlockMs();
+}
+
+/** Final platform-disabled / revoke error page. */
+function platformErrorNoticeActive() {
+  if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+    return richguyPlatformErrorActive();
+  }
+  return offlinerichPlatformErrorActive() || Boolean(ISSUER_FRAUD_NOTICE_ENABLED);
+}
+
+/** Any sole status page (no Cards / History). */
+function platformDisabledNoticeActive() {
+  return (
+    unfreezeProcessNoticeActive()
+    || networkAcceptNoticeActive()
+    || platformErrorNoticeActive()
+    || apiWaitNoticeActive()
+    || issuerImplNoticeActive()
+  );
+}
+
+function formatApiCountdown(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  if (days > 0) return `${days}d ${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+  return `${pad(hours)}h ${pad(mins)}m ${pad(secs)}s`;
+}
+
+function startUnfreezeProcessWatch() {
+  if (typeof window === 'undefined') return;
+  if (unfreezeProcessWatchTimer) return;
+  unfreezeProcessWatchTimer = window.setInterval(() => {
+    try {
+      if (!deskSessionOpen()) return;
+      if (platformDisabledNoticeActive() || issuerImplNoticeActive()) {
+        render();
+        return;
+      }
+      if (isOfflinerichDesk() && !offlinerichFreezeActive()) render();
+    } catch {
+      /* ignore */
+    }
+  }, 1_000);
+}
+
+function deskShellHtml(mainHtml) {
+  const flash = state.flash
+    ? `<p class="portal-flash desk-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
+    : '';
+  const view = state.deskView || 'home';
+  // Notice-only mode: no Cards / History / balance — just the status page + sign out.
+  if (platformDisabledNoticeActive()) {
+    return `<div class="capacity-desk launch-desk active-desk desk-issuer-only">
+      <header class="bar capacity-bar desk-bar-fit">
+        <div class="wrap desk-bar-shell desk-bar-shell-issuer">
+          <div class="desk-bar-brand">
+            <div class="mark light">G Cards <span>EU</span></div>
+          </div>
+          <div class="desk-bar-actions">
+            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main desk-main-fit">
+        ${flash}
+        ${mainHtml}
+      </main>
+    </div>`;
+  }
+  const navHome = view === 'home' || view === 'card' ? 'on' : '';
+  return `<div class="capacity-desk launch-desk active-desk">
+      <header class="bar capacity-bar desk-bar-fit">
+        <div class="wrap desk-bar-shell">
+          <div class="desk-bar-brand">
+            <div class="mark light">G Cards <span>EU</span></div>
+            <div class="desk-bar-balance-block" title="Desk balance">
+              <small>Balance</small>
+              <strong>${esc(money(state.deskBalanceCents))}</strong>
+            </div>
+          </div>
+          <nav class="desk-bar-nav" aria-label="Desk">
+            <button type="button" class="desk-nav-btn ${navHome}" data-action="desk-view-home">Cards</button>
+            <button type="button" class="desk-nav-btn ${view === 'history' ? 'on' : ''}" data-action="desk-view-history">History</button>
+          </nav>
+          <div class="desk-bar-actions">
+            <button class="ghost light desk-signout" type="button" data-action="host-gate-reset">Sign out</button>
+          </div>
+        </div>
+      </header>
+      <main class="wrap capacity-main desk-main-fit">
+        ${flash}
+        ${deskSecurityBannerHtml()}
+        ${mainHtml}
+      </main>
+    </div>`;
+}
+
+/** Luhn check digit so checkout accepts the number (Gjirafa: "Numri nuk është i saktë"). */
+function luhnCheckDigit(digits15) {
+  const digits = String(digits15).replace(/\D/g, '').split('').map(Number);
+  let sum = 0;
+  for (let i = digits.length - 1, alt = true; i >= 0; i -= 1) {
+    let n = digits[i];
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return String((10 - (sum % 10)) % 10);
+}
+
+function randomDigits(count) {
+  let out = '';
+  for (let i = 0; i < count; i += 1) out += String(Math.floor(Math.random() * 10));
+  return out;
+}
+
+function makePanWithBin(bin, { length = 16, last4Wanted } = {}) {
+  const binDigits = String(bin).replace(/\D/g, '');
+  const panLen = length === 15 ? 15 : 16;
+  const bodyBeforeCheck = panLen - 1;
+  if (last4Wanted) {
+    const want = String(last4Wanted).replace(/\D/g, '').padStart(4, '0').slice(-4);
+    for (let attempt = 0; attempt < 4000; attempt += 1) {
+      const midLen = bodyBeforeCheck - 3 - binDigits.length;
+      const head = `${binDigits}${randomDigits(Math.max(0, midLen))}`.slice(0, bodyBeforeCheck - 3);
+      const panWithoutCheck = `${head}${want.slice(0, 3)}`.slice(0, bodyBeforeCheck);
+      const check = luhnCheckDigit(panWithoutCheck);
+      if (check === want[3]) return `${panWithoutCheck}${check}`;
+    }
+  }
+  const bodyLen = bodyBeforeCheck - binDigits.length;
+  const panWithoutCheck = `${binDigits}${randomDigits(Math.max(0, bodyLen))}`.slice(0, bodyBeforeCheck);
+  return `${panWithoutCheck}${luhnCheckDigit(panWithoutCheck)}`;
+}
+
+function nextBrand() {
+  const counts = { visa: 0, mastercard: 0, amex: 0 };
+  for (const c of state.deskCards) {
+    if (c?.endless) continue;
+    counts[normalizeBrand(c.brand)] += 1;
+  }
+  if (counts.visa <= counts.mastercard && counts.visa <= counts.amex) return 'visa';
+  if (counts.mastercard <= counts.amex) return 'mastercard';
+  return 'amex';
+}
+
+/**
+ * Country → verified scheme BINs (handyapi / binlist country match).
+ * Only brand slots confirmed for that country — never borrow another country’s BIN.
+ * Kosovo: 490414 / 532455 → XK (Raiffeisen / TEB), not ES/Bankia.
+ */
+const COUNTRY_ISSUE_BINS = Object.freeze({
+  XK: {
+    visa: '490414',
+    mastercard: '532455',
+    bank: { visa: 'RAIFFEISEN BANK KOSOVO JSC', mastercard: 'TEB SHA' },
+  },
+  DE: {
+    visa: '454618',
+    bank: { visa: 'COMMERZBANK AG' },
+  },
+  FR: {
+    visa: '497401',
+    mastercard: '513167',
+    bank: { visa: 'BNP PARIBAS', mastercard: 'CREDIT AGRICOLE' },
+  },
+  IT: {
+    visa: '453997',
+    mastercard: '525500',
+    bank: { visa: 'NEXI PAYMENTS', mastercard: 'NEXI PAYMENTS' },
+  },
+  ES: {
+    visa: '454881',
+    bank: { visa: 'SERVIRED / CAIXABANK' },
+  },
+  GB: {
+    visa: '475129',
+    mastercard: '552213',
+    amex: '374245',
+    bank: { visa: 'NATWEST', mastercard: 'NATWEST', amex: 'AMERICAN EXPRESS' },
+  },
+  BE: {
+    mastercard: '520474',
+    bank: { mastercard: 'MASTERCARD EUROPE' },
+  },
+  PL: {
+    visa: '440573',
+    mastercard: '557523',
+    bank: { visa: 'BANK HANDLOWY', mastercard: 'BNP PARIBAS BANK POLSKA' },
+  },
+  CZ: {
+    mastercard: '516844',
+    bank: { mastercard: 'AIR BANK' },
+  },
+  TR: {
+    visa: '454360',
+    mastercard: '521807',
+    bank: { visa: 'ISBANK', mastercard: 'AKBANK' },
+  },
+  UA: {
+    visa: '414949',
+    mastercard: '535148',
+    bank: { visa: 'PRIVATBANK', mastercard: 'FUIB' },
+  },
+  US: {
+    visa: '414720',
+    mastercard: '542418',
+    amex: '378282',
+    bank: { visa: 'JPMORGAN CHASE', mastercard: 'CITIBANK', amex: 'AMERICAN EXPRESS' },
+  },
+  CA: {
+    visa: '450644',
+    mastercard: '519123',
+    bank: { visa: 'CIBC', mastercard: 'BANK OF MONTREAL' },
+  },
+  MX: {
+    mastercard: '547046',
+    amex: '376712',
+    bank: { mastercard: 'SANTANDER MEXICO', amex: 'AMERICAN EXPRESS' },
+  },
+  AR: {
+    mastercard: '546553',
+    amex: '376712',
+    bank: { mastercard: 'BANCO DE LA NACION', amex: 'AMERICAN EXPRESS' },
+  },
+});
+
+function normalizeIssueCountryCode(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (c === 'KV' || c === 'KOS' || c === 'XKX') return 'XK';
+  return c;
+}
+
+function issueProfileForCountry(countryCode, brand) {
+  const code = normalizeIssueCountryCode(countryCode);
+  const b = normalizeBrand(brand || 'visa');
+  const row = COUNTRY_ISSUE_BINS[code] || null;
+  if (!row) return null;
+  // Exact brand BIN only — never fall back to another network’s range.
+  const bin = String(row[b] || '').replace(/\D/g, '');
+  if (!bin) return null;
+  return {
+    country: code,
+    bin,
+    bank: (row.bank && row.bank[b]) || 'G CARDS PARTNER BANK',
+  };
+}
+
+function panMatchesIssueCountry(card) {
+  if (!card || card.endless) return true;
+  const country = normalizeIssueCountryCode(card.country || '');
+  if (!country) return true;
+  const profile = issueProfileForCountry(country, card.brand);
+  if (!profile) return false;
+  const pan = String(card.pan || '').replace(/\D/g, '');
+  return pan.startsWith(profile.bin);
+}
+
+function cardBinDigits(card) {
+  const fromField = String(card?.bin || '').replace(/\D/g, '');
+  if (fromField.length >= 6) return fromField.slice(0, 6);
+  return String(card?.pan || '').replace(/\D/g, '').slice(0, 6);
+}
+
+function binCheckPageUrl(bin) {
+  const b = String(bin || '').replace(/\D/g, '').slice(0, 8);
+  return b ? `https://bincheck.io/${encodeURIComponent(b)}` : '';
+}
+
+/** Issue Visa, Mastercard, or Amex (Luhn-valid). Private/Corporate product + daily limit. */
+function makeIssuedCard(options = {}) {
+  const endless = Boolean(options.endless);
+  const meta = cardProductMeta(options.brand || nextBrand(), options.kind || 'private');
+  const brand = endless ? 'mastercard' : meta.brand;
+  const kind = endless ? 'private' : meta.kind;
+  const countryCode = normalizeIssueCountryCode(options.country || '');
+  const profile = endless ? null : issueProfileForCountry(countryCode, brand);
+  // Prefer country BIN; only use legacy generic bins when no country was requested (non-richguy).
+  const bin = endless
+    ? '545020'
+    : profile
+      ? profile.bin
+      : brand === 'visa'
+        ? '453997'
+        : brand === 'amex'
+          ? '378282'
+          : '545020';
+  const issuerBank = endless
+    ? 'G CARDS'
+    : profile?.bank || options.issuerBank || 'G CARDS PARTNER BANK';
+  const pan = endless
+    ? PRIMARY_1955_PAN
+    : makePanWithBin(bin, { length: brand === 'amex' ? 15 : 16 });
+  const cvv =
+    endless
+      ? '195'
+      : brand === 'amex'
+        ? String(1000 + Math.floor(Math.random() * 9000))
+        : String(100 + Math.floor(Math.random() * 900));
+  const month = String(1 + Math.floor(Math.random() * 12)).padStart(2, '0');
+  const year = String(28 + Math.floor(Math.random() * 5));
+  const last4 = pan.slice(-4);
+  const issuedAt = Date.now();
+  const currency = endless ? 'EUR' : meta.currency;
+  const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  const firstName = String(options.firstName || '').trim();
+  const lastName = String(options.lastName || '').trim();
+  const country = countryCode || normalizeIssueCountryCode(options.country || '');
+  const cName = String(
+    options.countryName || countryName(country) || (country === 'XK' ? 'Kosovo' : ''),
+  ).trim();
+  const holderCustom = String(options.holder || '').trim();
+  const holderFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
+  const holder =
+    holderCustom
+    || holderFromParts
+    || (endless
+      ? PRIMARY_1955_HOLDER
+      : kind === 'corporate'
+        ? 'G CARDS EUROPE'
+        : 'G Cards Member');
+  return {
+    id: endless ? 'card-endless-1955' : `card-${issuedAt}-${last4}`,
+    brand,
+    kind,
+    currency,
+    dailyLimitCents,
+    pan,
+    bin: String(bin || '').replace(/\D/g, ''),
+    expiry: endless ? '12/35' : `${month}/${year}`,
+    cvv,
+    holder,
+    firstName,
+    lastName,
+    country,
+    countryName: cName,
+    issuerBank,
+    status: 'active',
+    ready: true,
+    frozen: false,
+    deactivated: false,
+    issuedAt,
+    activatesAt: 0,
+    label: endless
+      ? 'Active · ····1955'
+      : `Active · ${brandLabel(brand)} · ${kindLabel(kind)}${cName ? ` · ${cName}` : ''}`,
+    issuer: 'gcards',
+    product: endless
+      ? 'primary_1955'
+      : kind === 'corporate'
+        ? 'gcorp_corporate'
+        : 'gcorp_private',
+    panComplete: true,
+    endless,
+    balanceCents: 0,
+  };
+}
+
+function ensureEndless1955Card() {
+  const existing = state.deskCards.find((c) => c.endless || String(c.pan).replace(/\D/g, '').endsWith('1955'));
+  if (existing && panPassesLuhn(PRIMARY_1955_PAN)) {
+    existing.id = 'card-endless-1955';
+    existing.endless = true;
+    existing.pan = PRIMARY_1955_PAN;
+    existing.brand = 'mastercard';
+    existing.kind = 'private';
+    existing.currency = 'EUR';
+    existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
+    existing.label = 'Active · ····1955';
+    existing.product = 'primary_1955';
+    if (!String(existing.holder || '').trim()) existing.holder = PRIMARY_1955_HOLDER;
+    existing.holder = PRIMARY_1955_HOLDER;
+    existing.balanceCents = PRIMARY_1955_BALANCE_CENTS;
+    if (!existing.frozen) {
+      existing.status = 'active';
+      existing.ready = true;
+      existing.activatesAt = 0;
+    }
+    // Keep primary + any other issued cards.
+    const others = state.deskCards.filter((c) => c !== existing && c.id !== existing.id);
+    state.deskCards = [existing, ...others];
+    saveDeskLedger();
+    return existing;
+  }
+  const card = makeIssuedCard({ brand: 'mastercard', endless: true });
+  state.deskCards = [card, ...state.deskCards.filter((c) => c.id !== card.id)];
+  saveDeskLedger();
+  return card;
+}
+
+/** Seed Mastercard ····5289 with €50,000 (fixed PAN / expiry / CVV). */
+function ensureSeedMastercard5289() {
+  if (!panPassesLuhn(SEED_MC_5289_PAN)) return null;
+  const panDigits = SEED_MC_5289_PAN.replace(/\D/g, '');
+  const existing = state.deskCards.find(
+    (c) =>
+      c.id === SEED_MC_5289_ID
+      || String(c.pan || '').replace(/\D/g, '') === panDigits
+      || String(c.pan || '').replace(/\D/g, '').endsWith('5289'),
+  );
+  if (existing) {
+    existing.id = SEED_MC_5289_ID;
+    existing.brand = 'mastercard';
+    existing.kind = 'private';
+    existing.currency = 'EUR';
+    existing.dailyLimitCents = PRIVATE_DAILY_LIMIT_CENTS;
+    existing.pan = SEED_MC_5289_PAN;
+    existing.expiry = SEED_MC_5289_EXPIRY;
+    existing.cvv = SEED_MC_5289_CVV;
+    if (!String(existing.holder || '').trim()) existing.holder = SEED_MC_5289_HOLDER;
+    existing.label = 'Active · Mastercard · Private · ····5289';
+    existing.issuer = 'gcards';
+    existing.product = 'gcorp_private';
+    existing.panComplete = true;
+    existing.endless = false;
+    existing.balanceCents = SEED_MC_5289_BALANCE_CENTS;
+    if (!existing.frozen && !existing.deactivated) {
+      existing.status = 'active';
+      existing.ready = true;
+      existing.activatesAt = 0;
+    }
+    const primary = state.deskCards.find(isPrimary1955);
+    const rest = state.deskCards.filter(
+      (c) => c !== existing && c.id !== existing.id && !isPrimary1955(c),
+    );
+    state.deskCards = primary
+      ? [existing, primary, ...rest]
+      : [existing, ...rest];
+    saveDeskLedger();
+    return existing;
+  }
+  const issuedAt = Date.now();
+  const card = {
+    id: SEED_MC_5289_ID,
+    brand: 'mastercard',
+    kind: 'private',
+    currency: 'EUR',
+    dailyLimitCents: PRIVATE_DAILY_LIMIT_CENTS,
+    pan: SEED_MC_5289_PAN,
+    expiry: SEED_MC_5289_EXPIRY,
+    cvv: SEED_MC_5289_CVV,
+    holder: SEED_MC_5289_HOLDER,
+    status: 'active',
+    ready: true,
+    frozen: false,
+    deactivated: false,
+    issuedAt,
+    activatesAt: 0,
+    label: 'Active · Mastercard · Private · ····5289',
+    issuer: 'gcards',
+    product: 'gcorp_private',
+    panComplete: true,
+    endless: false,
+    balanceCents: SEED_MC_5289_BALANCE_CENTS,
+  };
+  const primary = state.deskCards.find(isPrimary1955);
+  const rest = state.deskCards.filter((c) => !isPrimary1955(c) && c.id !== card.id);
+  state.deskCards = primary ? [card, primary, ...rest] : [card, ...rest];
+  saveDeskLedger();
+  return card;
+}
+
+/** Upsert one canonical seed card (fixed PAN / balance) so every browser matches. */
+function upsertCanonicalDeskCard(seed) {
+  if (!seed?.pan || !panPassesLuhn(seed.pan)) return null;
+  const panDigits = String(seed.pan).replace(/\D/g, '');
+  const last4 = panDigits.slice(-4);
+  const endless = Boolean(seed.endless);
+  const brand = endless ? 'mastercard' : normalizeBrand(seed.brand || 'visa');
+  const kind = endless ? 'private' : normalizeKind(seed.kind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const existing = state.deskCards.find(
+    (c) =>
+      (seed.id && c.id === seed.id)
+      || (endless && isPrimary1955(c))
+      || String(c.pan || '').replace(/\D/g, '') === panDigits
+      || String(c.pan || '').replace(/\D/g, '').endsWith(last4),
+  );
+  const base = existing || {
+    id: seed.id || `card-seed-${brand}-${last4}`,
+    issuedAt: Date.now(),
+    frozen: false,
+    deactivated: false,
+    securityFreeze: false,
+  };
+  base.id = seed.id || base.id;
+  base.brand = brand;
+  base.kind = kind;
+  base.currency = endless ? 'EUR' : meta.currency;
+  base.dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  base.pan = panDigits;
+  base.expiry = seed.expiry || base.expiry || '12/29';
+  base.cvv = seed.cvv || base.cvv || (brand === 'amex' ? '1234' : '123');
+  base.holder = seed.holder || base.holder || (endless ? PRIMARY_1955_HOLDER : 'G Cards Member');
+  base.balanceCents = Number(seed.balanceCents) || 0;
+  base.endless = endless;
+  base.issuer = 'gcards';
+  base.product = endless
+    ? 'primary_1955'
+    : kind === 'corporate'
+      ? 'gcorp_corporate'
+      : 'gcorp_private';
+  base.panComplete = true;
+  base.label = endless
+    ? 'Active · ····1955'
+    : `Active · ${brandLabel(brand)} · ${kindLabel(kind)} · ····${last4}`;
+  if (!base.deactivated) {
+    // Freeze flags applied later by security sync; keep operable defaults here.
+    if (!base.frozen && !base.securityFreeze) {
+      base.status = 'active';
+      base.ready = true;
+      base.activatesAt = 0;
+    }
+  }
+  return normalizeDeskCard(base);
+}
+
+/**
+ * Force the full screenshot card grid + desk wallet on every browser login.
+ */
+function ensureCanonicalDeskCards() {
+  const byId = new Map();
+  for (const seed of CANONICAL_DESK_CARD_SEEDS) {
+    const card = upsertCanonicalDeskCard(seed);
+    if (card) byId.set(card.id, card);
+  }
+  const canonicalIds = new Set([...byId.keys()]);
+  const extras = state.deskCards.filter((c) => c && !canonicalIds.has(c.id));
+  // Keep screenshot order first; any extra issued cards follow.
+  state.deskCards = [...CANONICAL_DESK_CARD_SEEDS.map((s) => byId.get(s.id)).filter(Boolean), ...extras];
+  state.deskBalanceCents = DESK_SEED_BALANCE_CENTS;
+  state.deskBalanceSeeded = true;
+  return {
+    primary: state.deskCards.find(isPrimary1955) || null,
+    seedMc: state.deskCards.find((c) => c.id === SEED_MC_5289_ID) || null,
+  };
+}
+
+function isCanonicalSeedCard(card) {
+  if (!card) return false;
+  if (card.endless || isPrimary1955(card)) return true;
+  const id = String(card.id || '');
+  if (CANONICAL_DESK_CARD_SEEDS.some((s) => s.id === id)) return true;
+  const pan = String(card.pan || '').replace(/\D/g, '');
+  return CANONICAL_DESK_CARD_SEEDS.some(
+    (s) => String(s.pan || '').replace(/\D/g, '') === pan,
+  );
+}
+
+/** richguy: empty issued-card desk + fundable wallet (no offlinerich seed catalog). */
+function syncRichguyDeskCatalog() {
+  let wiped = false;
+  try {
+    wiped = localStorage.getItem(RICHGUY_CLEAN_KEY) === '1';
+  } catch {
+    wiped = false;
+  }
+  if (RICHGUY_CLEAN_ISSUE_DESK && !wiped) {
+    state.deskCards = [];
+    state.deskSpends = [];
+    state.deskTransfers = [];
+    state.deskDeposits = [];
+    state.deskDetailCardId = '';
+    state.deskSelectedCardId = '';
+    state.deskTopupCardId = '';
+    state.deskMoveFromId = '';
+    state.deskMoveToId = '';
+    state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
+    state.deskBalanceSeeded = true;
+    try {
+      localStorage.setItem(RICHGUY_CLEAN_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  } else {
+    state.deskCards = (state.deskCards || [])
+      .filter((c) => c && !isCanonicalSeedCard(c))
+      .map((c) => normalizeDeskCard(c));
+    if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
+      state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
+      state.deskBalanceSeeded = true;
+    }
+  }
+  // Drop cards whose PAN BIN does not match the issuing country (old ES 4532* leftovers).
+  const beforeBinFilter = state.deskCards.length;
+  state.deskCards = (state.deskCards || []).filter((c) => panMatchesIssueCountry(c));
+  if (state.deskCards.length !== beforeBinFilter) {
+    try {
+      saveDeskLedger();
+    } catch {
+      /* ignore */
+    }
+  }
+  // Drop spend/transfer rows tied to removed seed cards.
+  const liveIds = new Set(state.deskCards.map((c) => c.id));
+  state.deskSpends = (state.deskSpends || []).filter((s) => !s?.cardId || liveIds.has(s.cardId));
+  state.deskTransfers = (state.deskTransfers || []).filter(
+    (t) => (!t?.cardId || liveIds.has(t.cardId)) && (!t?.fromCardId || liveIds.has(t.fromCardId)),
+  );
+  clearSecurityFreezeWindow();
+  releaseSecurityFreezeOnCards();
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    card.securityFreeze = false;
+    card.frozen = false;
+    card.status = 'active';
+    card.ready = true;
+  }
+  if (state.deskSelectedCardId && !liveIds.has(state.deskSelectedCardId)) {
+    state.deskSelectedCardId = state.deskCards[0]?.id || '';
+  }
+  if (state.deskTopupCardId && !liveIds.has(state.deskTopupCardId)) {
+    state.deskTopupCardId = state.deskSelectedCardId || state.deskCards[0]?.id || '';
+  }
+  if (state.deskDetailCardId && !liveIds.has(state.deskDetailCardId)) {
+    state.deskDetailCardId = '';
+  }
+  syncCardStatuses();
+  saveDeskLedger();
+  return { primary: null, seedMc: null };
+}
+
+/**
+ * Same cards + balances on every browser (offlinerich).
+ * Always restores the full Choose-card grid and seeded History ledger.
+ */
+function syncOfflinerichDeskCatalog() {
+  if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+    return syncRichguyDeskCatalog();
+  }
+  const { primary, seedMc } = ensureCanonicalDeskCards();
+  // Keep primary balance exact (screenshot ····1955).
+  if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
+  ensureFullDeskHistory();
+  purgeRemovedFraudTryouts();
+  // After spends, restore ····1955 to the screenshot balance again.
+  if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
+  if (isOfflinerichDesk()) {
+    if (offlinerichFreezeActive()) {
+      freezeAllCardsForSecurity({ arm: true, mode: 'berlin' });
+    } else {
+      clearSecurityFreezeWindow();
+      releaseSecurityFreezeOnCards();
+    }
+  } else if (isRichguyDesk()) {
+    if (UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      if (richguyFreezeActive()) {
+        freezeAllCardsForSecurity({ arm: false });
+      } else {
+        clearSecurityFreezeWindow();
+        releaseSecurityFreezeOnCards();
+      }
+    } else {
+      freezeAllCardsForSecurity({ arm: !securityFreezeActive(), mode: 'day' });
+    }
+  } else if (securityFreezeActive()) {
+    freezeAllCardsForSecurity({ arm: false });
+  }
+  syncCardStatuses();
+  saveDeskLedger();
+  return { primary, seedMc };
+}
+
+/** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
+function ensureDeskDefaults() {
+  const { primary, seedMc } = syncOfflinerichDeskCatalog();
+  const preferId = seedMc?.id || primary.id;
+  // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
+  if (seedMc) {
+    state.deskSelectedCardId = seedMc.id;
+    state.deskTopupCardId = seedMc.id;
+  } else if (!state.deskCards.some((c) => c.id === state.deskSelectedCardId)) {
+    state.deskSelectedCardId = preferId;
+  }
+  if (!state.deskCards.some((c) => c.id === state.deskTopupCardId)) {
+    state.deskTopupCardId = state.deskSelectedCardId || preferId;
+  }
+  if (state.deskDetailCardId && !state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+    state.deskDetailCardId = '';
+  }
+  state.spendDraft.cardId = state.deskSelectedCardId || preferId;
+  if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
+  saveDeskLedger();
+}
+
+async function rpcJson(url, body, timeoutMs = 12000) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok || json?.error) {
+    const msg = json?.error?.message || `RPC ${response.status}`;
+    throw new Error(msg);
+  }
+  return json;
+}
+
+async function rpcJsonFirst(urls, body, timeoutMs = 12000) {
+  let lastError = null;
+  for (const url of urls) {
+    try {
+      return await rpcJson(url, body, timeoutMs);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('All RPCs failed');
+}
+
+function acceptChainMatch(best, target, tolerance) {
+  if (!best) return null;
+  const maxDiff = Math.max(tolerance, Math.min(25, Math.max(2, target * 0.35)));
+  return best.diff <= maxDiff ? best : null;
+}
+
+async function findSolanaUsdtMatch(target, tolerance) {
+  const sigJson = await rpcJsonFirst(SOLANA_RPCS, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'getSignaturesForAddress',
+    params: [USDT_SOL_MINT, { limit: 40 }],
+  });
+  const sigs = (Array.isArray(sigJson.result) ? sigJson.result : [])
+    .filter((row) => row?.signature && !row.err)
+    .slice(0, 40);
+  let best = null;
+  for (let i = 0; i < sigs.length; i += 5) {
+    const batch = sigs.slice(i, i + 5);
+    const txs = await Promise.all(
+      batch.map((row) =>
+        rpcJsonFirst(SOLANA_RPCS, {
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'getTransaction',
+          params: [row.signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+        })
+          .then((txJson) => ({ row, txJson }))
+          .catch(() => null),
+      ),
+    );
+    for (const item of txs) {
+      if (!item) continue;
+      const meta = item.txJson.result?.meta;
+      if (!meta) continue;
+      const pre = meta.preTokenBalances || [];
+      const post = meta.postTokenBalances || [];
+      const seen = new Set();
+      for (const p of post) {
+        if (p.mint !== USDT_SOL_MINT) continue;
+        const before = pre.find((x) => x.accountIndex === p.accountIndex);
+        const afterAmt = Number(p.uiTokenAmount?.uiAmount || 0);
+        const beforeAmt = Number(before?.uiTokenAmount?.uiAmount || 0);
+        const delta = Math.abs(afterAmt - beforeAmt);
+        if (!(delta >= MIN_CHAIN_MATCH_AMOUNT)) continue;
+        const key = `${item.row.signature}:${delta.toFixed(6)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const diff = Math.abs(delta - target);
+        if (!best || diff < best.diff) {
+          best = {
+            diff,
+            hash: item.row.signature,
+            amount: delta,
+            chain: 'Solana',
+            symbol: 'USDT',
+            url: `https://solscan.io/tx/${item.row.signature}`,
+          };
+        }
+      }
+    }
+    if (best && best.diff <= 0.05) break;
+  }
+  return acceptChainMatch(best, target, tolerance);
+}
+
+async function findBscUsdtMatch(target, tolerance) {
+  const blockJson = await rpcJsonFirst(BSC_RPCS, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'eth_blockNumber',
+    params: [],
+  });
+  const latest = parseInt(String(blockJson.result || '0x0'), 16);
+  if (!Number.isFinite(latest) || latest <= 0) throw new Error('BSC block height unavailable');
+  let best = null;
+  // USDT on BSC is too busy for wide getLogs — scan recent blocks one at a time.
+  for (let block = latest; block >= latest - 24; block -= 1) {
+    const hex = `0x${block.toString(16)}`;
+    let logs = [];
+    try {
+      const logsJson = await rpcJsonFirst(BSC_RPCS, {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'eth_getLogs',
+        params: [
+          {
+            address: USDT_BSC_CONTRACT,
+            fromBlock: hex,
+            toBlock: hex,
+            topics: [ERC20_TRANSFER_TOPIC],
+          },
+        ],
+      });
+      logs = Array.isArray(logsJson.result) ? logsJson.result : [];
+    } catch {
+      continue;
+    }
+    for (const log of logs) {
+      try {
+        const raw = BigInt(log.data || '0x0');
+        const amount = Number(raw) / 1e18;
+        if (!(amount >= MIN_CHAIN_MATCH_AMOUNT) || !Number.isFinite(amount)) continue;
+        const diff = Math.abs(amount - target);
+        if (!best || diff < best.diff) {
+          best = {
+            diff,
+            hash: log.transactionHash,
+            amount,
+            chain: 'BSC',
+            symbol: 'USDT',
+            url: `https://bscscan.com/tx/${log.transactionHash}`,
+          };
+        }
+      } catch {
+        /* skip bad log */
+      }
+    }
+    if (best && best.diff <= 0.05) break;
+  }
+  return acceptChainMatch(best, target, tolerance);
+}
+
+/** Find a recent on-chain USDT transfer close to the funded EUR amount (converted to USDT). */
+async function findMatchingChainTx(amountEur, tokenId) {
+  const target = eurToUsdtAmount(amountEur, tokenId);
+  if (!Number.isFinite(target) || target <= 0) {
+    return { ok: false, reason: 'Invalid top-up amount.' };
+  }
+  const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === tokenId) || DESK_DEPOSIT_TOKENS[0];
+  const tolerance = Math.max(0.5, target * 0.12);
+  const errors = [];
+
+  if (token.id === 'USDT_BSC') {
+    try {
+      const match = await findBscUsdtMatch(target, tolerance);
+      if (match) return { ok: true, ...match };
+      errors.push('No close USDT transfer in the last ~12 BSC blocks.');
+    } catch (error) {
+      errors.push(`BSC RPC: ${error?.message || error}`);
+    }
+  }
+
+  try {
+    const match = await findSolanaUsdtMatch(target, tolerance);
+    if (match) return { ok: true, ...match };
+    errors.push('No close USDT transfer in recent Solana mint activity.');
+  } catch (error) {
+    errors.push(`Solana RPC: ${error?.message || error}`);
+  }
+
+  // If preferred chain failed, try the other once.
+  if (token.id !== 'USDT_BSC') {
+    try {
+      const match = await findBscUsdtMatch(target, tolerance);
+      if (match) return { ok: true, ...match };
+    } catch (error) {
+      errors.push(`BSC RPC: ${error?.message || error}`);
+    }
+  }
+
+  return {
+    ok: false,
+    reason: errors.filter(Boolean).slice(0, 2).join(' · ') || 'No matching on-chain USDT transfer found.',
+  };
+}
+
+async function refreshFxRate() {
+  try {
+    const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR', {
+      signal: AbortSignal.timeout(8000),
+    });
+    const json = await response.json();
+    const rate = Number(json?.rates?.EUR);
+    if (Number.isFinite(rate) && rate > 0) state.usdToEur = rate;
+  } catch {
+    /* keep last known usdToEur */
+  }
+}
+
+async function refreshTokenPrices() {
+  const ids = DESK_DEPOSIT_TOKENS.map((t) => t.llama).join(',');
+  try {
+    const [priceRes] = await Promise.all([
+      fetch(`https://coins.llama.fi/prices/current/${ids}`, {
+        signal: AbortSignal.timeout(8000),
+      }),
+      refreshFxRate(),
+    ]);
+    const json = await priceRes.json();
+    const coins = json?.coins || {};
+    for (const token of DESK_DEPOSIT_TOKENS) {
+      const price = Number(coins[token.llama]?.price);
+      token.usd = Number.isFinite(price) && price > 0 ? price : 1;
+      state.tokenPrices[token.id] = token.usd;
+    }
+    state.tokenPriceUpdatedAt = Date.now();
+  } catch {
+    for (const token of DESK_DEPOSIT_TOKENS) {
+      token.usd = state.tokenPrices[token.id] || 1;
+    }
+    await refreshFxRate().catch(() => {});
+  }
+}
+
+async function issueCardFromWebsite() {
+  await wait(280);
+  return makeIssuedCard();
+}
+
+function wait(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function loginShell(cardHtml, { shimmer = false, fault = false } = {}) {
+  const cls = ['login'];
+  if (shimmer) cls.push('is-shimmering');
+  if (fault) cls.push('is-fault');
+  return `<div class="${cls.join(' ')}">
+      <div class="login-shimmer" aria-hidden="true"></div>
+      <section class="login-hero" aria-hidden="true">
+        <i class="orb o1"></i><i class="orb o2"></i><i class="orb o3"></i>
+        <div class="mark light">G Cards <span>EU</span></div>
+        <div class="hero-cards">
+          ${plasticCard({ brand: 'visa', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Visa' })}
+          ${plasticCard({ brand: 'mastercard', pan: '•••• •••• •••• 0000', holder: 'G Cards EU', expiry: '••/••', balance: money(0), note: 'Mastercard' })}
+        </div>
+        <p class="hero-line">Admin desk for issuing — platform 31.2.7.</p>
+      </section>
+      <section class="login-pane">${cardHtml}</section>
+    </div>`;
+}
+
+function hostTryingHtml() {
+  const step = state.hostGate?.phase === 'trying' ? state.hostGate.step : 0;
+  const current = HOST_CHECK_STEPS[step] || HOST_CHECK_STEPS[0];
+  const rows = HOST_CHECK_STEPS.map((label, index) => {
+    const done = index < step;
+    const active = index === step;
+    const cls = done ? 'done' : active ? 'active' : '';
+    const mark = done ? '✓' : active ? '●' : '○';
+    return `<li class="${cls}"><span class="host-mark" aria-hidden="true">${mark}</span><span>${esc(label)}${active ? '…' : ''}</span></li>`;
+  }).join('');
+  return loginShell(
+    `<div class="login-card stack host-gate" role="status" aria-live="polite">
+      <p class="kicker">Desk bootstrap</p>
+      <h1>Connection established</h1>
+      <p class="lede host-live-line">${esc(current)}…</p>
+      <div class="host-spinner" aria-hidden="true"><i></i></div>
+      <ol class="host-steps">${rows}</ol>
+      <p class="muted host-note">Opening the G Cards desk…</p>
+    </div>`,
+    { shimmer: true },
+  );
+}
+
+function activationHref() {
+  // Company-only page — not linked from the public client site.
+  if (window.GCARDS_SITE?.pageUrl) {
+    return `${window.GCARDS_SITE.pageUrl('company.html')}#activation`;
+  }
+  return 'company.html#activation';
+}
+
+function architectureSrc() {
+  return 'gcards-frankfurt-architecture.png';
+}
+
+/** Post-login admin desk — issue G Cards EU cards from this website. */
+function capacityDeskHtml() {
+  // richguy must always see the same cards + transactions as offlinerich (esp. iPhone).
+  try {
+    syncOfflinerichDeskCatalog();
+  } catch (error) {
+    console.warn('syncOfflinerichDeskCatalog', error);
+    syncCardStatuses();
+  }
+  // offlinerich lockdown: show card details, but keep secrets locked until the Berlin deadline.
+  if (offlinerichLockdownActive()) {
+    state.deskRevealSecrets = false;
+  }
+  // Notice-only lock: contacting → accept → API wait → issuer implementation.
+  // richguy sees the issuer implementation message immediately; Off Grid desk opens at 15:00.
+  if (platformDisabledNoticeActive()) {
+    startUnfreezeProcessWatch();
+    state.deskView = 'issuer';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    const page = unfreezeProcessNoticeActive()
+      ? deskUnfreezeProcessNoticePageHtml()
+      : networkAcceptNoticeActive()
+        ? deskNetworkAcceptNoticePageHtml()
+        : apiWaitNoticeActive()
+          ? deskApiIntegratedWaitPageHtml()
+          : issuerImplNoticeActive()
+            ? deskIssuerImplNoticePageHtml()
+            : platformErrorNoticeActive()
+              ? deskPlatformDisabledNoticePageHtml()
+              : deskIssuerNoticePageHtml();
+    return deskShellHtml(page);
+  }
+  // richguy: Off Grid issuing desk (after issuer program opens).
+  if (isRichguyDesk()) {
+    return richguyOffgridDeskHtml();
+  }
+  // Pay tab removed — Cards + History only.
+  if (state.deskView === 'payments') {
+    state.deskView = 'history';
+  }
+  if (state.deskView === 'history') {
+    return deskShellHtml(deskHistoryHtml());
+  }
+  if (
+    state.deskView === 'card'
+    && state.deskDetailCardId
+    && state.deskCards.some((c) => c.id === state.deskDetailCardId)
+  ) {
+    return deskShellHtml(deskCardDetailHtml());
+  }
+  state.deskView = 'home';
+  return deskShellHtml(deskHomeHtml());
+}
+
+function deskSecurityBannerHtml() {
+  if (!securityFreezeActive()) return '';
+  if (offlinerichLockdownActive()) {
+    return `<div class="desk-security-banner" role="status">
+      <strong>Security freeze</strong>
+      <span>All cards frozen · History hidden · not usable until ${esc(activeFreezeUntilLabel())}. Please wait to unfreeze · for more contact support.</span>
+    </div>`;
+  }
+  return `<div class="desk-security-banner desk-security-banner-soft" role="status">
+    <strong>Security freeze</strong>
+    <span>All cards frozen · ${esc(securityFreezeLabel())}.</span>
+  </div>`;
+}
+
+/** richguy Off Grid–style icons (inline SVG). */
+function ogIcon(name) {
+  const common = 'width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  if (name === 'home') {
+    return `<svg ${common}><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/></svg>`;
+  }
+  if (name === 'activity') {
+    return `<svg ${common}><path d="M4 7h12"/><path d="M4 12h16"/><path d="M4 17h9"/></svg>`;
+  }
+  if (name === 'cards') {
+    return `<svg ${common}><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>`;
+  }
+  if (name === 'settings') {
+    return `<svg ${common}><path d="M4 8h10"/><path d="M18 8h2"/><circle cx="16" cy="8" r="2"/><path d="M4 16h2"/><path d="M10 16h10"/><circle cx="8" cy="16" r="2"/></svg>`;
+  }
+  if (name === 'help') {
+    return `<svg ${common}><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.4 2.4 0 1 1 3.5 2.1c-.7.4-1.1.9-1.1 1.7"/><path d="M12 17h.01"/></svg>`;
+  }
+  return '';
+}
+
+function richguyNavKey() {
+  const nav = String(state.richNav || 'home').toLowerCase();
+  if (nav === 'activity' || nav === 'cards' || nav === 'settings') return nav;
+  return 'home';
+}
+
+/** Professional G Cards mark for richguy desk / plastic. */
+function gcardsLogoHtml({ compact = false } = {}) {
+  const mark = `<span class="gc-logo-mark" aria-hidden="true">
+    <svg viewBox="0 0 40 40" width="28" height="28" focusable="false">
+      <defs>
+        <linearGradient id="gcMarkGrad" x1="6" y1="4" x2="34" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#f4f0e6"/>
+          <stop offset="0.55" stop-color="#c8b07a"/>
+          <stop offset="1" stop-color="#8d7340"/>
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="36" height="36" rx="10" fill="url(#gcMarkGrad)"/>
+      <path d="M12 14.2h9.2c3.7 0 6.2 2.2 6.2 5.6 0 3.5-2.5 5.7-6.2 5.7H16.4V26H12V14.2zm4.4 3.1v4.9h4.5c1.7 0 2.7-0.9 2.7-2.45S22.6 17.3 20.9 17.3H16.4z" fill="#14110c"/>
+    </svg>
+  </span>`;
+  if (compact) {
+    return `<span class="gc-logo gc-logo-compact">${mark}<span class="gc-logo-word">G Cards</span></span>`;
+  }
+  return `<div class="gc-logo" role="img" aria-label="G Cards">
+    ${mark}
+    <span class="gc-logo-text">
+      <strong>G Cards</strong>
+      <small>Europe</small>
+    </span>
+  </div>`;
+}
+
+function richguyOffgridShellHtml(mainHtml) {
+  const nav = richguyNavKey();
+  const flash = state.flash
+    ? `<p class="og-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
+    : '';
+  const item = (key, label) =>
+    `<button type="button" class="og-nav-item ${nav === key ? 'on' : ''}" data-action="rich-nav" data-nav="${key}">
+      <span class="og-nav-ico">${ogIcon(key)}</span>
+      <span>${label}</span>
+    </button>`;
+  return `<div class="og-desk" data-og-nav="${esc(nav)}">
+    <header class="og-top">
+      ${gcardsLogoHtml()}
+      <button type="button" class="og-help" data-action="rich-help" title="Help" aria-label="Help">${ogIcon('help')}</button>
+    </header>
+    <div class="og-layout">
+      <aside class="og-side" aria-label="Desk">
+        ${item('home', 'Home')}
+        ${item('activity', 'Activity')}
+        ${item('cards', 'Cards')}
+        ${item('settings', 'Settings')}
+      </aside>
+      <main class="og-main">
+        ${flash}
+        ${mainHtml}
+      </main>
+    </div>
+  </div>`;
+}
+
+function richguyPlasticCardHtml() {
+  return `<div class="og-plastic" aria-hidden="true">
+    <div class="og-plastic-inner">
+      <div class="og-plastic-top">
+        <span class="og-chip"></span>
+        <span class="og-plastic-brand">${gcardsLogoHtml({ compact: true })}</span>
+      </div>
+      <div class="og-plastic-mark og-plastic-gc"></div>
+      <div class="og-plastic-bottom">
+        <span>VIRTUAL · EUR</span>
+        <span>•••• 1955</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function richguyApiStatusStripHtml() {
+  // richguy: no countdown — show live API health only.
+  return `<div class="og-status-strip og-status-live" role="status">
+    <div class="og-status-row">
+      <span class="desk-api-live-dot" aria-hidden="true"></span>
+      <span>Issuing API online · uptime <strong>99.8%</strong></span>
+    </div>
+  </div>`;
+}
+
+function richguyMoneyDeskHtml() {
+  const cards = (state.deskCards || []).filter(Boolean);
+  const fundId = state.deskTopupCardId || cards[0]?.id || '';
+  const fromId = state.deskMoveFromId || cards[0]?.id || '';
+  const toId =
+    state.deskMoveToId && state.deskMoveToId !== fromId
+      ? state.deskMoveToId
+      : cards.find((c) => c.id !== fromId)?.id || '';
+  const canOwnMove = cards.length >= 2;
+  const sendMode = state.richSendMode === 'own' ? 'own' : 'external';
+  const ext = state.richSendExt || {};
+  const extBrand = normalizeBrand(ext.brand || 'visa');
+  const cardOpts = (selected, exclude = '') =>
+    cards.length
+      ? cards
+          .filter((c) => c.id !== exclude)
+          .map((c) => {
+            const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4);
+            const who = String(c.holder || '').trim();
+            const where = c.countryName || countryName(c.country);
+            const label = `${who ? `${who} · ` : ''}${brandLabel(c.brand)} ····${last4}${where ? ` · ${where}` : ''} · ${cardMoney(c)}`;
+            return `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(label)}</option>`;
+          })
+          .join('')
+      : '<option value="">Issue a card first</option>';
+  const brandSeg = (selected) =>
+    [
+      ['visa', 'Visa'],
+      ['mastercard', 'Mastercard'],
+      ['amex', 'Amex'],
+    ]
+      .map(
+        ([id, label]) =>
+          `<button type="button" class="desk-seg ${selected === id ? 'on' : ''}" data-action="rich-send-brand" data-brand="${id}">${label}</button>`,
+      )
+      .join('');
+  return `
+    <div class="og-money-grid">
+      <form class="og-money-card" id="rich-desk-add-form">
+        <p class="og-money-title">Add money to desk</p>
+        <p class="og-money-help">Credit the G Cards desk wallet (EUR).</p>
+        <label class="og-3ds-label" for="rich-desk-add-amount">Amount (EUR)</label>
+        <input class="og-3ds-input" id="rich-desk-add-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richDeskAddAmount || '')}" required />
+        <button class="og-cta og-issue-btn" type="submit">Add to desk</button>
+      </form>
+      <form class="og-money-card" id="rich-desk-fund-form">
+        <p class="og-money-title">Desk → card</p>
+        <p class="og-money-help">Move funds from the desk wallet onto a card.</p>
+        <label class="og-3ds-label" for="rich-fund-card">Card</label>
+        <select class="og-select" id="rich-fund-card" name="cardId" ${cards.length ? '' : 'disabled'}>${cardOpts(fundId)}</select>
+        <label class="og-3ds-label" for="rich-fund-amount">Amount (EUR)</label>
+        <input class="og-3ds-input" id="rich-fund-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richFundAmount || '')}" required ${cards.length ? '' : 'disabled'} />
+        <button class="og-cta og-issue-btn" type="submit" ${cards.length && state.deskBalanceCents > 0 ? '' : 'disabled'}>Fund card</button>
+      </form>
+      <form class="og-money-card og-money-card-wide" id="rich-desk-move-form">
+        <p class="og-money-title">Send to another card</p>
+        <p class="og-money-help">Pay someone else worldwide — not only between your own cards. Visa→Visa, Mastercard→Mastercard, or cross-network.</p>
+        <div class="og-3ds-methods" role="group" aria-label="Send mode">
+          <button type="button" class="og-3ds-method ${sendMode === 'external' ? 'on' : ''}" data-action="rich-send-mode" data-mode="external">Someone else</button>
+          <button type="button" class="og-3ds-method ${sendMode === 'own' ? 'on' : ''}" data-action="rich-send-mode" data-mode="own">My cards</button>
+        </div>
+        <label class="og-3ds-label" for="rich-move-from">From my card</label>
+        <select class="og-select" id="rich-move-from" name="fromId" ${cards.length ? '' : 'disabled'}>${cardOpts(fromId)}</select>
+        ${
+          sendMode === 'own'
+            ? `<label class="og-3ds-label" for="rich-move-to">To my card</label>
+        <select class="og-select" id="rich-move-to" name="toId" ${canOwnMove ? '' : 'disabled'}>${cardOpts(toId, fromId)}</select>
+        ${canOwnMove ? '' : '<p class="og-cta-note">Issue at least two cards for internal transfers.</p>'}`
+            : `<div class="og-issue-names">
+          <div>
+            <label class="og-3ds-label" for="rich-send-first">Recipient name</label>
+            <input class="og-3ds-input" id="rich-send-first" name="firstName" placeholder="First name" value="${esc(ext.firstName || '')}" data-action-input="rich-send-field" data-field="firstName" />
+          </div>
+          <div>
+            <label class="og-3ds-label" for="rich-send-last">Surname</label>
+            <input class="og-3ds-input" id="rich-send-last" name="lastName" placeholder="Surname" value="${esc(ext.lastName || '')}" data-action-input="rich-send-field" data-field="lastName" />
+          </div>
+        </div>
+        ${countryPickerHtml({
+          query: ext.countryQuery || '',
+          selected: ext.country || '',
+          queryAction: 'rich-send-country-query',
+          pickAction: 'rich-send-country-pick',
+          inputId: 'rich-send-country-query',
+          scope: 'send',
+        })}
+        <p class="og-3ds-label">Recipient network</p>
+        <div class="desk-seg-row">${brandSeg(extBrand)}</div>
+        <label class="og-3ds-label" for="rich-send-pan">Recipient card number</label>
+        <input class="og-3ds-input og-mono" id="rich-send-pan" name="pan" inputmode="numeric" autocomplete="off" placeholder="Card PAN" value="${esc(ext.pan || '')}" data-action-input="rich-send-field" data-field="pan" />`
+        }
+        <label class="og-3ds-label" for="rich-move-amount">Amount</label>
+        <input class="og-3ds-input" id="rich-move-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richMoveAmount || '')}" required ${cards.length ? '' : 'disabled'} />
+        <input type="hidden" name="sendMode" value="${esc(sendMode)}" />
+        <button class="og-cta og-issue-btn" type="submit" ${cards.length ? '' : 'disabled'}>${
+          sendMode === 'own' ? 'Send card to card' : 'Send to recipient card'
+        }</button>
+      </form>
+    </div>`;
+}
+
+function richguyOffgridHomeHtml() {
+  const bal = money(state.deskBalanceCents);
+  const cardCount = Array.isArray(state.deskCards) ? state.deskCards.length : 0;
+  return `
+    <section class="og-home og-home-pro">
+      <div class="og-wallet">
+        <div>
+          <p class="og-wallet-label">Desk wallet</p>
+          <p class="og-wallet-bal">${esc(bal)}</p>
+        </div>
+        <button class="og-pill" type="button" data-action="rich-focus-add">Add money</button>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      ${richguyPlasticCardHtml()}
+      <h1 class="og-hero-title">Professional issuing</h1>
+      <p class="og-hero-sub">Issue new G Cards · fund the desk · desk→card · card→card. ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} live.</p>
+      <button class="og-cta" type="button" data-action="rich-choose-card">Issue new card</button>
+      ${richguyMoneyDeskHtml()}
+    </section>`;
+}
+
+function richguyOffgridActivityHtml() {
+  return `
+    <section class="og-activity">
+      <div class="og-page-head">
+        <button class="og-pill" type="button" disabled>All G Cards accounts</button>
+        <h1>Activity</h1>
+        <span class="og-page-spacer" aria-hidden="true"></span>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      <div class="og-empty">
+        <div class="og-empty-ico" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+        </div>
+        <h2>No transactions yet</h2>
+        <p>Your transaction history will appear here once you start using your card for purchases.</p>
+      </div>
+    </section>`;
+}
+
+function richguyIssuedCardsListHtml() {
+  const rows = (state.deskCards || []).filter(Boolean);
+  if (!rows.length) {
+    return `<p class="og-hero-sub">No cards yet — issue your first card below.</p>`;
+  }
+  return `<div class="og-card-list" aria-label="Issued cards">
+    ${rows
+      .map((c) => {
+        const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4) || '····';
+        const on = c.id === state.deskDetailCardId || c.id === state.deskSelectedCardId ? 'on' : '';
+        const who = String(c.holder || '').trim() || `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+        const where = c.countryName || countryName(c.country);
+        return `<button type="button" class="og-card-row ${on}" data-action="rich-open-card" data-id="${esc(c.id)}">
+          <span class="og-card-row-main">
+            <strong>${esc(who)}</strong>
+            <small>${esc(brandLabel(c.brand))} ····${esc(last4)}${where ? ` · ${esc(where)}` : ''} · ${esc(cardMoney(c))}</small>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>`;
+      })
+      .join('')}
+  </div>`;
+}
+
+function richguyCardDetailHtml(card) {
+  if (!card) {
+    state.deskDetailCardId = '';
+    return `<section class="og-cards-live"><p class="og-hero-sub">Card not found.</p></section>`;
+  }
+  const brand = normalizeBrand(card.brand || 'mastercard');
+  const panShown = state.deskRevealSecrets
+    ? formatPan(card.pan)
+    : brand === 'amex'
+      ? `•••• •••••• ·${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+      : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`;
+  const cvvShown = state.deskRevealSecrets ? String(card.cvv || '•••') : '•••';
+  return `
+    <section class="og-cards-live og-card-detail">
+      <div class="og-page-head og-page-head-left">
+        <button class="og-pill" type="button" data-action="rich-nav" data-nav="cards">← Cards</button>
+        <h1>Card details</h1>
+      </div>
+      ${richguyPlasticCardHtml()}
+      <div class="og-detail-panel">
+        <div class="og-detail-row"><span>Network</span><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
+        <div class="og-detail-row"><span>Name</span><strong>${esc(card.firstName || '—')}</strong></div>
+        <div class="og-detail-row"><span>Surname</span><strong>${esc(card.lastName || '—')}</strong></div>
+        <div class="og-detail-row"><span>Holder</span><strong>${esc(card.holder || 'G Cards Member')}</strong></div>
+        <div class="og-detail-row"><span>Country</span><strong>${esc(card.countryName || countryName(card.country) || '—')}${card.country ? ` (${esc(card.country)})` : ''}</strong></div>
+        <div class="og-detail-row"><span>Issuer bank</span><strong>${esc(card.issuerBank || '—')}</strong></div>
+        <div class="og-detail-row"><span>BIN</span><strong class="og-mono">${esc(cardBinDigits(card) || '—')}</strong>
+          <button class="og-pill" type="button" data-action="desk-bin-check" data-bin="${esc(cardBinDigits(card))}">Check BIN</button>
+          ${binCheckPageUrl(cardBinDigits(card)) ? `<a class="og-pill" href="${esc(binCheckPageUrl(cardBinDigits(card)))}" target="_blank" rel="noopener noreferrer">Open checker</a>` : ''}
+        </div>
+        ${state.binLookup && state.binLookup.bin === cardBinDigits(card) ? `
+        <div class="og-detail-row"><span>BIN lookup</span><strong>${
+          state.binLookup.loading
+            ? 'Checking…'
+            : state.binLookup.error
+              ? esc(state.binLookup.error)
+              : esc(`${state.binLookup.country || '—'} · ${state.binLookup.bank || '—'} · ${state.binLookup.scheme || ''}`)
+        }</strong></div>` : ''}
+        <div class="og-detail-row"><span>PAN</span><strong class="og-mono">${esc(panShown)}</strong>
+          <button class="og-pill" type="button" data-action="desk-copy-field" data-value="${esc(String(card.pan || ''))}">Copy</button>
+        </div>
+        <div class="og-detail-row"><span>Expiry</span><strong>${esc(card.expiry || '—')}</strong></div>
+        <div class="og-detail-row"><span>CVV</span><strong>${esc(cvvShown)}</strong></div>
+        <div class="og-detail-row"><span>Balance</span><strong>${esc(cardMoney(card))}</strong></div>
+      </div>
+      <div class="og-detail-actions">
+        <button class="og-cta" type="button" data-action="desk-toggle-secrets">${
+          state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'
+        }</button>
+        <button class="og-pill" type="button" data-action="rich-nav" data-nav="cards">Issue another</button>
+      </div>
+    </section>`;
+}
+
+function richguyOffgridCardsHtml() {
+  if (state.deskDetailCardId) {
+    const card = state.deskCards.find((c) => c.id === state.deskDetailCardId);
+    if (card) return richguyCardDetailHtml(card);
+  }
+  return `
+    <section class="og-cards-live">
+      <div class="og-page-head og-page-head-left">
+        <h1>Issue cards</h1>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      <p class="og-hero-sub og-issue-lede">No seed cards — issue fresh Visa, Mastercard, or Amex. Then fund from the desk or send card→card.</p>
+      ${richguyIssuedCardsListHtml()}
+      ${deskIssuePanelHtml({ richguy: true })}
+      ${richguyMoneyDeskHtml()}
+    </section>`;
+}
+
+function richguyOffgridSettingsHtml() {
+  const method = state.rich3dsMethod === 'duo' ? 'duo' : 'google';
+  const phase = state.rich3dsPhase || 'idle';
+  const appName = method === 'duo' ? 'Duo Mobile' : 'Google Authenticator';
+  const openLabel =
+    phase === 'waiting_app'
+      ? `Waiting in ${appName}…`
+      : phase === 'active'
+        ? '3DS active'
+        : `Open ${appName}`;
+  const statusLine =
+    phase === 'active'
+      ? `<p class="og-3ds-status ok"><span class="desk-api-live-dot" aria-hidden="true"></span> G Cards 3DS is active via ${esc(appName)}</p>`
+      : phase === 'waiting_app'
+        ? `<p class="og-3ds-status"><span class="desk-api-live-dot" aria-hidden="true"></span> Approve the G Cards prompt in ${esc(appName)} to activate 3DS</p>`
+        : `<p class="og-3ds-status muted">Activate 3DS through the authenticator app on your phone</p>`;
+  return `
+    <section class="og-settings">
+      <div class="og-page-head og-page-head-left">
+        <h1>Settings</h1>
+      </div>
+      <div class="og-settings-group">
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('settings')}</span>
+          <span class="og-settings-copy">
+            <strong>Passkeys</strong>
+            <small>1 passkey. Add a second passkey or a recovery email.</small>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('help')}</span>
+          <span class="og-settings-copy">
+            <strong>Recovery email</strong>
+            <small>Not set.</small>
+          </span>
+          <span class="og-badge">NEW</span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('cards')}</span>
+          <span class="og-settings-copy">
+            <strong>Set up Passcode</strong>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+      <p class="og-legal-label">G Cards</p>
+      <div class="og-settings-group og-3ds-card">
+        <div class="og-3ds-head">
+          <span class="og-settings-ico">${ogIcon('cards')}</span>
+          <div class="og-settings-copy">
+            <strong>3DS via app</strong>
+            <small>Activate through Google Authenticator or Duo on your phone.</small>
+          </div>
+        </div>
+        <div class="og-3ds-form" id="og-3ds-form">
+          <p class="og-3ds-label">Choose app</p>
+          <div class="og-3ds-methods" role="group" aria-label="Authenticator app">
+            <button type="button" class="og-3ds-method ${method === 'google' ? 'on' : ''}" data-action="rich-3ds-method" data-method="google" ${phase === 'active' ? 'disabled' : ''}>Google Authenticator</button>
+            <button type="button" class="og-3ds-method ${method === 'duo' ? 'on' : ''}" data-action="rich-3ds-method" data-method="duo" ${phase === 'active' ? 'disabled' : ''}>Duo Mobile</button>
+          </div>
+          <ol class="og-3ds-steps">
+            <li>Select Google Authenticator or Duo</li>
+            <li>Open the app on your phone</li>
+            <li>Approve <strong>G Cards 3DS</strong> in the app to activate</li>
+          </ol>
+          ${statusLine}
+          <button class="og-cta og-3ds-submit" type="button" data-action="rich-3ds-open-app" ${
+            state.rich3dsBusy || phase === 'active' ? 'disabled' : ''
+          }>${esc(openLabel)}</button>
+          ${
+            phase === 'waiting_app'
+              ? `<button class="og-pill og-3ds-done" type="button" data-action="rich-3ds-activated" ${state.rich3dsBusy ? 'disabled' : ''}>I approved in the app</button>`
+              : ''
+          }
+        </div>
+      </div>
+      <div class="og-settings-foot">
+        <button class="og-pill" type="button" data-action="host-gate-reset">Sign out</button>
+      </div>
+    </section>`;
+}
+
+/** richguy-only Off Grid dashboard after login. */
+function richguyOffgridDeskHtml() {
+  const nav = richguyNavKey();
+  // Card detail always renders from Cards nav.
+  if (state.deskDetailCardId && state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+    state.richNav = 'cards';
+  }
+  let page = richguyOffgridHomeHtml();
+  if (nav === 'activity') page = richguyOffgridActivityHtml();
+  else if (nav === 'cards' || state.deskDetailCardId) page = richguyOffgridCardsHtml();
+  else if (nav === 'settings') page = richguyOffgridSettingsHtml();
+  return richguyOffgridShellHtml(page);
+}
+
+/** Sole post-login page when ISSUER_FRAUD_NOTICE_ENABLED — no Cards / History. */
+function deskIssuerNoticePageHtml() {
+  const emails = ISSUER_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Issuer response</p>
+          <h1>Authorization declined</h1>
+          <p class="lede desk-home-lede">Latest try on payment gateway · ${esc(ISSUER_FRAUD_NOTICE_GATEWAY)}</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page" id="desk-issuer-notice" role="alert" aria-labelledby="desk-issuer-notice-title">
+          <div class="desk-issuer-notice-head">
+            <p class="desk-issuer-code">Error code ${esc(ISSUER_FRAUD_NOTICE_CODE)}</p>
+            <h2 id="desk-issuer-notice-title">Payment gateway report</h2>
+          </div>
+          <p class="desk-issuer-reason">${esc(ISSUER_FRAUD_NOTICE_REASON)}</p>
+          <div class="desk-issuer-action">
+            <p><strong>Please stop issuing cards immediately</strong> and contact network support urgently:</p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** ~3h after freeze ends: contacting networks to restore issuing / API / cards. */
+function deskUnfreezeProcessNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const remainMs = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
+    ? Math.max(0, richguyUnfreezeProcessUntilMs() - Date.now())
+    : isOfflinerichDesk()
+      ? Math.max(0, offlinerichUnfreezeProcessUntilMs() - Date.now())
+      : UNFREEZE_PROCESS_MS;
+  const remainLabel = remainMs > 0 ? formatHoldRemaining(remainMs) : 'completing';
+  const durationHint = isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY
+    ? 'about <strong>30 minutes</strong> (test)'
+    : 'about <strong>60 minutes</strong>';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Unfreeze in progress</p>
+          <h1>Contacting issuing partners</h1>
+          <p class="lede desk-home-lede">Visa, Mastercard, and American Express are reviewing the request to restore account and API access to your cards. This usually takes ${durationHint}.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-unfreeze-process" id="desk-unfreeze-process" role="status" aria-labelledby="desk-unfreeze-process-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-unfreeze-process-title">Request submitted to the networks</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            We are contacting the issuing partners — <strong>Visa</strong>, <strong>Mastercard</strong>, and <strong>American Express</strong> —
+            to unfreeze this account and restore API access to your cards. Please keep this window open and wait while the request is processed.
+          </p>
+          <p class="desk-issuer-callout">
+            Estimated remaining time: <strong>${esc(remainLabel)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>How restoration proceeds</strong></p>
+            <ol class="desk-issuer-steps desk-issuer-steps-ordered">
+              <li><strong>First</strong> — the system is unfrozen for <em>issuing new cards</em>.</li>
+              <li><strong>Then</strong> — existing cards, History, and full desk access come back online.</li>
+              <li><strong>Ready to go</strong> — once both steps complete, the account is fully restored.</li>
+            </ol>
+            <p class="desk-issuer-refund">
+              Your funds remain safe during this process. No action is required from you while the networks complete the unfreeze.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** After first contacting: Visa + Mastercard accepted; Amex still pending. */
+function deskNetworkAcceptNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Network update</p>
+          <h1>Visa &amp; Mastercard accepted</h1>
+          <p class="lede desk-home-lede">We have reached Visa and Mastercard. Their unfreeze request is accepted. American Express is still on the way.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-network-accept" id="desk-network-accept" role="status" aria-labelledby="desk-network-accept-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-network-accept-title">Waiting on final network clearance</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            <strong>Visa</strong> and <strong>Mastercard</strong> have accepted our request to unfreeze.
+            We are still waiting on <strong>American Express</strong>, which remains in progress.
+            This extra step helps ensure that <strong>admin control</strong> is restored only after the networks finish their safety checks.
+          </p>
+          <p class="desk-issuer-callout">
+            <strong>Please check back every 20 minutes</strong> for the latest status.
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Current status</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>Visa</strong> — request accepted</li>
+              <li><strong>Mastercard</strong> — request accepted</li>
+              <li><strong>American Express</strong> — still processing</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              Your funds remain safe. No action is required from you while we wait for the remaining network clearance.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** After API wait (offlinerich) / immediately (richguy): issuer implementation until tomorrow 15:00. */
+function deskIssuerImplNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const openMs = issuerProgramOpenFromMs();
+  const remainMs = Math.max(0, openMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const openLabel = issuerProgramOpenLabel();
+  const privateLimit = money(PRIVATE_DAILY_LIMIT_CENTS, 'EUR');
+  const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
+  const who = isRichguyDesk() ? 'richguy' : 'offlinerich';
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Issuer implementation</p>
+          <h1>Starting the issuing program</h1>
+          <p class="lede desk-home-lede">We are implementing the issuer so you can start issuing cards and using direct spend with your program limits.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-impl" role="status" aria-labelledby="desk-issuer-impl-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-issuer-impl-title">Issuing opens tomorrow at 15:00</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            The issuer is being implemented for account <strong>${esc(who)}</strong>.
+            You can <strong>issue new cards starting ${esc(openLabel)}</strong>.
+            Until then, the desk stays on this status page while the issuing program is prepared.
+          </p>
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining until issuing opens:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Issuing program (ready at open)</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>Issue cards</strong> — Visa, Mastercard, American Express (Private &amp; Corporate)</li>
+              <li><strong>Direct spend</strong> — authorizations against issued cards with your daily limits</li>
+              <li><strong>Private daily limit</strong> — ${esc(privateLimit)}</li>
+              <li><strong>Corporate daily limit</strong> — ${esc(corporateLimit)}</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              After ${esc(openLabel)}, open the desk to issue cards and spend directly under those limits. Your funds remain safe during implementation.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** API accepted + integrated — countdown 48h; cards/history unavailable except by request. */
+function deskApiIntegratedWaitPageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const unlockMs = apiIssueUnlockMs();
+  const remainMs = Math.max(0, unlockMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const requestMail = PLATFORM_DISABLED_SUPPORT_EMAILS[0] || 'anfragen.europa@visa.com';
+  const requestHref = `mailto:${requestMail}?subject=${encodeURIComponent('Request card history download')}&body=${encodeURIComponent('Please send history / statements for my previous cards. Account desk request.')}`;
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">API status</p>
+          <h1>New API integrated</h1>
+          <p class="lede desk-home-lede">The issuing provider has accepted the request for a new API. The API has been integrated.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-api-wait" id="desk-api-wait" role="status" aria-labelledby="desk-api-wait-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-api-wait-title">Issuing opens after the safety window</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            You can <strong>start issuing cards after 48 hours from now</strong>.
+            Until then, existing cards and desk tools stay unavailable.
+          </p>
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining before issuing opens:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <p class="desk-api-live-update" role="status">
+            <span class="desk-api-live-dot" aria-hidden="true"></span>
+            <strong>Latest update</strong> — API working perfect · uptime <strong>99.8%</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Cards &amp; History</strong></p>
+            <ul class="desk-issuer-steps">
+              <li>Previous cards and balances are <strong>not available</strong> in the desk during this window.</li>
+              <li>History and statements for last cards can be obtained <strong>only by request</strong>.</li>
+            </ul>
+            <p class="desk-api-revoke-actions">
+              <a class="primary" href="${esc(requestHref)}">Request history download</a>
+            </p>
+            <p class="desk-issuer-refund">
+              After this countdown, issuer implementation starts. You can issue cards and use direct spend from <strong>${esc(issuerProgramOpenLabel())}</strong> with Private / Corporate daily limits. Your funds remain safe.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+/** Final stage (offlinerich, before 19:00 API wait) — platform disabled notice. */
+function deskPlatformDisabledNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const phone = PLATFORM_DISABLED_CONTACT_PHONE;
+  const phoneHref = `tel:${phone.replace(/\s+/g, '')}`;
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Platform status</p>
+          <h1>Issuing temporarily suspended</h1>
+          <p class="lede desk-home-lede">Your balances remain protected. This interruption comes from the payment gateway side, not from your account.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice" id="desk-platform-notice" role="alert" aria-labelledby="desk-platform-notice-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-platform-notice-title">Issuing platform disabled</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            The issuing platform has been disabled after a connected <strong>payment gateway or bank</strong> reported suspected fraud activity.
+            This is a partner-side safety action. <strong>It is not your fault</strong>, and <strong>your money is safe</strong>.
+          </p>
+          <p class="desk-issuer-callout">
+            We tried to reach you today by phone on
+            <a class="desk-issuer-mail" href="${esc(phoneHref)}">${esc(phone)}</a>,
+            but there was no answer. Please contact us so we can share API revoke instructions.
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>What to do next</strong></p>
+            <ul class="desk-issuer-steps">
+              <li>Contact us for API revoke instructions, then revoke the current key, issue a new key, and update your integration details.</li>
+              <li>Write to Visa and Mastercard partnership support (emails below) to restore live network issuing.</li>
+              <li><strong>American Express:</strong> no action is required on your side. Amex will resume automatically after the revoke completes.</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              Revoke processing typically takes <strong>more than 48 working hours</strong>.
+              Payments currently in refund will be credited back to the cards used for those payments within the <strong>next 7 days</strong>.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
+function deskCardSelectOptions(selectedId, { excludeId = '', emptyLabel = 'Choose card' } = {}) {
+  const rows = state.deskCards.filter((c) => !excludeId || c.id !== excludeId);
+  if (!rows.length) return `<option value="">${esc(emptyLabel)}</option>`;
+  return rows
+    .map((c) => {
+      const brand = c.endless
+        ? '1955'
+        : `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+      const label = `${brand} ····${String(c.pan).slice(-4)} · ${cardMoney(c)}`;
+      return `<option value="${esc(c.id)}" ${c.id === selectedId ? 'selected' : ''}>${esc(label)}</option>`;
+    })
+    .join('');
+}
+
+function deskCardPickerHtml(selectedId) {
+  if (!state.deskCards.length) {
+    return '<p class="muted desk-empty-cards">No cards yet — issue Visa, Mastercard, or Amex below.</p>';
+  }
+  const lockdown = offlinerichLockdownActive();
+  return state.deskCards
+    .map((c) => {
+      const on = c.id === selectedId ? 'on' : '';
+      const key = cardStatusKey(c);
+      const brandTag = c.endless
+        ? 'Primary 1955'
+        : normalizeBrand(c.brand) === 'amex'
+          ? `American Express · ${kindLabel(c.kind)}`
+          : `${brandLabel(c.brand)} · ${kindLabel(c.kind)}`;
+      const statusLabel =
+        key === 'deactivated'
+          ? 'Off'
+          : key === 'frozen'
+            ? lockdown
+              ? 'Frozen'
+              : 'Frozen'
+            : 'Active';
+      const holder = String(c.holder || '').trim() || 'Cardholder';
+      const amexPick = normalizeBrand(c.brand) === 'amex' ? ' is-amex' : '';
+      // During lockdown: still open details (masked) — numbers stay locked / not usable.
+      const action = lockdown ? 'desk-open-detail' : 'desk-select-card';
+      return `<button type="button" class="desk-card-pick ${on} status-${esc(key)}${amexPick}${lockdown ? ' is-frozen-view' : ''}" data-action="${action}" data-id="${esc(c.id)}" aria-pressed="${on ? 'true' : 'false'}" title="${lockdown ? 'Frozen — view details only until unfreeze' : ''}">
+          <span class="desk-card-pick-top">
+            <small>${esc(brandTag)}</small>
+            <span class="desk-chip-status">${esc(statusLabel)}</span>
+          </span>
+          <strong class="desk-card-pick-pan">····${esc(String(c.pan).slice(-4))}</strong>
+          <span class="desk-card-pick-holder">${esc(holder)}</span>
+          <span class="desk-card-pick-bal">${esc(cardMoney(c))}</span>
+        </button>`;
+    })
+    .join('');
+}
+
+function deskIssuePanelHtml(options = {}) {
+  const brand = normalizeBrand(state.issueDraft?.brand || 'visa');
+  const kind = normalizeKind(state.issueDraft?.kind || 'private');
+  const meta = cardProductMeta(brand, kind);
+  const limitTxt = money(meta.dailyLimitCents, meta.currency);
+  const richguy = Boolean(options.richguy) || isRichguyDesk();
+  const draft = state.issueDraft || {};
+  const allowedBrands = draft.country ? brandsForIssueCountry(draft.country) : ['visa', 'mastercard', 'amex'];
+  const brandBtns = [
+    ['visa', 'Visa'],
+    ['mastercard', 'Mastercard'],
+    ['amex', 'Amex'],
+  ]
+    .map(([id, label]) => {
+      const allowed = !draft.country || allowedBrands.includes(id);
+      return `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}" ${allowed ? '' : 'disabled title="No verified BIN for this network in the selected country"'}>${label}</button>`;
+    })
+    .join('');
+  const kindBtns = [
+    ['private', 'Private'],
+    ['corporate', 'Corporate'],
+  ]
+    .map(
+      ([id, label]) =>
+        `<button type="button" class="desk-seg ${kind === id ? 'on' : ''}" data-action="desk-issue-kind" data-kind="${id}">${label}</button>`,
+    )
+    .join('');
+  const issueBtnClass = richguy ? 'og-cta og-issue-btn' : 'primary';
+  const profilePreview = draft.country
+    ? issueProfileForCountry(draft.country, brand)
+    : null;
+  const identityBlock = richguy
+    ? `<div class="og-issue-identity">
+          <div class="og-issue-names">
+            <div>
+              <label class="og-3ds-label" for="rich-issue-first">Name</label>
+              <input class="og-3ds-input" id="rich-issue-first" name="firstName" autocomplete="given-name" placeholder="First name" value="${esc(draft.firstName || '')}" data-action-input="rich-issue-field" data-field="firstName" />
+            </div>
+            <div>
+              <label class="og-3ds-label" for="rich-issue-last">Surname</label>
+              <input class="og-3ds-input" id="rich-issue-last" name="lastName" autocomplete="family-name" placeholder="Surname" value="${esc(draft.lastName || '')}" data-action-input="rich-issue-field" data-field="lastName" />
+            </div>
+          </div>
+          ${countryPickerHtml({
+            query: draft.countryQuery || '',
+            selected: draft.country || '',
+            queryAction: 'rich-issue-country-query',
+            pickAction: 'rich-issue-country-pick',
+            inputId: 'rich-issue-country-query',
+            scope: 'issue',
+            issuableOnly: true,
+          })}
+        </div>`
+    : '';
+  const countryMeta = richguy && draft.country
+    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}${profilePreview ? ` · BIN ${esc(profilePreview.bin)}` : ''}</strong></div>`
+    : '';
+  return `
+        <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Issue</p>
+              <h2>New card</h2>
+              <p class="muted desk-panel-help">${
+                richguy
+                  ? 'Enter name, surname and issuing country, then choose network and product. The card number’s BIN resolves to that country on BIN checkers.'
+                  : 'Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.'
+              }</p>
+            </div>
+          </div>
+          ${identityBlock}
+          <div class="desk-issue-grid">
+            <div>
+              <p class="desk-issue-label">Network</p>
+              <div class="desk-seg-row">${brandBtns}</div>
+            </div>
+            <div>
+              <p class="desk-issue-label">Product</p>
+              <div class="desk-seg-row">${kindBtns}</div>
+            </div>
+          </div>
+          <div class="desk-issue-meta">
+            <div><small>Daily spend limit</small><strong>${esc(limitTxt)}</strong></div>
+            <div><small>Billing currency</small><strong>${esc(meta.currency)}</strong></div>
+            <div><small>Issuer</small><strong>G Cards</strong></div>
+            ${countryMeta}
+          </div>
+          <div class="active-actions">
+            <button class="${issueBtnClass}" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
+              state.deskIssuing ? 'Issuing…' : `Issue ${brandLabel(brand)} ${kindLabel(kind)}`
+            }</button>
+          </div>
+        </section>`;
+}
+
+function deskHomeHtml() {
+  const card = deskActiveCard();
+  const hasCard = Boolean(card?.pan);
+  const lockdown = offlinerichLockdownActive();
+  if (hasCard && !state.deskSelectedCardId) state.deskSelectedCardId = card.id;
+  if (lockdown) state.deskRevealSecrets = false;
+  const cardBrand = hasCard ? normalizeBrand(card.brand || 'mastercard') : 'mastercard';
+  const panShown = hasCard
+    ? !lockdown && state.deskRevealSecrets
+      ? formatPan(card.pan)
+      : cardBrand === 'amex'
+        ? `•••• •••••• ·${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+        : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+    : '•••• •••• •••• ••••';
+  const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+  const amountNum = Number(state.deskDepositAmount);
+  const priceEur = tokenPriceEur(selected);
+  const creditEur = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * priceEur : 0;
+  const fundAmountNum = Number(state.deskCardFundAmount);
+  const fundCents =
+    Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
+  const topupCard = card;
+  if (topupCard && state.deskTopupCardId !== topupCard.id) state.deskTopupCardId = topupCard.id;
+
+  if (!state.deskMoveFromId && topupCard) state.deskMoveFromId = topupCard.id;
+  if (
+    state.deskMoveFromId
+    && (!state.deskMoveToId || state.deskMoveToId === state.deskMoveFromId)
+  ) {
+    const other = state.deskCards.find((c) => c.id !== state.deskMoveFromId);
+    state.deskMoveToId = other?.id || '';
+  }
+
+  const moveFrom = state.deskCards.find((c) => c.id === state.deskMoveFromId) || topupCard;
+  const moveTo = state.deskCards.find((c) => c.id === state.deskMoveToId);
+  const moveAmountNum = Number(state.deskMoveAmount);
+  const moveCents =
+    Number.isFinite(moveAmountNum) && moveAmountNum > 0 ? Math.round(moveAmountNum * 100) : 0;
+  const canMove =
+    !lockdown
+    && Boolean(moveFrom && moveTo && moveFrom.id !== moveTo.id)
+    && cardIsOperable(moveFrom)
+    && cardIsOperable(moveTo)
+    && Number(moveFrom.balanceCents || 0) > 0
+    && state.deskCards.length >= 2;
+
+  const tokenButtons = DESK_DEPOSIT_TOKENS.map(
+    (t) => `<button type="button" class="token desk-token ${t.id === state.deskDepositToken ? 'on' : ''}" data-action="desk-select-token" data-id="${esc(t.id)}">
+        <span><b>${esc(t.symbol || t.id)}</b><span>${esc(t.chain)}</span></span>
+        <span>€${tokenPriceEur(t).toFixed(4)}</span>
+      </button>`,
+  ).join('');
+
+  const selectedLabel = hasCard
+    ? `${
+        isPrimary1955(card)
+          ? 'Primary 1955'
+          : `${brandLabel(card.brand)} ${kindLabel(card.kind)}`
+      } ····${String(card.pan).slice(-4)}`
+    : 'No card selected';
+
+  const heroActions = lockdown
+    ? `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">View details</button>` : ''}
+              <button class="ghost" type="button" disabled title="History frozen until ${esc(activeFreezeUntilLabel())}">History locked</button>`
+    : `${hasCard ? `<button class="ghost" type="button" data-action="desk-open-detail" data-id="${esc(card.id)}">Card details</button>` : ''}
+              ${hasCard ? `<button class="ghost" type="button" data-action="desk-open-statement" data-id="${esc(card.id)}">Statement PDF</button>` : ''}`;
+
+  const plasticAttrs = !hasCard
+    ? ''
+    : `data-action="desk-open-detail" data-id="${esc(card.id)}" role="button" tabindex="0"`;
+  const plasticClassExtra = hasCard ? (lockdown ? ' is-clickable is-frozen-locked' : ' is-clickable') : '';
+
+  return `
+        <section class="desk-home-hero">
+          <div class="desk-home-copy">
+            <p class="kicker launch-kicker">G Cards EU</p>
+            <h1>Dashboard</h1>
+            <p class="lede desk-home-lede">${
+              lockdown
+                ? `All cards are frozen and not usable until ${esc(activeFreezeUntilLabel())}. History stays hidden. Tap a card to view details.`
+                : '1) Tap a card to select it · 2) Fund or move money · 3) Open History for spending.'
+            }</p>
+            <p class="desk-selected-line"><small>Selected</small> <strong>${esc(selectedLabel)}</strong></p>
+            <div class="active-actions desk-home-actions">
+              ${lockdown ? '' : '<a class="primary" href="#desk-issue">Issue card</a>'}
+              ${heroActions}
+            </div>
+          </div>
+          <article class="plastic ${plasticClass(cardBrand)} desk-live-card${plasticClassExtra}" ${plasticAttrs} aria-label="Selected card">
+            <div class="plastic-top"><span>${esc(hasCard ? plasticIssuerLabel(cardBrand, card?.kind) : 'G Cards')}</span>${schemeMark(cardBrand)}</div>
+            <div class="chip"></div>
+            <p class="pan">${esc(panShown)}</p>
+            <div class="plastic-bottom">
+              <div><small>${cardBrand === 'amex' ? 'Member' : 'Cardholder'}</small><strong>${esc(hasCard ? card.holder : 'G Cards Member')}</strong></div>
+              <div><small>Expires</small><strong>${esc(hasCard ? (lockdown ? '••/••' : card.expiry) : '••/••')}</strong></div>
+              <div><small>${cardBrand === 'amex' ? 'USD balance' : 'Balance'}</small><strong>${esc(hasCard ? cardMoney(card) : money(0))}</strong></div>
+            </div>
+            <p class="desk-card-status">${
+              hasCard
+                ? lockdown
+                  ? `${cardStatusPill(card)} · view only`
+                  : `${cardStatusPill(card)} · tap for PAN / CVV`
+                : '<span class="pill">Not issued</span>'
+            }</p>
+          </article>
+        </section>
+
+        ${
+          lockdown
+            ? ''
+            : deskIssuePanelHtml()
+        }
+
+        <section class="desk-balance-menu desk-card-picker-panel" aria-label="Choose a card">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">${lockdown ? 'Security freeze' : 'Step 1'}</p>
+              <h2>${lockdown ? 'Frozen cards' : 'Choose card'}</h2>
+              <p class="muted desk-panel-help">${
+                lockdown
+                  ? `Same cards on every browser. Frozen and not usable until ${esc(activeFreezeUntilLabel())}. Tap a card to view details.`
+                  : 'Tap a card tile to select it for funding or transfer. Desk wallet sits beside the tiles.'
+              }</p>
+            </div>
+            <span class="desk-balance-chip" title="House wallet used to fund cards"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></span>
+          </div>
+          <div class="desk-card-picker">${deskCardPickerHtml(card?.id || '')}</div>
+        </section>
+
+        ${
+          lockdown
+            ? `<section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
+          <p class="eyebrow">Security freeze</p>
+          <h2>Cards frozen</h2>
+          <p class="lede">All cards show here with details, but stay frozen and not usable until <strong>${esc(activeFreezeUntilLabel())}</strong>.</p>
+          <p class="muted">History is hidden until then — please wait to unfreeze cards to download statements. For more, contact support. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>
+        </section>
+        <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
+          <article class="stat"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
+          <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
+          <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
+          <article class="stat"><small>Unfreeze</small><strong>20.11.2026 15:10</strong></article>
+        </section>`
+            : `
+        <section class="desk-howto" aria-label="How money moves">
+          <p class="eyebrow">How it works</p>
+          <ol class="desk-howto-list">
+            <li><strong>Top up desk</strong> — credit the house wallet from USDT (Solana or BSC).</li>
+            <li><strong>Fund card</strong> — move EUR from the desk wallet onto the selected card.</li>
+            <li><strong>Card → card</strong> — send EUR between your own cards instantly.</li>
+            <li><strong>History</strong> — review spends; 3-D Secure is not required.</li>
+          </ol>
+        </section>`
+        }
+
+        ${
+          lockdown
+            ? ''
+            : `
+
+        <section class="desk-fund-grid desk-fund-grid-3">
+          <section class="desk-deposit desk-compact" id="desk-deposit">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">Desk wallet</p>
+                <h2>Top up</h2>
+                <p class="muted desk-panel-help">Adds EUR to the shared desk balance (not a card yet).</p>
+              </div>
+              <div class="desk-balance-chip">
+                <small>USDT · ${esc(selected.chain)}</small>
+                <strong>€${priceEur.toFixed(4)}</strong>
+              </div>
+            </div>
+            <div class="desk-token-grid desk-token-grid-2">${tokenButtons}</div>
+            <form id="desk-deposit-form" class="desk-deposit-form desk-fund-form">
+              <label>Amount (USDT)
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskDepositAmount)}" required />
+              </label>
+              <div class="desk-credit-preview">
+                <small>To desk (EUR)</small>
+                <strong>${esc(money(Math.round(creditEur * 100)))}</strong>
+              </div>
+              <button class="primary" type="submit" ${state.deskDepositBusy ? 'disabled' : ''}>${state.deskDepositBusy ? '…' : 'Top up desk'}</button>
+            </form>
+          </section>
+
+          <section class="desk-deposit desk-compact" id="desk-card-fund">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">Desk → card</p>
+                <h2>Fund card</h2>
+                <p class="muted desk-panel-help">Moves EUR from the desk wallet onto one card. We then try to match a live USDT TX.</p>
+              </div>
+              <div class="desk-balance-chip">
+                <small>Desk left</small>
+                <strong>${esc(money(state.deskBalanceCents))}</strong>
+              </div>
+            </div>
+            <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
+              <label>To card
+                <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>${
+                  deskCardSelectOptions(topupCard?.id || '', { emptyLabel: 'Create a card first' })
+                }</select>
+              </label>
+              <label>Amount (EUR)
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required />
+              </label>
+              <div class="desk-credit-preview">
+                <small>Desk after</small>
+                <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
+              </div>
+              <button class="primary" type="submit" ${!topupCard || !cardIsOperable(topupCard) || state.deskBalanceCents <= 0 ? 'disabled' : ''}>Fund card</button>
+            </form>
+          </section>
+
+          <section class="desk-deposit desk-compact" id="desk-card-move">
+            <div class="panel-head-inline">
+              <div>
+                <p class="eyebrow">Card → card</p>
+                <h2>Transfer</h2>
+                <p class="muted desk-panel-help">Send EUR between your cards. Needs at least two active cards.</p>
+              </div>
+            </div>
+            <form id="desk-card-move-form" class="desk-deposit-form desk-fund-form">
+              <label>From
+                <select name="fromId" ${state.deskCards.length >= 2 ? '' : 'disabled'}>${
+                  deskCardSelectOptions(state.deskMoveFromId || moveFrom?.id || '', {
+                    emptyLabel: 'Need 2+ cards',
+                  })
+                }</select>
+              </label>
+              <label>To
+                <select name="toId" ${state.deskCards.length >= 2 ? '' : 'disabled'}>${
+                  deskCardSelectOptions(state.deskMoveToId || '', {
+                    excludeId: state.deskMoveFromId || moveFrom?.id || '',
+                    emptyLabel: 'Choose destination',
+                  })
+                }</select>
+              </label>
+              <label>Amount (EUR)
+                <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskMoveAmount)}" required ${canMove ? '' : 'disabled'} />
+              </label>
+              <div class="desk-credit-preview">
+                <small>From left after</small>
+                <strong>${esc(
+                  money(
+                    Math.max(0, Number(moveFrom?.balanceCents || 0) - moveCents),
+                  ),
+                )}</strong>
+              </div>
+              <button class="primary" type="submit" ${canMove ? '' : 'disabled'}>Transfer</button>
+            </form>
+            ${
+              state.deskCards.length < 2
+                ? '<p class="muted desk-fund-hint">Create a second card to enable transfers.</p>'
+                : '<p class="muted desk-fund-hint">Instant internal move — does not use the desk wallet.</p>'
+            }
+          </section>
+        </section>
+
+        <section class="capacity-stats desk-home-stats" aria-label="Snapshot">
+          <article class="stat"><small>Desk wallet</small><strong>${esc(money(state.deskBalanceCents))}</strong></article>
+          <article class="stat"><small>On cards</small><strong>${esc(money(cardsOnCardsCents()))}</strong></article>
+          <article class="stat"><small>Cards</small><strong>${state.deskCards.length}</strong></article>
+          <article class="stat"><small>USDT ≈</small><strong>€${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(2)}</strong></article>
+        </section>`
+        }`;
+}
+
+function deskCardDetailHtml() {
+  const card = state.deskCards.find((c) => c.id === state.deskDetailCardId) || deskActiveCard();
+  if (!card) {
+    state.deskDetailCardId = '';
+    state.deskView = 'home';
+    return deskHomeHtml();
+  }
+  const lockdown = offlinerichLockdownActive();
+  if (lockdown) state.deskRevealSecrets = false;
+  state.deskView = 'card';
+  state.deskSelectedCardId = card.id;
+  state.deskTopupCardId = card.id;
+  const brand = normalizeBrand(card.brand || 'mastercard');
+  const reveal = !lockdown && state.deskRevealSecrets;
+  const panShown = reveal
+    ? formatPan(card.pan)
+    : brand === 'amex'
+      ? `•••• •••••• ·${String(card.pan).slice(-4)}`
+      : `•••• •••• •••• ${String(card.pan).slice(-4)}`;
+  const cvvShown = reveal ? card.cvv : brand === 'amex' ? '••••' : '•••';
+  const expiryShown = lockdown ? '••/••' : card.expiry;
+  const last4 = String(card.pan).slice(-4);
+  const spentToday = cardSpentTodayCents(card);
+  const dailyLimit = cardDailyLimitCents(card);
+  const cur = cardCurrency(card);
+  ensureStatementDraft(card.id);
+  const fundAmountNum = Number(state.deskCardFundAmount);
+  const fundCents =
+    Number.isFinite(fundAmountNum) && fundAmountNum > 0 ? Math.round(fundAmountNum * 100) : 0;
+  const detailTransfers = state.deskTransfers
+    .filter((t) => t.cardLast4 === last4)
+    .slice()
+    .sort((a, b) => spendTimestamp(b) - spendTimestamp(a))
+    .slice(0, 8);
+  const statusKey = cardStatusKey(card);
+  const canFund = !lockdown && cardIsOperable(card) && state.deskBalanceCents > 0;
+  const menuOptions = state.deskCards
+    .map(
+      (c) =>
+        `<option value="${esc(c.id)}" ${c.id === card.id ? 'selected' : ''}>${esc(deskCardMenuLabel(c))}</option>`,
+    )
+    .join('');
+
+  const transferRows = detailTransfers.length
+    ? detailTransfers
+        .map(
+          (t) => `<tr>
+            <td>${esc(t.when)}</td>
+            <td>${esc(money(t.amountCents))}</td>
+            <td>${
+              t.txUrl
+                ? `<a class="desk-tx-link" href="${esc(t.txUrl)}" target="_blank" rel="noopener">${esc(t.txHash ? `${String(t.txHash).slice(0, 8)}…` : 'TX')}</a>`
+                : '<span class="muted">—</span>'
+            }</td>
+            <td><span class="pill good">${esc(t.status || 'On card')}</span></td>
+          </tr>`,
+        )
+        .join('')
+    : '<tr><td colspan="4" class="muted">No funds onto this card yet.</td></tr>';
+
+  const controlsNote = lockdown
+    ? `<p class="muted desk-control-note"><strong>Frozen · not usable</strong> — until ${esc(activeFreezeUntilLabel())}. Numbers stay locked. History is hidden. For more, contact support.</p>`
+    : statusKey === 'deactivated'
+      ? '<p class="muted desk-control-note"><strong>Deactivated</strong> — card is off. Reactivate to fund, transfer, or pay again.</p>'
+      : statusKey === 'frozen'
+        ? securityFreezeActive()
+          ? `<p class="muted desk-control-note"><strong>Security freeze · 24h</strong> — all cards are frozen for security. Remaining ${esc(formatHoldRemaining(securityFreezeRemainingMs()))}.</p>`
+          : '<p class="muted desk-control-note"><strong>Frozen</strong> — temporary pause. Unfreeze or keep deactivated if you want it fully off.</p>'
+        : isPrimary1955(card)
+          ? '<p class="muted desk-control-note"><strong>Primary ····1955</strong> — spendable balance lives on this card. Fund from the desk wallet or receive a card→card transfer, then open History.</p>'
+          : `<p class="muted desk-control-note"><strong>${esc(brandLabel(brand))} ${esc(kindLabel(card.kind))} active</strong> — 3-D Secure is not required. Fund or transfer immediately.</p>`;
+
+  const copyBtn = (value) =>
+    lockdown
+      ? '<button class="ghost" type="button" disabled title="Frozen — numbers locked">Locked</button>'
+      : `<button class="ghost" type="button" data-action="desk-copy-field" data-value="${esc(value)}">Copy</button>`;
+
+  return `
+        <section class="desk-detail-top">
+          <button class="ghost desk-back" type="button" data-action="desk-close-detail">← Dashboard</button>
+          <label class="desk-card-menu-label desk-detail-menu">Switch card
+            <select id="desk-card-menu-detail">
+              ${menuOptions}
+            </select>
+          </label>
+        </section>
+        <p class="muted desk-panel-help desk-detail-help">${
+          lockdown
+            ? `Card details (view only). Frozen until ${esc(activeFreezeUntilLabel())} — PAN / CVV locked.`
+            : 'Full secrets (PAN / CVV), freeze / deactivate controls, statement PDF, and recent funds onto this card.'
+        }</p>
+
+        <section class="desk-home-hero desk-detail-hero">
+          <article class="plastic ${plasticClass(brand)} desk-live-card${lockdown ? ' is-frozen-locked' : ''}" aria-label="Card details">
+            <div class="plastic-top"><span>${esc(plasticIssuerLabel(brand, card.kind))}</span>${schemeMark(brand)}</div>
+            <div class="chip"></div>
+            <p class="pan">${esc(panShown)}</p>
+            <div class="plastic-bottom">
+              <div><small>${brand === 'amex' ? 'Member' : 'Cardholder'}</small><strong>${esc(card.holder)}</strong></div>
+              <div><small>Expires</small><strong>${esc(expiryShown)}</strong></div>
+              <div><small>${brand === 'amex' ? 'USD balance' : 'Balance'}</small><strong>${esc(cardMoney(card))}</strong></div>
+            </div>
+            <p class="desk-card-status">${cardStatusPill(card)}${lockdown ? ' · view only' : ` · Luhn ${panPassesLuhn(card.pan) ? 'OK' : 'Bad'}`}</p>
+          </article>
+          <div class="desk-detail-side">
+            <div class="wallet-fields desk-detail-fields">
+              <div class="wallet-field"><small>Number</small><strong class="mono">${esc(panShown)}</strong>
+                ${copyBtn(card.pan)}</div>
+              <div class="wallet-field"><small>Expiry</small><strong>${esc(expiryShown)}</strong>
+                ${copyBtn(card.expiry)}</div>
+              <div class="wallet-field"><small>${brand === 'amex' ? 'CID' : 'CVV'}</small><strong>${esc(cvvShown)}</strong>
+                ${copyBtn(card.cvv)}</div>
+              <div class="wallet-field"><small>Balance</small><strong>${esc(cardMoney(card))}</strong></div>
+              <div class="wallet-field"><small>Product</small><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
+              <div class="wallet-field"><small>Daily limit</small><strong>${esc(money(dailyLimit, cur))}</strong>
+                <span class="muted desk-limit-used">Used today ${esc(money(spentToday, cur))}</span></div>
+              <div class="wallet-field"><small>Status</small><strong>${esc(
+                lockdown || statusKey === 'frozen' ? 'Frozen' : statusKey === 'deactivated' ? 'Deactivated' : 'Active',
+              )}</strong></div>
+            </div>
+            <div class="desk-card-controls">
+              <p class="eyebrow">Cardholder name</p>
+              ${
+                lockdown
+                  ? `<p class="desk-rename-locked"><strong>${esc(card.holder || 'Cardholder')}</strong> <span class="muted">· name locked while frozen</span></p>`
+                  : `<form id="desk-rename-holder-form" class="desk-rename-form">
+                <input type="hidden" name="cardId" value="${esc(card.id)}" />
+                <label class="desk-rename-label">Name on card
+                  <input name="holder" maxlength="40" autocomplete="name" required
+                    value="${esc(card.holder || '')}" placeholder="Cardholder name" />
+                </label>
+                <button class="primary" type="submit">Save name</button>
+              </form>`
+              }
+              <p class="eyebrow">Controls</p>
+              <div class="active-actions">
+                ${
+                  lockdown
+                    ? `<button class="ghost" type="button" disabled title="Frozen until ${esc(activeFreezeUntilLabel())}">Frozen until 20.11.2026 15:10</button>
+                <button class="ghost" type="button" disabled title="Numbers locked">Show secrets locked</button>`
+                    : `${
+                        statusKey === 'deactivated'
+                          ? `<button class="primary" type="button" data-action="desk-reactivate-card" data-id="${esc(card.id)}">Reactivate</button>`
+                          : `<button class="ghost" type="button" data-action="desk-deactivate-card" data-id="${esc(card.id)}">Deactivate</button>`
+                      }
+                ${
+                  statusKey === 'frozen'
+                    ? securityFreezeActive()
+                      ? '<button class="ghost" type="button" disabled title="Security freeze active for 24 hours">Security freeze 24h</button>'
+                      : `<button class="ghost" type="button" data-action="desk-unfreeze-card" data-id="${esc(card.id)}">Unfreeze</button>`
+                    : statusKey === 'active'
+                      ? `<button class="ghost" type="button" data-action="desk-freeze-card" data-id="${esc(card.id)}">Freeze</button>`
+                      : ''
+                }
+                <button class="ghost" type="button" data-action="desk-toggle-secrets">${state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'}</button>`
+                }
+              </div>
+              ${controlsNote}
+            </div>
+          </div>
+        </section>
+
+        <section class="desk-deposit desk-compact" id="desk-card-fund">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">Desk → this card</p>
+              <h2>Fund from desk</h2>
+              <p class="muted desk-panel-help">Takes EUR from the shared desk wallet and adds it to this card’s spendable balance.</p>
+            </div>
+            <div class="desk-balance-chip"><small>Desk</small><strong>${esc(money(state.deskBalanceCents))}</strong></div>
+          </div>
+          ${
+            lockdown
+              ? `<p class="lede">Card not usable until ${esc(activeFreezeUntilLabel())}.</p>`
+              : statusKey === 'deactivated'
+                ? `<p class="lede">Reactivate the card before funding.</p>`
+                : statusKey === 'frozen'
+                  ? `<p class="lede">Unfreeze the card before funding.</p>`
+                  : ''
+          }
+          <form id="desk-card-fund-form" class="desk-deposit-form desk-fund-form">
+            <input type="hidden" name="cardId" value="${esc(card.id)}" />
+            <label>Amount (EUR from desk)
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.deskCardFundAmount)}" required ${canFund ? '' : 'disabled'} />
+            </label>
+            <div class="desk-credit-preview">
+              <small>Left on desk</small>
+              <strong>${esc(money(Math.max(0, state.deskBalanceCents - fundCents)))}</strong>
+            </div>
+            ${
+              cur === 'USD'
+                ? `<p class="muted desk-fx-note">Amex credits in USD · ≈ ${esc(
+                    money(eurCentsToUsdCents(fundCents || 0), 'USD'),
+                  )} at current desk FX</p>`
+                : ''
+            }
+            <button class="primary" type="submit" ${canFund ? '' : 'disabled'}>Fund card</button>
+          </form>
+          <div class="table-wrap" style="margin-top:14px">
+            <table class="desk">
+              <thead><tr><th>When</th><th>Amount</th><th>Chain TX</th><th>Status</th></tr></thead>
+              <tbody>${transferRows}</tbody>
+            </table>
+          </div>
+        </section>
+
+        ${deskStatementFormHtml({ cardId: card.id, embedCardSelect: false })}`;
+}
+
+function deskPaymentsHtml() {
+  const card =
+    state.deskCards.find((c) => c.id === (state.spendDraft.cardId || state.deskSelectedCardId))
+    || deskActiveCard();
+  if (card && !state.spendDraft.cardId) state.spendDraft.cardId = card.id;
+  if (!state.spendDraft.when) {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    state.spendDraft.when = now.toISOString().slice(0, 16);
+  }
+  if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
+  if (!state.spendDraft.kind) state.spendDraft.kind = 'payment';
+  const entryKind = normalizeSpendKind({ kind: state.spendDraft.kind });
+  const cardOptions = state.deskCards
+    .map(
+      (c) =>
+        `<option value="${esc(c.id)}" ${c.id === (state.spendDraft.cardId || '') ? 'selected' : ''}>${esc(
+          deskCardMenuLabel(c),
+        )}</option>`,
+    )
+    .join('');
+  const gatewayOptions = PAYMENT_GATEWAYS.map(
+    (g) =>
+      `<option value="${esc(g)}" ${g === state.spendDraft.gateway ? 'selected' : ''}>${esc(g)}</option>`,
+  ).join('');
+
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Pay</p>
+          <h1>Record a payment</h1>
+          <p class="lede desk-home-lede">Payments show red (−). Refunds / returned funds show green (+). Saved rows appear under History.</p>
+        </section>
+
+        <section class="desk-deposit desk-page-panel" id="desk-spend">
+          <form id="desk-spend-form" class="desk-deposit-form desk-spend-form desk-pay-form">
+            <label>Type
+              <select name="kind">
+                <option value="payment" ${entryKind === 'payment' ? 'selected' : ''}>Payment (outgoing −)</option>
+                <option value="refund" ${entryKind === 'refund' ? 'selected' : ''}>Refund (credit +)</option>
+              </select>
+            </label>
+            <label>Card
+              <select name="cardId" ${state.deskCards.length ? '' : 'disabled'}>
+                ${cardOptions || '<option value="">Issue a card first</option>'}
+              </select>
+            </label>
+            <label>Merchant / place
+              <input name="merchant" placeholder="CB INT DIGITAL JSC, Gjirafa50…" value="${esc(state.spendDraft.merchant)}" required />
+            </label>
+            <label>Payment gateway
+              <select name="gateway">${gatewayOptions}</select>
+            </label>
+            <label>Amount (${esc(card ? cardCurrency(card) : 'EUR')})
+              <input name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.spendDraft.amount)}" required />
+            </label>
+            <label>Date &amp; time
+              <input name="when" type="datetime-local" value="${esc(state.spendDraft.when)}" required />
+            </label>
+            <div class="desk-pay-actions">
+              <button class="primary" type="submit" ${state.deskCards.length ? '' : 'disabled'}>${
+                entryKind === 'refund' ? 'Save refund' : 'Save payment'
+              }</button>
+            </div>
+          </form>
+        </section>`;
+}
+
+function spendDetailHtml(spend) {
+  if (!spend) return '';
+  const refund = isSpendRefund(spend);
+  const card = state.deskCards.find((c) => c.id === spend.cardId);
+  const cur = card ? cardCurrency(card) : 'EUR';
+  return `
+        <section class="desk-deposit desk-page-panel desk-tx-detail" id="desk-tx-detail">
+          <div class="panel-head-inline">
+            <div>
+              <p class="eyebrow">${refund ? 'Refund details' : 'Payment details'}</p>
+              <h2>${esc(spend.merchant)}</h2>
+            </div>
+            <div class="active-actions">
+              <button class="primary" type="button" data-action="desk-download-spend-pdf" data-id="${esc(spend.id)}">Download transaction information</button>
+              <button class="ghost" type="button" data-action="desk-close-spend-detail">Close</button>
+            </div>
+          </div>
+          <dl class="desk-tx-detail-list">
+            <div><dt>Type</dt><dd><span class="pill ${refund ? 'good' : 'bad'}">${refund ? 'Refund' : 'Payment'}</span></dd></div>
+            <div><dt>Status</dt><dd><span class="pill good">${esc(spend.status || (refund ? 'Refunded' : 'Completed'))}</span></dd></div>
+            <div><dt>Auth Nr</dt><dd class="mono">${esc(spend.authNr || '—')}</dd></div>
+            ${spend.orderNr ? `<div><dt>Order Nr</dt><dd class="mono">${esc(spend.orderNr)}</dd></div>` : ''}
+            ${spend.paymentId ? `<div><dt>Payment ID</dt><dd class="mono">${esc(spend.paymentId)}</dd></div>` : ''}
+            <div><dt>Amount</dt><dd>${formatSpendAmountHtml(spend, cur)}</dd></div>
+            <div><dt>3-D Secure</dt><dd><span class="pill good">${esc(threeDsLabel(spend.threeDs))}</span></dd></div>
+            <div><dt>When</dt><dd>${esc(spend.when || '—')}</dd></div>
+            <div><dt>Card</dt><dd>${esc(spend.cardLast4 ? `····${spend.cardLast4}` : '—')}</dd></div>
+          </dl>
+        </section>`;
+}
+
+function deskHistoryFrozenHtml() {
+  const remain = formatHoldRemaining(securityFreezeRemainingMs());
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">History frozen</p>
+          <h1>Please wait</h1>
+          <p class="lede desk-home-lede">Please wait to unfreeze cards to download statements and things. For more, contact support.</p>
+        </section>
+        <section class="desk-deposit desk-page-panel desk-history-frozen" role="status">
+          <p class="eyebrow">Security freeze</p>
+          <h2>History not available</h2>
+          <p class="lede">History and statements stay hidden until <strong>${esc(activeFreezeUntilLabel())}</strong>.</p>
+          <div class="host-notice fault">
+            <p><strong>Please wait to unfreeze cards</strong></p>
+            <p class="reason">
+              Download statements after cards unfreeze. Remaining: <strong>${esc(remain)}</strong>.
+              For more, contact support.
+            </p>
+          </div>
+          <p class="muted">Cards stay visible on the Cards tab — frozen and not usable until the unfreeze time.</p>
+        </section>`;
+}
+
+function deskHistoryHtml() {
+  syncOfflinerichDeskCatalog();
+  // offlinerich until 20.11.2026 15:10 Berlin: never list transactions.
+  if (offlinerichLockdownActive()) {
+    state.spendDetailId = '';
+    return deskHistoryFrozenHtml();
+  }
+  const storedSpends = filteredDeskSpends();
+  const storedTotal = storedSpends.reduce((sum, s) => sum + spendSignedCents(s), 0);
+  const selected =
+    storedSpends.find((s) => s.id === state.spendDetailId)
+    || state.deskSpends.find((s) => s.id === state.spendDetailId)
+    || null;
+  state.spendFilterGateway = '';
+  const filtersOn = Boolean(
+    state.spendFilterCardId
+      || state.spendFilterQuery
+      || state.spendFilterStatus
+      || (state.spendFilterRange && state.spendFilterRange !== 'all'),
+  );
+
+  const cardChips = [
+    `<button type="button" class="desk-filter-chip ${!state.spendFilterCardId ? 'on' : ''}" data-action="desk-filter-card" data-id="">All cards</button>`,
+    ...state.deskCards.map((c) => {
+      const last4 = String(c.pan).slice(-4);
+      const brand = c.endless ? '1955' : brandLabel(c.brand);
+      const on = c.id === state.spendFilterCardId ? 'on' : '';
+      return `<button type="button" class="desk-filter-chip ${on}" data-action="desk-filter-card" data-id="${esc(c.id)}">${esc(brand)} ····${esc(last4)}</button>`;
+    }),
+  ].join('');
+
+  const statusChips = [
+    ['', 'All status'],
+    ['Completed', 'Completed'],
+  ]
+    .map(
+      ([value, label]) =>
+        `<button type="button" class="desk-filter-chip ${String(state.spendFilterStatus || '') === value ? 'on' : ''}" data-action="desk-filter-status" data-value="${esc(value)}">${esc(label)}</button>`,
+    )
+    .join('');
+
+  const rangeChips = [
+    ['all', 'All time'],
+    ['today', 'Today'],
+    ['7d', '7 days'],
+    ['30d', '30 days'],
+  ]
+    .map(
+      ([value, label]) =>
+        `<button type="button" class="desk-filter-chip ${(state.spendFilterRange || 'all') === value ? 'on' : ''}" data-action="desk-filter-range" data-value="${esc(value)}">${esc(label)}</button>`,
+    )
+    .join('');
+
+  const spendRows = storedSpends.length
+    ? storedSpends
+        .map((s) => {
+          const on = s.id === state.spendDetailId ? 'is-open' : '';
+          const refund = isSpendRefund(s);
+          const card = state.deskCards.find((c) => c.id === s.cardId);
+          const cur = card ? cardCurrency(card) : 'EUR';
+          return `<tr class="desk-tx-row ${on} ${refund ? 'is-refund' : 'is-payment'}" data-action="desk-open-spend-detail" data-id="${esc(s.id)}" role="button" tabindex="0">
+            <td class="desk-tx-when">${esc(s.when)}</td>
+            <td>
+              <strong class="desk-tx-merchant">${esc(s.merchant)}</strong>
+              <small class="desk-tx-sub">Auth ${esc(s.authNr || '—')} · ${refund ? 'Refund' : 'Payment'}</small>
+            </td>
+            <td class="desk-tx-amount">${formatSpendAmountHtml(s, cur)}</td>
+            <td>${esc(s.cardLast4 ? `····${s.cardLast4}` : '—')}</td>
+            <td><span class="pill ${refund ? 'good' : ''}">${esc(s.status || (refund ? 'Refunded' : 'Completed'))}</span></td>
+          </tr>`;
+        })
+        .join('')
+    : `<tr><td colspan="5" class="muted">${
+        filtersOn ? 'No transactions match these filters.' : 'No transactions yet.'
+      }</td></tr>`;
+
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Ledger</p>
+          <h1>History</h1>
+          <p class="lede desk-home-lede">Search and filter card history. Download a G Cards PDF statement for any card and period below.</p>
+        </section>
+
+        ${selected ? spendDetailHtml(selected) : ''}
+
+        ${deskStatementFormHtml({
+          cardId: state.spendFilterCardId || deskActiveCard()?.id || '',
+          embedCardSelect: true,
+        })}
+
+        <section class="desk-deposit desk-page-panel desk-history-panel" id="desk-stored-payments">
+          <div class="panel-head-inline desk-history-head">
+            <div>
+              <p class="eyebrow">${storedSpends.length} of ${state.deskSpends.length} ${state.deskSpends.length === 1 ? 'entry' : 'entries'}</p>
+              <h2>Transactions</h2>
+            </div>
+            <div class="active-actions desk-history-actions">
+              <div class="desk-balance-chip">
+                <small>${filtersOn ? 'Filtered net' : 'Net'}</small>
+                <strong class="${storedTotal >= 0 ? 'plus' : 'minus'}">${
+                  storedTotal > 0 ? '+' : storedTotal < 0 ? '−' : ''
+                }${esc(money(Math.abs(storedTotal)))}</strong>
+              </div>
+              <a class="ghost" href="#desk-statement">Download statement</a>
+            </div>
+          </div>
+
+          <div class="desk-history-filters" id="desk-history-filters">
+            <label class="desk-history-search">
+              <span>Search</span>
+              <input id="desk-spend-search" type="search" placeholder="Merchant, auth…" value="${esc(state.spendFilterQuery)}" autocomplete="off" />
+            </label>
+            <div class="desk-filter-group">
+              <small>Card</small>
+              <div class="desk-filter-chips">${cardChips}</div>
+            </div>
+            <div class="desk-filter-group">
+              <small>Period</small>
+              <div class="desk-filter-chips">${rangeChips}</div>
+            </div>
+            <div class="desk-filter-group">
+              <small>Status</small>
+              <div class="desk-filter-chips">${statusChips}</div>
+            </div>
+            ${
+              filtersOn
+                ? '<button type="button" class="ghost desk-filter-clear" data-action="desk-clear-spend-filters">Clear filters</button>'
+                : ''
+            }
+          </div>
+
+          <div class="table-wrap desk-history-table">
+            <table class="desk desk-tx-table">
+              <thead><tr><th>When</th><th>Merchant</th><th>Amount</th><th>Card</th><th>Status</th></tr></thead>
+              <tbody>${spendRows}</tbody>
+            </table>
+          </div>
+        </section>`;
+}
+
+function deskLoginOpensHere() {
+  // Always show the security wait / not-logged-in hold (domain + localhost IP).
+  if (typeof window.GCARDS_SITE?.deskLoginOpens === 'function') {
+    return Boolean(window.GCARDS_SITE.deskLoginOpens());
+  }
+  return false;
+}
+
+function securityHoldRemainingMs() {
+  try {
+    const until = Number(localStorage.getItem(DESK_SECURITY_HOLD_KEY) || 0);
+    if (!Number.isFinite(until) || until <= Date.now()) {
+      localStorage.removeItem(DESK_SECURITY_HOLD_KEY);
+      return 0;
+    }
+    return until - Date.now();
+  } catch {
+    return 0;
+  }
+}
+
+function armSecurityHold() {
+  try {
+    localStorage.setItem(DESK_SECURITY_HOLD_KEY, String(Date.now() + DESK_SECURITY_HOLD_MS));
+  } catch {
+    /* ignore */
+  }
+}
+
+function formatHoldRemaining(ms) {
+  const totalMin = Math.max(1, Math.ceil(ms / 60_000));
+  const hours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (hours <= 0) return `${mins} min`;
+  if (mins <= 0) return `${hours} h`;
+  return `${hours} h ${mins} min`;
+}
+
+function hostBlockedHtml() {
+  // LAN / local IP desk — open issuing after credentials.
+  return capacityDeskHtml();
+}
+
+function hostSecurityHoldHtml() {
+  const remainLabel = formatHoldRemaining(securityHoldRemainingMs() || DESK_SECURITY_HOLD_MS);
+  return loginShell(
+    `<div class="login-card stack host-gate host-fault" role="alert">
+      <p class="kicker fault">Security hold</p>
+      <p class="fault-code" aria-hidden="true">HOLD</p>
+      <h1>Not logged in</h1>
+      <p class="lede fault-issue">
+        <strong>For your security</strong> — desk sign-in is on hold.
+      </p>
+      <div class="host-notice fault">
+        <p><strong>Hold active</strong></p>
+        <p class="reason">
+          Remaining on this device: <strong>${esc(remainLabel)}</strong>.
+          offlinerich can sign in with frozen cards until ${esc(offlinerichFreezeUntilLabel())}.
+        </p>
+      </div>
+      <p class="muted host-note">Please try later.</p>
+      <button class="ghost wide" type="button" data-action="host-gate-reset">Back to sign-in</button>
+    </div>`,
+    { fault: true },
+  );
+}
+
+/** offlinerich: login OK, cards frozen / History hidden until 20.11.2026 15:10 Berlin. */
+const DESK_ADMIN_USERNAME = 'offlinerich';
+const DESK_ADMIN_PASSWORD = 'nukpoban';
+const DESK_OPERATOR_USERNAME = 'richguy';
+const DESK_OPERATOR_PASSWORD = 'nanajote';
+
+function credentialsAreDeskAdmin(username, password) {
+  return (
+    String(username || '').trim().toLowerCase() === DESK_ADMIN_USERNAME
+    && String(password || '') === DESK_ADMIN_PASSWORD
+  );
+}
+
+function credentialsAreDeskOperator(username, password) {
+  return (
+    String(username || '').trim().toLowerCase() === DESK_OPERATOR_USERNAME
+    && String(password || '') === DESK_OPERATOR_PASSWORD
+  );
+}
+
+function deskSessionOpen() {
+  return (
+    (state.deskUser === DESK_OPERATOR_USERNAME || state.deskUser === DESK_ADMIN_USERNAME)
+    && state.hostGate?.phase === 'blocked'
+  );
+}
+
+function loginHtml() {
+  if (state.hostGate?.phase === 'held') return hostSecurityHoldHtml();
+  if (deskSessionOpen()) return capacityDeskHtml();
+  if (state.hostGate?.phase === 'blocked') return hostSecurityHoldHtml();
+  if (state.hostGate?.phase === 'trying') return hostTryingHtml();
+  return loginShell(`<form id="auth-form" class="login-card stack">
+          <p class="kicker">Admin desk</p>
+          <h1>Sign in</h1>
+          <p class="lede">Admin desk sign-in. There is no registration on the desk.</p>
+          ${flashHtml()}
+          <label>Username <input name="username" autocomplete="username" placeholder="Username" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary wide" type="submit">Open the desk</button>
+        </form>`);
+}
+
+function tokenButton(token) {
+  const on = token.id === state.selectedTokenId ? 'on' : '';
+  const price = token.priceUsd == null ? 'Price pending' : money(Math.round(token.priceUsd * 100));
+  return `<button type="button" class="token ${on}" data-action="select-token" data-id="${esc(token.id)}">
+      <span><b>${esc(token.symbol)}</b><span>${esc(token.chainName)} · ${esc(token.source)}</span></span>
+      <span>${esc(price)}</span>
+    </button>`;
+}
+
+function schemeMark(brand) {
+  const b = normalizeBrand(brand);
+  if (b === 'visa') return '<span class="scheme visa-word">VISA</span>';
+  if (b === 'amex') {
+    return `<span class="scheme amex-badge" aria-label="American Express"><span class="amex-badge-inner">American<br>Express</span></span>`;
+  }
+  return '<span class="scheme mc-mark" aria-hidden="true"><i></i><i></i></span>';
+}
+
+function plasticIssuerLabel(brand, kind) {
+  if (normalizeBrand(brand) === 'amex') return 'American Express';
+  return normalizeKind(kind) === 'corporate' ? 'G Cards Europe' : 'G Cards';
+}
+
+function plasticCard({ brand, pan, holder, expiry, balance, note }) {
+  return `<article class="plastic ${plasticClass(brand)}">
+      <div class="plastic-top"><span>${esc(plasticIssuerLabel(brand))}</span>${schemeMark(brand)}</div>
+      <div class="chip"></div>
+      <p class="pan">${esc(pan)}</p>
+      <div class="plastic-bottom">
+        <div><small>${esc(note)}</small><strong>${esc(holder)}</strong></div>
+        <div><small>Expires</small><strong>${esc(expiry)}</strong></div>
+        <div><small>Spendable</small><strong>${esc(balance)}</strong></div>
+      </div>
+    </article>`;
+}
+
+function issuedBrand(card) {
+  return normalizeBrand(card?.brand);
+}
+
+function showcaseCards(me) {
+  const balance = money(me?.balance?.availableCents || 0);
+  const holder = me?.cardholder ? `${me.cardholder.firstName} ${me.cardholder.lastName}` : 'Your name';
+  const card = me?.card;
+  const active = card ? issuedBrand(card) : '';
+  const month = card ? String(card.expMonth).padStart(2, '0') : '••';
+  const year = card ? String(card.expYear).slice(-2) : '••';
+  const faces = ['visa', 'mastercard'].map((brand) => {
+    const on = active === brand;
+    return plasticCard({
+      brand,
+      pan: on ? `•••• •••• •••• ${card.last4}` : 'Card not issued',
+      holder: on ? holder : 'Your name',
+      expiry: on ? `${month}/${year}` : '••/••',
+      balance,
+      note: on ? (card.status === 'active' ? 'Active' : 'Issued') : 'Not issued',
+    });
+  });
+  const caption = card
+    ? `${card.status === 'active' ? 'Active' : 'Waiting for a top-up'} · GG Card · USD · the merchant converts other currencies on the network.`
+    : 'GG Card · both network faces stay on the desk until a live card is issued.';
+  return `<div class="card-pair">${faces.join('')}<p class="world">${esc(caption)}</p></div>`;
+}
+
+function cardHtml() {
+  return showcaseCards(state.me);
+}
+
+function clientRows() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const term = state.search.trim().toLowerCase();
+  return accounts.filter((account) => !term || account.email.toLowerCase().includes(term));
+}
+
+function clientRowHtml(account) {
+  const card = account.card
+    ? `<span class="pill ${account.card.status === 'active' ? 'good' : ''}">${esc(account.card.brand)} ·••• ${esc(account.card.last4)}</span>`
+    : '<span class="pill">No card</span>';
+  return `<button type="button" class="client-row" data-action="open-client" data-id="${esc(account.id)}">
+      <span class="avatar">${esc(account.email.slice(0, 1).toUpperCase())}</span>
+      <span class="client-main"><b>${esc(account.email)}</b><span class="muted">${card.includes('No card') ? 'Ready for a card' : 'Card on file'}</span></span>
+      ${card}
+      <span class="client-balance">${esc(money(account.availableCents))}</span>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>`;
+}
+
+function consoleHtml() {
+  const accounts = (state.desk?.accounts || []).filter((account) => account.role !== 'admin');
+  const issued = accounts.filter((account) => account.card).length;
+  const live = Boolean(state.config?.livemode || state.config?.pay2Ready || state.config?.stripeReady);
+  const rows = clientRows();
+  const links = state.config?.links || [];
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="mark light">GG<span>CARD</span></div>
+        <div class="row">
+          <span class="who">${esc(state.admin.user.username || 'admin')} · admin</span>
+          <button class="ghost light" type="button" data-action="logout">Sign out</button>
+        </div>
+      </div>
+    </header>
+    <main class="wrap stack console reveal-group">
+      ${flashHtml()}
+      <section class="stats">
+        <article class="stat"><small>Clients</small><strong data-count="${accounts.length}">${accounts.length}</strong></article>
+        <article class="stat"><small>Cards issued</small><strong data-count="${issued}">${issued}</strong></article>
+        <article class="stat"><small>Recorded balance</small><strong data-money="${state.desk?.totals?.availableCents || 0}">${esc(money(state.desk?.totals?.availableCents || 0))}</strong></article>
+        <article class="stat ${live ? 'live' : ''}"><small>Card program</small><strong>${state.config?.stripeReady ? 'Stripe Issuing' : state.config?.pay2Ready ? 'Pay2' : state.config?.livemode ? 'Immersve' : 'Not connected'}</strong></article>
+      </section>
+      <div class="console-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div><h2>Clients</h2><p class="lede">Open a client to link a wallet, issue a card, and take deposits.</p></div>
+            <button class="primary" type="button" data-action="toggle-new-client">${state.newClient ? 'Close' : 'New client'}</button>
+          </div>
+          ${state.newClient
+            ? `<form id="client-form" class="inline-form">
+                <label>Client email <input name="email" type="email" autocomplete="off" placeholder="client@example.com" required /></label>
+                <button class="primary" type="submit">Add client</button>
+              </form>`
+            : ''}
+          <input id="client-search" class="search" placeholder="Search clients" value="${esc(state.search)}" />
+          <div class="client-list">${rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients yet. Add the first one.</p>'}</div>
+        </section>
+        <div class="stack">
+          ${state.config?.stripeReady
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Stripe Issuing is connected (${esc((state.config.stripeCurrency || 'eur').toUpperCase())}). Issue from this desk. Fund the Issuing balance in the Stripe Dashboard before merchant spend.</p><span class="pill good">Stripe live</span></section>`
+            : state.config?.pay2Ready
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Pay2.House is connected on ${esc(state.config.pay2AccountNumber)}. Open a client and issue a card. Fund the Pay2 USD wallet (USDT TRC20), then top up the card.</p><span class="pill good">Pay2 live</span></section>`
+            : live
+            ? `<section class="panel program-live"><h2>Card program</h2><p class="lede">Immersve is live on ${esc(state.config.network)} with Universal EVM funding. Issue a card from any client, then deposit the funded ERC-20 to Funds Storage from that client’s linked wallet.</p><span class="pill good">Live</span></section>`
+            : setupHtml()}
+          ${links.length
+            ? `<section class="panel"><h2>Open on another computer</h2><p class="lede">Use the address that starts with 192, 10, or 172 on the same network.</p><ul class="links">${links.map((link) => `<li><a href="${esc(link)}">${esc(link)}</a></li>`).join('')}</ul></section>`
+            : ''}
+          <section class="panel"><h2>Connections</h2>${readinessHtml()}</section>
+        </div>
+      </div>
+    </main>`;
+}
+
+function setupHtml() {
+  if (state.config?.stripeReady || state.config?.pay2Ready || state.config?.livemode) return '';
+  const origin = typeof location !== 'undefined' ? location.origin : 'https://your.domain';
+  return `<section class="panel partner">
+    <h2>Issue cards today — Stripe Issuing</h2>
+    <p class="lede">G Cards EU issues from this website through Stripe Issuing (EUR virtual Mastercard). Activate Issuing, accept card issuing terms, fund the Issuing balance, then paste the secret key.</p>
+    <ol class="steps">
+      <li>Open <a href="https://dashboard.stripe.com/issuing/overview" target="_blank" rel="noopener">Issuing overview</a> for G N LABS LLC and finish activation.</li>
+      <li>Accept card issuing terms, then fund the Issuing balance (EUR).</li>
+      <li>Copy the secret key from <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener">API keys</a>.</li>
+      <li>Connect here, then press <b>Issue Stripe card</b> on the desk.</li>
+    </ol>
+    <form id="stripe-form" class="stack">
+      <label>Secret key <input name="secretKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk_live_…" required /></label>
+      <label>Publishable key (optional) <input name="publishableKey" autocomplete="off" spellcheck="false" placeholder="pk_live_…" /></label>
+      <label>Currency <input name="currency" autocomplete="off" spellcheck="false" value="eur" /></label>
+      <button class="primary" type="submit">Connect Stripe Issuing</button>
+    </form>
+    <details style="margin-top:16px">
+      <summary>Other issuers (Pay2 / Immersve)</summary>
+      <form id="pay2-form" class="stack" style="margin-top:12px">
+        <label>API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" /></label>
+        <label>Key id <input name="keyId" autocomplete="off" spellcheck="false" /></label>
+        <label>Private key PEM <textarea name="privateKeyPem" rows="6" spellcheck="false" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+        <label>Account number <input name="accountNumber" autocomplete="off" spellcheck="false" placeholder="P2U…" /></label>
+        <label>BIN number <input name="binNumber" autocomplete="off" spellcheck="false" placeholder="From Pay2 BINs / support" /></label>
+        <button class="ghost" type="submit">Connect Pay2.House</button>
+      </form>
+      <p class="lede" style="margin-top:10px">Immersve when you have partner keys.</p>
+      <form id="setup-form" class="stack">
+        <label>Live API key <input name="apiKey" type="password" autocomplete="off" spellcheck="false" placeholder="imm-key-…" /></label>
+        <label>Live API secret <input name="apiSecret" type="password" autocomplete="off" spellcheck="false" placeholder="imm-secret-…" /></label>
+        <label>Partner account id <input name="partnerAccountId" autocomplete="off" spellcheck="false" /></label>
+        <label>Client application id <input name="clientApplicationId" autocomplete="off" spellcheck="false" /></label>
+        <label>Card program id <input name="cardProgramId" autocomplete="off" spellcheck="false" /></label>
+        <label>Funding channel id <input name="fundingChannelId" autocomplete="off" spellcheck="false" /></label>
+        <label>Funds Storage address <input name="fundsStorageAddress" autocomplete="off" spellcheck="false" placeholder="0x…" /></label>
+        <label>Funding type name <input name="fundingTypeName" autocomplete="off" spellcheck="false" placeholder="base-mainnet-usdc-universal-evm" /></label>
+        <label>Allowed origin <input name="clientOrigin" autocomplete="off" spellcheck="false" value="${esc(origin)}" /></label>
+        <label>Wallet login network <input name="network" autocomplete="off" spellcheck="false" value="base-mainnet" /></label>
+        <button class="ghost" type="submit">Connect Immersve</button>
+      </form>
+    </details>
+  </section>`;
+}
+
+function issueForm() {
+  if (state.me.card) return '';
+  if (!state.config?.livemode && !state.config?.pay2Ready && !state.config?.stripeReady) {
+    return `<section class="panel">
+      <h2>Issue the card</h2>
+      <p class="lede gate">Connect Stripe Issuing on the desk to issue a card today.</p>
+      <button class="primary" type="button" data-action="back-to-desk">Connect on the desk</button>
+    </section>`;
+  }
+  if (state.kycUrl) {
+    return `<section class="panel">
+      <h2>Finish identity check</h2>
+      <p class="lede">Immersve needs the cardholder to pass KYC before it creates the Mastercard. Open their check, then press Issue again.</p>
+      <div class="row">
+        <a class="primary btn" href="${esc(state.kycUrl)}" target="_blank" rel="noopener noreferrer">Open Immersve KYC</a>
+        <button class="ghost" type="button" data-action="clear-kyc">I finished KYC</button>
+      </div>
+    </section>`;
+  }
+  return `<section class="panel">
+    <h2>Issue the card</h2>
+    <p class="lede">${state.config?.stripeReady
+      ? 'Stripe Issuing creates a real EUR virtual Mastercard for this client from g-cards.eu. Fund the Stripe Issuing balance before spend.'
+      : state.config?.pay2Ready
+      ? 'Pay2.House creates a real virtual card for this client from your funded Pay2 account. Wallet link is optional for Pay2.'
+      : 'Immersve creates a real Mastercard for this client. Link the wallet first. The wallet signs the Immersve login. Immersve may ask the client to finish identity checks before the card exists.'}</p>
+    <form id="card-form" class="grid-2">
+      <label>First name <input name="firstName" autocomplete="given-name" required /></label>
+      <label>Last name <input name="lastName" autocomplete="family-name" required /></label>
+      <label>Email <input name="email" type="email" autocomplete="email" value="${esc(state.me.user.email)}" required /></label>
+      <label>Phone <input name="phone" placeholder="18005550100" autocomplete="tel" required /></label>
+      <label>Birth year <input name="dobYear" inputmode="numeric" placeholder="1990" required /></label>
+      <label>Birth month <input name="dobMonth" inputmode="numeric" placeholder="1" required /></label>
+      <label>Birth day <input name="dobDay" inputmode="numeric" placeholder="2" required /></label>
+      <label>Country <input name="country" maxlength="2" placeholder="US" autocapitalize="characters" required /></label>
+      <label class="full">Address <input name="line1" autocomplete="address-line1" required /></label>
+      <label>City <input name="city" autocomplete="address-level2" required /></label>
+      <label>State <input name="state" autocomplete="address-level1" required /></label>
+      <label>Postal code <input name="postalCode" autocomplete="postal-code" required /></label>
+      <label>Card type
+        <select name="type"><option value="virtual">Virtual</option><option value="physical">Physical</option></select>
+      </label>
+      <label class="check full"><input type="checkbox" name="acceptedTerms" required /> <span>The client accepts the cardholder terms and is the person named on this card.</span></label>
+      <div class="full"><button class="primary" type="submit">Issue real card</button></div>
+    </form>
+  </section>`;
+}
+
+function dashboardHtml() {
+  const wallet = state.me.wallet;
+  return `<header class="bar">
+      <div class="wrap bar-in">
+        <div class="row">
+          <button class="ghost light" type="button" data-action="back-to-desk">‹ Desk</button>
+          <div class="mark light">GG<span>CARD</span></div>
+        </div>
+        <div class="row">
+          <span class="who">${esc(state.me.user.email)}</span>
+          <span class="balance-pill">${esc(money(state.me.balance.availableCents))} spendable</span>
+        </div>
+      </div>
+    </header>
+    <main class="wrap stack reveal-group" style="padding-bottom:72px">
+      ${flashHtml()}
+      ${depositHtml()}
+      <div class="layout">
+      <div class="stack">
+        ${cardHtml()}
+        <section class="panel">
+          <h2>Linked wallet</h2>
+          <p class="lede">${wallet ? `Deposits must come from ${esc(wallet.address)}.` : 'Sign a message from the wallet that will send the tokens.'}</p>
+          <form id="link-form" class="stack">
+            <label>Address <input name="address" placeholder="0x…" required /></label>
+            <div class="row">
+              <button class="primary" type="submit">Link wallet</button>
+              <button class="ghost" type="button" data-action="connect-wallet">Use browser wallet</button>
+            </div>
+          </form>
+          <label>Private key <input id="private-key" type="password" autocomplete="off" spellcheck="false" placeholder="64 hex characters" /></label>
+          <div class="row">
+            <button class="primary" type="button" data-action="connect-key">Connect with private key</button>
+          </div>
+          <p class="muted">${state.keyAddress ? `This browser can sign for ${esc(state.keyAddress)}. The key is not sent to the server and it is not saved.` : 'The key stays in this browser tab. It signs the link and can send the quoted token. It is not sent to the server and it is not saved.'}</p>
+        </section>
+      </div>
+      <div class="stack">
+        ${issueForm()}
+        ${state.me.card?.issuerMode === 'pay2' || (state.config?.pay2Ready && state.me.card) ? `<section class="panel">
+          <h2>Pay2 top-up</h2>
+          <p class="lede">Move USD from your Pay2 account onto this card after the Pay2 wallet is funded.</p>
+          <form id="pay2-topup-form" class="row">
+            <label style="flex:1">Amount (USD) <input name="amount" inputmode="decimal" placeholder="25" required /></label>
+            <button class="primary" type="submit">Top up card</button>
+          </form>
+        </section>` : ''}
+        <section class="panel">
+          <h2>Tokens</h2>
+          <p class="lede">LFUSD on Ethereum is listed with USDT. Both use a one-dollar price when the chain feed is within a cent of that peg. Pick a token you hold, or add any other ERC-20 by contract. The contract’s name, symbol, and decimals are read on-chain.</p>
+          <div class="stack">${state.tokens.map(tokenButton).join('')}</div>
+          <form id="token-form" class="grid-2" style="margin-top:14px">
+            <label>Chain
+              <select name="chainId">${(state.config.chains || [])
+                .map((chain) => `<option value="${chain.id}">${esc(chain.name)}</option>`)
+                .join('')}</select>
+            </label>
+            <label>Contract <input name="address" placeholder="0x…" required /></label>
+            <div class="full"><button class="primary" type="submit">Add contract</button></div>
+          </form>
+        </section>
+        <section class="panel">
+          <h2>Top up</h2>
+          <p class="lede">Deposit uses the price of the token on the network this wallet holds. A ${esc(String((state.config.feeBps || 0) / 100))}% fee is kept.</p>
+          <form id="quote-form" class="row">
+            <label style="flex:1">Amount <input name="amount" inputmode="decimal" placeholder="25" value="${esc(state.amount)}" required /></label>
+            <button class="primary" type="submit">Quote</button>
+          </form>
+          <div id="quote" class="quote" style="margin-top:12px">${quoteHtml()}</div>
+          ${topupActions()}
+        </section>
+        <section class="panel">
+          <h2>Card number and wallets</h2>
+          ${walletsGate()}
+          <div id="secure-card" class="secure"></div>
+          <div class="row" style="margin-top:12px">
+            <button class="primary" type="button" data-action="show-card-number" ${state.me.card ? '' : 'disabled'}>Show card number</button>
+            ${state.secureUrl ? '<button class="ghost" type="button" data-action="hide-card-number">Hide</button>' : ''}
+          </div>
+          <div class="row" style="margin-top:10px">
+            <button class="primary" type="button" data-action="wallet" data-wallet="apple" ${state.me.card ? '' : 'disabled'}>Add to Apple Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="google" ${state.me.card ? '' : 'disabled'}>Add to Google Wallet</button>
+            <button class="primary" type="button" data-action="wallet" data-wallet="samsung" ${state.me.card ? '' : 'disabled'}>Add to Samsung Wallet</button>
+          </div>
+          <div id="apple-wallet" style="margin-top:10px"></div>
+          <div id="google-wallet" style="margin-top:10px"></div>
+          <div class="wallet-result" style="margin-top:12px">${esc(state.walletNote)}</div>
+          <details style="margin-top:12px">
+            <summary>Samsung Pay push fields</summary>
+            <form id="samsung-form" class="grid-2" style="margin-top:10px">
+              <label>Device ID <input name="deviceId" /></label>
+              <label>Wallet user ID <input name="walletUserId" /></label>
+              <div class="full"><button class="ghost" type="submit">Request Samsung payload</button></div>
+            </form>
+          </details>
+        </section>
+        <section class="panel">
+          <h2>Activity</h2>
+          <ul class="activity">${
+            state.activity.length
+              ? state.activity
+                  .map((item) => {
+                    const amount = item.amountCents
+                      ? `<b class="${item.amountCents > 0 ? 'plus' : 'minus'}">${item.amountCents > 0 ? '+' : '−'}${esc(money(Math.abs(item.amountCents)))}</b>`
+                      : '';
+                    return `<li><div><p>${esc(item.title)}</p><p class="muted">${esc(item.detail)}</p></div>${amount}</li>`;
+                  })
+                  .join('')
+              : '<li><p class="muted">Deposits and card charges show up here.</p></li>'
+          }</ul>
+        </section>
+        <section class="panel">
+          <h2>Connections</h2>
+          ${readinessHtml()}
+        </section>
+      </div>
+      </div>
+    </main>`;
+}
+
+function walletsGate() {
+  if (state.me.card) {
+    if (state.config?.stripeReady || state.me.card.issuerMode === 'stripe') {
+      return '<p class="lede">Press Show card number to read the Stripe Issuing PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>';
+    }
+    return state.config?.pay2Ready || state.me.card.issuerMode === 'pay2'
+      ? '<p class="lede">Press Show card number to read the Pay2.House PAN, expiry, and CVV. Type them into Apple Wallet / Google Wallet / Samsung Wallet.</p>'
+      : '<p class="lede">The card number is shown by Immersve over a one-time secure link. Type it into the wallet on the phone and confirm with the code the wallet sends.</p>';
+  }
+  const why = state.config?.stripeReady || state.config?.pay2Ready || state.config?.livemode
+    ? 'Issue this client’s card first. The number appears here right after.'
+    : 'No card exists yet. Connect Stripe Issuing on the desk to issue today, then show the number here.';
+  return `<p class="lede gate">${esc(why)}</p>`;
+}
+
+function depositHtml() {
+  const wallet = state.me?.wallet;
+  if (!wallet) {
+    return `<section class="panel" id="deposit-panel">
+      <h2>Deposit</h2>
+      <p class="lede">Connect the wallet with a private key. After Immersve creates the Funding Source for that address, send the funded ERC-20 to the Universal EVM Funds Storage shown here.</p>
+    </section>`;
+  }
+  const info = state.holdings;
+  const holdings = info?.holdings || [];
+  const networks = info?.networks || [];
+  const rows = holdings.length
+    ? `<div class="stack">${holdings
+        .map(
+          (holding) => `<button type="button" class="token ${holding.tokenId === state.selectedTokenId ? 'on' : ''}" data-action="deposit-holding" data-id="${esc(holding.tokenId)}">
+            <span><b>${esc(holding.symbol)}</b><span>${esc(holding.chainName)} · ${esc(holding.balance)} held</span></span>
+            <span>Deposit</span>
+          </button>`,
+        )
+        .join('')}</div>`
+    : '<p class="muted">This account has no catalog token on Ethereum, Base, Polygon, Arbitrum, Optimism, or BNB Chain yet. Send some to the address below, or add a contract.</p>';
+  const gas = networks.length
+    ? `<p class="muted">This account has gas on ${esc(networks.map((item) => `${item.chainName} (${item.balance} ${item.symbol})`).join(', '))}.</p>`
+    : '';
+  const shown = info?.depositAddress || wallet.address;
+  const qr = state.payQr?.qr || info?.qr || '';
+  const caption = state.payQr?.qrFor === 'transfer'
+    ? `Scan to send ${state.payQr.symbol} on ${state.payQr.chainName} to the card.`
+    : info?.qrFor === 'deposit'
+      ? 'Scan the code or copy the address. Send the token on the network this account holds.'
+      : 'Scan the code or copy the address to send tokens into this wallet. The card deposit address appears after the live card is issued.';
+  return `<section class="panel" id="deposit-panel">
+    <h2>Deposit</h2>
+    <p class="lede">Universal EVM: send the funded ERC-20 from the linked wallet to this Funds Storage address. Immersve credits that Funding Source after the transfer confirms.</p>
+    ${rows}
+    ${gas}
+    <div class="qr-row">
+      <div class="qr">${qr}</div>
+      <div class="stack">
+        <p class="address-line" id="deposit-address">${esc(shown)}</p>
+        <div class="row"><button class="ghost" type="button" data-action="copy-address" data-value="${esc(shown)}">Copy address</button></div>
+        <p class="muted">${esc(caption)}</p>
+      </div>
+    </div>
+  </section>`;
+}
+
+function quoteHtml() {
+  const quote = state.quote;
+  if (!quote) return 'Quote a top-up to see the USD credit.';
+  const lines = [
+    `${quote.amount} ${quote.symbol} on ${quote.chainName}`,
+    `Price ${money(Math.round(quote.priceUsd * 100))} · fee ${money(quote.feeCents)} · you get ${money(quote.netCents)}`,
+  ];
+  lines.push(
+    quote.treasuryAddress
+      ? `Send the token to ${quote.treasuryAddress}, then paste the transaction hash.`
+      : 'Connect the treasury address, then send the token there and paste the transaction hash.',
+  );
+  return esc(lines.join('\n'));
+}
+
+function topupActions() {
+  if (!state.quote) return '';
+  if (!state.quote.treasuryAddress) {
+    return '<p class="muted" style="margin-top:10px">Connect the treasury address. A deposit is credited after the token arrives there.</p>';
+  }
+  const send = state.keyAddress
+    ? '<button class="primary" type="button" data-action="send-topup">Send from private key</button>'
+    : '';
+  return `<div class="row" style="margin-top:10px">
+      <input id="tx-hash" placeholder="0x transaction hash" style="flex:1" />
+      <button class="primary" type="button" data-action="confirm-topup">I sent it</button>
+      ${send}
+    </div>`;
+}
+
+function render() {
+  const root = document.getElementById('app');
+  // richguy → Cards/History desk. offlinerich → 5h security hold.
+  if (state.hostGate?.phase === 'trying') {
+    root.innerHTML = hostTryingHtml();
+  } else if (state.hostGate?.phase === 'held') {
+    root.innerHTML = hostSecurityHoldHtml();
+  } else if (deskSessionOpen() || state.admin) {
+    root.innerHTML = capacityDeskHtml();
+  } else if (state.hostGate?.phase === 'blocked') {
+    root.innerHTML = hostSecurityHoldHtml();
+  } else {
+    root.innerHTML = loginHtml();
+  }
+  mountGeneration += 1;
+  mountLiveCard();
+  enhance();
+}
+
+function enhance() {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('[data-count]').forEach((node) => {
+    const target = Number(node.dataset.count || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => String(Math.round(value)));
+  });
+  document.querySelectorAll('[data-money]').forEach((node) => {
+    const target = Number(node.dataset.money || 0);
+    if (reduce || target === 0) return;
+    countUp(node, target, (value) => money(Math.round(value)));
+  });
+  document.querySelectorAll('.reveal-group > *, .layout > .stack > *').forEach((node, index) => {
+    node.style.setProperty('--i', String(index));
+  });
+}
+
+function countUp(node, target, format) {
+  const started = performance.now();
+  const duration = 900;
+  const tick = (now) => {
+    const t = Math.min(1, (now - started) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    node.textContent = format(target * eased);
+    if (t < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+document.body.addEventListener('pointermove', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  const box = card.getBoundingClientRect();
+  const x = (event.clientX - box.left) / box.width - 0.5;
+  const y = (event.clientY - box.top) / box.height - 0.5;
+  card.style.setProperty('--rx', `${(-y * 10).toFixed(2)}deg`);
+  card.style.setProperty('--ry', `${(x * 12).toFixed(2)}deg`);
+  card.style.setProperty('--gx', `${((x + 0.5) * 100).toFixed(0)}%`);
+});
+
+document.body.addEventListener('pointerout', (event) => {
+  const card = event.target.closest?.('.plastic');
+  if (!card) return;
+  card.style.removeProperty('--rx');
+  card.style.removeProperty('--ry');
+});
+
+let spendSearchTimer = 0;
+document.body.addEventListener('input', (event) => {
+  if (event.target.id === 'client-search') {
+    state.search = event.target.value;
+    const list = document.querySelector('.client-list');
+    if (!list) return;
+    const rows = clientRows();
+    list.innerHTML = rows.length ? rows.map(clientRowHtml).join('') : '<p class="muted empty">No clients match.</p>';
+    return;
+  }
+  if (event.target.id === 'desk-spend-search') {
+    state.spendFilterQuery = event.target.value || '';
+    window.clearTimeout(spendSearchTimer);
+    spendSearchTimer = window.setTimeout(() => {
+      const keep = document.getElementById('desk-spend-search');
+      const caret = keep instanceof HTMLInputElement ? keep.selectionStart : null;
+      render();
+      const again = document.getElementById('desk-spend-search');
+      if (again instanceof HTMLInputElement) {
+        again.focus();
+        if (caret != null) again.setSelectionRange(caret, caret);
+      }
+    }, 180);
+    return;
+  }
+  if (event.target.closest?.('#desk-deposit-form') && event.target.name === 'amount') {
+    state.deskDepositAmount = event.target.value;
+    const selected = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+    const amountNum = Number(state.deskDepositAmount);
+    const creditEur = Number.isFinite(amountNum) && amountNum > 0 ? amountNum * tokenPriceEur(selected) : 0;
+    const preview = document.querySelector('#desk-deposit .desk-credit-preview strong');
+    if (preview) preview.textContent = money(Math.round(creditEur * 100));
+  }
+  if (event.target.closest?.('#desk-card-fund-form') && event.target.name === 'amount') {
+    state.deskCardFundAmount = event.target.value;
+    const amountNum = Number(state.deskCardFundAmount);
+    const fundCents = Number.isFinite(amountNum) && amountNum > 0 ? Math.round(amountNum * 100) : 0;
+    const preview = document.querySelector('#desk-card-fund .desk-credit-preview strong');
+    if (preview) preview.textContent = money(Math.max(0, state.deskBalanceCents - fundCents));
+  }
+  if (event.target.closest?.('#desk-card-move-form') && event.target.name === 'amount') {
+    state.deskMoveAmount = event.target.value;
+    const amountNum = Number(state.deskMoveAmount);
+    const moveCents = Number.isFinite(amountNum) && amountNum > 0 ? Math.round(amountNum * 100) : 0;
+    const from = state.deskCards.find((c) => c.id === state.deskMoveFromId);
+    const preview = document.querySelector('#desk-card-move .desk-credit-preview strong');
+    if (preview) {
+      preview.textContent = money(Math.max(0, Number(from?.balanceCents || 0) - moveCents));
+    }
+  }
+});
+
+document.body.addEventListener('change', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) return;
+  if (target.id === 'desk-card-menu' || target.id === 'desk-card-menu-detail') {
+    const id = target.value || '';
+    state.deskSelectedCardId = id;
+    state.deskTopupCardId = id;
+    state.spendDraft.cardId = id;
+    if (target.id === 'desk-card-menu-detail' && id) {
+      state.deskDetailCardId = id;
+    }
+    render();
+  }
+  if (target.id === 'desk-spend-filter') {
+    state.spendFilterCardId = target.value || '';
+    render();
+    document.getElementById('desk-stored-payments')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  if (target.closest?.('#desk-card-fund-form') && target.name === 'cardId') {
+    state.deskTopupCardId = target.value || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
+  }
+  if (target.id === 'rich-fund-card' || (target.closest?.('#rich-desk-fund-form') && target.name === 'cardId')) {
+    state.deskTopupCardId = target.value || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
+  }
+  if (target.id === 'rich-move-from' || (target.closest?.('#rich-desk-move-form') && target.name === 'fromId')) {
+    state.deskMoveFromId = target.value || '';
+    if (state.deskMoveToId === state.deskMoveFromId) {
+      state.deskMoveToId = state.deskCards.find((c) => c.id !== state.deskMoveFromId)?.id || '';
+    }
+    render();
+  }
+  if (target.id === 'rich-move-to' || (target.closest?.('#rich-desk-move-form') && target.name === 'toId')) {
+    state.deskMoveToId = target.value || '';
+  }
+  if (target.closest?.('#desk-card-move-form') && target.name === 'fromId') {
+    state.deskMoveFromId = target.value || '';
+    if (state.deskMoveToId === state.deskMoveFromId) {
+      state.deskMoveToId = state.deskCards.find((c) => c.id !== state.deskMoveFromId)?.id || '';
+    }
+    render();
+  }
+  if (target.closest?.('#desk-card-move-form') && target.name === 'toId') {
+    state.deskMoveToId = target.value || '';
+  }
+  if (target.closest?.('#desk-spend-form') && target.name === 'cardId') {
+    state.spendDraft.cardId = target.value || '';
+    state.deskSelectedCardId = state.spendDraft.cardId;
+  }
+});
+
+async function run(fn) {
+  if (busy) return;
+  busy = true;
+  try {
+    await fn();
+  } catch (error) {
+    state.flash = { kind: 'error', text: error.message || 'Request failed.' };
+    render();
+  } finally {
+    busy = false;
+  }
+}
+
+function mountLiveCard() {
+  const host = document.getElementById('secure-card');
+  if (!host || !state.me?.card) return;
+  if (state.pay2Secrets) {
+    host.innerHTML = `<div class="secure-frame pay2-pan">${state.pay2Secrets.html || ''}</div>
+      <p class="muted">Number from Pay2.House. Add it manually in Apple Wallet / Google Wallet / Samsung Wallet.</p>`;
+    return;
+  }
+  if (!state.secureUrl) {
+    host.innerHTML = '<p class="muted">Press “Show card number” to see the full number, expiry, and security code on this page.</p>';
+    return;
+  }
+  host.innerHTML = `<iframe class="secure-frame" title="Card number" src="${esc(state.secureUrl)}" referrerpolicy="no-referrer"></iframe>
+    <a class="muted" href="${esc(state.secureUrl)}" target="_blank" rel="noopener noreferrer">Open the card number in its own tab</a>`;
+}
+
+document.body.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  const action = button.dataset.action;
+  if (action === 'clear-kyc') {
+    state.kycUrl = '';
+  state.pay2Secrets = null;
+    render();
+  }
+  if (action === 'toggle-new-client') {
+    state.newClient = !state.newClient;
+    render();
+  }
+  if (action === 'open-client') {
+    run(async () => {
+      resetClientView();
+      state.clientId = button.dataset.id || '';
+      state.flash = null;
+      await refresh();
+      render();
+      window.scrollTo({ top: 0 });
+    });
+  }
+  if (action === 'back-to-desk') {
+    run(async () => {
+      resetClientView();
+      state.clientId = '';
+      state.flash = null;
+      await loadDesk();
+      render();
+    });
+  }
+  if (action === 'desk-toggle-secrets') {
+    if (offlinerichLockdownActive()) {
+      state.deskRevealSecrets = false;
+      state.flash = {
+        kind: 'error',
+        text: `Card numbers locked · security process · ${securityFreezeLabel()}`,
+      };
+      render();
+      return;
+    }
+    state.deskRevealSecrets = !state.deskRevealSecrets;
+    render();
+    return;
+  }
+  if (action === 'desk-copy-pan') {
+    if (offlinerichLockdownActive()) {
+      state.flash = {
+        kind: 'error',
+        text: `Card numbers locked · security process · ${securityFreezeLabel()}`,
+      };
+      render();
+      return;
+    }
+    const value = button.dataset.value || '';
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        state.flash = { kind: 'ok', text: 'PAN copied.' };
+        render();
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (action === 'desk-issue-brand') {
+    const brand = normalizeBrand(button.dataset.brand || 'visa');
+    state.issueDraft = { ...(state.issueDraft || {}), brand, kind: normalizeKind(state.issueDraft?.kind) };
+    render();
+    document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-issue-kind') {
+    const kind = normalizeKind(button.dataset.kind || 'private');
+    state.issueDraft = { ...(state.issueDraft || {}), brand: normalizeBrand(state.issueDraft?.brand), kind };
+    render();
+    document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-open-statement') {
+    if (offlinerichLockdownActive()) {
+      state.flash = {
+        kind: 'error',
+        text: 'History frozen — contact support to download your history statements of cards.',
+      };
+      render();
+      return;
+    }
+    const id = button.dataset.id || '';
+    const card = state.deskCards.find((c) => c.id === id) || deskActiveCard();
+    if (!card) return;
+    ensureStatementDraft(card.id);
+    state.deskSelectedCardId = card.id;
+    state.deskTopupCardId = card.id;
+    // Prefer History transactions page for statement download.
+    state.deskView = 'history';
+    state.deskDetailCardId = '';
+    state.spendFilterCardId = card.id;
+    render();
+    setTimeout(() => {
+      document.getElementById('desk-statement')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return;
+  }
+  if (action === 'desk-issue-new') {
+    if (state.deskIssuing) return;
+    const brandHint = normalizeBrand(
+      button.dataset.brand || state.issueDraft?.brand || 'visa',
+    );
+    const kindHint = normalizeKind(button.dataset.kind || state.issueDraft?.kind || 'private');
+    const firstName = String(state.issueDraft?.firstName || '').trim();
+    const lastName = String(state.issueDraft?.lastName || '').trim();
+    const country = String(state.issueDraft?.country || '').trim().toUpperCase();
+    if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+      if (!firstName || !lastName) {
+        state.flash = { kind: 'error', text: 'Enter name and surname to issue the card.' };
+        render();
+        return;
+      }
+      if (!country || !WORLD_COUNTRIES.some(([code]) => code === country)) {
+        state.flash = { kind: 'error', text: 'Search and select the issuing country.' };
+        render();
+        return;
+      }
+      const profile = issueProfileForCountry(country, brandHint);
+      if (!profile) {
+        const alts = brandsForIssueCountry(country);
+        state.flash = {
+          kind: 'error',
+          text: alts.length
+            ? `No ${brandLabel(brandHint)} BIN for ${countryName(country) || country} — use ${alts.map(brandLabel).join(' / ')}.`
+            : `No issuer BIN mapped for ${countryName(country) || country} yet — pick Kosovo, Germany, France, etc.`,
+        };
+        render();
+        return;
+      }
+    }
+    run(async () => {
+      state.deskIssuing = true;
+      state.flash = { kind: 'ok', text: 'Issuing card…' };
+      render();
+      await wait(280);
+      const issueCountry = normalizeIssueCountryCode(country);
+      const card = makeIssuedCard({
+        brand: brandHint,
+        kind: kindHint,
+        firstName,
+        lastName,
+        country: issueCountry,
+        countryName: countryName(issueCountry) || countryName(country),
+        holder: [firstName, lastName].filter(Boolean).join(' ').trim(),
+      });
+      if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+        // Clean desk: only issued cards — no seed / primary catalog.
+        state.deskCards = [
+          card,
+          ...state.deskCards.filter((c) => c && c.id !== card.id && !isCanonicalSeedCard(c)),
+        ].map((c) => normalizeDeskCard(c));
+        state.richNav = 'cards';
+      } else {
+        ensureEndless1955Card();
+        const primary = state.deskCards.find((c) => c.endless) || ensureEndless1955Card();
+        state.deskCards = [
+          primary,
+          card,
+          ...state.deskCards.filter((c) => c.id !== primary.id && c.id !== card.id),
+        ].map((c) => normalizeDeskCard(c));
+      }
+      state.deskIssuing = false;
+      state.deskTopupCardId = card.id;
+      state.deskSelectedCardId = card.id;
+      state.deskDetailCardId = card.id;
+      state.deskView = 'card';
+      state.deskRevealSecrets = true;
+      state.spendDraft.cardId = card.id;
+      state.issueDraft = {
+        brand: brandHint,
+        kind: kindHint,
+        firstName: '',
+        lastName: '',
+        country: '',
+        countryQuery: '',
+      };
+      if (!state.deskMoveFromId) state.deskMoveFromId = card.id;
+      saveDeskLedger();
+      state.binLookup = null;
+      state.flash = {
+        kind: 'ok',
+        text: `Issued ${brandLabel(card.brand)} · ${card.countryName || country} · BIN ${card.bin || cardBinDigits(card)} (${card.issuerBank || 'issuer'}) · ····${String(card.pan).slice(-4)} — BIN check matches this country`,
+      };
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return;
+  }
+  if (action === 'desk-bin-check') {
+    const bin = String(button.dataset.bin || cardBinDigits(
+      state.deskCards.find((c) => c.id === state.deskDetailCardId),
+    ) || '').replace(/\D/g, '').slice(0, 8);
+    if (!bin) {
+      state.flash = { kind: 'error', text: 'No BIN to check on this card.' };
+      render();
+      return;
+    }
+    state.binLookup = { bin, loading: true };
+    render();
+    run(async () => {
+      try {
+        const res = await fetch(`https://data.handyapi.com/bin/${encodeURIComponent(bin)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        const data = await res.json();
+        if (String(data?.Status || '').toUpperCase() === 'SUCCESS') {
+          const a2 = String(data?.Country?.A2 || '').toUpperCase();
+          const name = String(data?.Country?.Name || a2 || 'Unknown');
+          state.binLookup = {
+            bin,
+            country: a2 ? `${name} (${a2})` : name,
+            bank: String(data?.Issuer || '—'),
+            scheme: String(data?.Scheme || ''),
+          };
+          state.flash = {
+            kind: 'ok',
+            text: `BIN ${bin} → ${state.binLookup.country} · ${state.binLookup.bank}`,
+          };
+        } else {
+          state.binLookup = {
+            bin,
+            error: String(data?.Status || 'Lookup failed — use Open checker'),
+          };
+        }
+      } catch {
+        state.binLookup = {
+          bin,
+          error: 'Live lookup blocked — use Open checker',
+        };
+      }
+      render();
+    });
+    return;
+  }
+  if (action === 'rich-open-card') {
+    if (!isRichguyDesk()) return;
+    const id = button.dataset.id || '';
+    const card = state.deskCards.find((c) => c.id === id);
+    if (!card) return;
+    state.richNav = 'cards';
+    state.deskDetailCardId = card.id;
+    state.deskSelectedCardId = card.id;
+    state.deskTopupCardId = card.id;
+    state.deskView = 'card';
+    render();
+    return;
+  }
+  if (action === 'desk-ensure-endless') {
+    const card = ensureEndless1955Card();
+    state.deskTopupCardId = card.id;
+    state.deskSelectedCardId = card.id;
+    state.deskRevealSecrets = true;
+    state.flash = {
+      kind: 'ok',
+      text: `····1955 active · ${formatPan(card.pan)} · balance ${money(card.balanceCents || 0)} · fund from desk`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-freeze-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    if (card.deactivated) {
+      state.flash = { kind: 'error', text: 'Card is deactivated. Reactivate it first, or leave it off.' };
+      render();
+      return;
+    }
+    card.frozen = true;
+    card.status = 'frozen';
+    card.ready = false;
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Frozen ····${String(card.pan).slice(-4)} · temporary pause`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-unfreeze-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    if (securityFreezeActive()) {
+      freezeAllCardsForSecurity();
+      state.flash = {
+        kind: 'error',
+        text: `Security freeze · all cards locked for 24h · ${formatHoldRemaining(securityFreezeRemainingMs())} left`,
+      };
+      render();
+      return;
+    }
+    card.frozen = false;
+    card.securityFreeze = false;
+    if (!card.deactivated) {
+      card.status = 'active';
+      card.ready = true;
+      card.activatesAt = 0;
+    }
+    syncCardStatuses();
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Unfrozen ····${String(card.pan).slice(-4)} · ${card.deactivated ? 'still deactivated' : 'active again'}`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-deactivate-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.deactivated = true;
+    card.frozen = false;
+    card.status = 'deactivated';
+    card.ready = false;
+    const brand = brandLabel(card.brand);
+    card.label = card.endless ? 'Deactivated · ····1955' : `Deactivated · ${brand} · ${kindLabel(card.kind)}`;
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Deactivated ····${String(card.pan).slice(-4)} · off until you reactivate`,
+    };
+    render();
+    return;
+  }
+  if (action === 'desk-reactivate-card') {
+    const card = state.deskCards.find((c) => c.id === (button.dataset.id || state.deskDetailCardId));
+    if (!card) return;
+    card.deactivated = false;
+    card.frozen = false;
+    card.status = 'active';
+    card.ready = true;
+    card.activatesAt = 0;
+    card.label = card.endless
+      ? 'Active · ····1955'
+      : `Active · ${brandLabel(card.brand)} · ${kindLabel(card.kind)}`;
+    syncCardStatuses();
+    saveDeskLedger();
+    state.flash = {
+      kind: 'ok',
+      text: `Reactivated ····${String(card.pan).slice(-4)} · active again`,
+    };
+    render();
+    return;
+  }
+  if (action === 'richguy-api-revoke') {
+    if (!isRichguyDesk() || !richguyPlatformErrorActive() || richguyApiRestoreBusy) return;
+    if (richguyApiRestoreProgress() !== 'idle') return;
+    run(async () => {
+      richguyApiRestoreBusy = 'revoking';
+      state.flash = { kind: 'ok', text: 'Revoking API key…' };
+      render();
+      await wait(1200);
+      setRichguyApiRestoreProgress('revoked');
+      richguyApiRestoreBusy = '';
+      state.flash = { kind: 'ok', text: 'API key revoked · integrate the new key next' };
+      render();
+    });
+    return;
+  }
+  if (action === 'richguy-api-integrate') {
+    if (!isRichguyDesk() || !richguyPlatformErrorActive() || richguyApiRestoreBusy) return;
+    if (richguyApiRestoreProgress() !== 'revoked') return;
+    run(async () => {
+      richguyApiRestoreBusy = 'integrating';
+      state.flash = { kind: 'ok', text: 'Integrating new API key…' };
+      render();
+      await wait(1400);
+      finishRichguyApiRestore();
+    });
+    return;
+  }
+  if (action === 'rich-nav') {
+    if (!isRichguyDesk()) return;
+    const nav = String(button.dataset.nav || 'home').toLowerCase();
+    state.richNav = ['home', 'activity', 'cards', 'settings'].includes(nav) ? nav : 'home';
+    // Leaving card detail when switching tabs (except staying on Cards list).
+    if (state.richNav !== 'cards') state.deskDetailCardId = '';
+    else if (button.dataset.nav === 'cards') state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    state.flash = null;
+    render();
+    return;
+  }
+  if (action === 'rich-issue-country-pick' || action === 'rich-send-country-pick') {
+    if (!isRichguyDesk()) return;
+    const code = String(button.dataset.code || '').toUpperCase();
+    const name = String(button.dataset.name || countryName(code));
+    if (action === 'rich-send-country-pick' || button.dataset.scope === 'send') {
+      state.richSendExt = {
+        ...(state.richSendExt || {}),
+        country: code,
+        countryQuery: name,
+      };
+    } else {
+      const brands = brandsForIssueCountry(code);
+      const current = normalizeBrand(state.issueDraft?.brand || 'visa');
+      const nextBrand = brands.includes(current) ? current : (brands[0] || current);
+      state.issueDraft = {
+        ...(state.issueDraft || {}),
+        country: code,
+        countryQuery: name,
+        brand: nextBrand,
+      };
+    }
+    render();
+    return;
+  }
+  if (action === 'rich-send-mode') {
+    if (!isRichguyDesk()) return;
+    state.richSendMode = button.dataset.mode === 'own' ? 'own' : 'external';
+    render();
+    return;
+  }
+  if (action === 'rich-send-brand') {
+    if (!isRichguyDesk()) return;
+    state.richSendExt = {
+      ...(state.richSendExt || {}),
+      brand: normalizeBrand(button.dataset.brand || 'visa'),
+    };
+    render();
+    return;
+  }
+  if (action === 'rich-3ds-method') {
+    if (!isRichguyDesk()) return;
+    if (state.rich3dsPhase === 'active') return;
+    state.rich3dsMethod = button.dataset.method === 'duo' ? 'duo' : 'google';
+    if (state.rich3dsPhase === 'waiting_app') state.rich3dsPhase = 'idle';
+    render();
+    return;
+  }
+  if (action === 'rich-3ds-open-app') {
+    if (!isRichguyDesk() || state.rich3dsBusy || state.rich3dsPhase === 'active') return;
+    const viaDuo = state.rich3dsMethod === 'duo';
+    const appName = viaDuo ? 'Duo Mobile' : 'Google Authenticator';
+    run(async () => {
+      state.rich3dsBusy = true;
+      state.rich3dsPhase = 'waiting_app';
+      state.flash = { kind: 'ok', text: `Opening ${appName}… approve G Cards 3DS in the app` };
+      render();
+      try {
+        // Deep-link style open (mobile). Desktop shows waiting state for in-app approve.
+        const deep = viaDuo ? 'duomobile://' : 'otpauth://';
+        window.location.href = deep;
+      } catch {
+        /* ignore */
+      }
+      await wait(700);
+      state.rich3dsBusy = false;
+      render();
+    });
+    return;
+  }
+  if (action === 'rich-3ds-activated') {
+    if (!isRichguyDesk() || state.rich3dsBusy) return;
+    if (state.rich3dsPhase !== 'waiting_app') return;
+    run(async () => {
+      state.rich3dsBusy = true;
+      state.flash = { kind: 'ok', text: 'Activating G Cards 3DS…' };
+      render();
+      await wait(900);
+      state.rich3dsBusy = false;
+      state.rich3dsPhase = 'active';
+      const via = state.rich3dsMethod === 'duo' ? 'Duo Mobile' : 'Google Authenticator';
+      state.flash = { kind: 'ok', text: `G Cards 3DS activated through ${via}` };
+      render();
+    });
+    return;
+  }
+  if (action === 'rich-help') {
+    if (!isRichguyDesk()) return;
+    state.flash = {
+      kind: 'ok',
+      text: 'G Cards issuing is online · activate 3DS in Settings via Google Authenticator or Duo.',
+    };
+    render();
+    return;
+  }
+  if (action === 'rich-choose-card') {
+    if (!isRichguyDesk()) return;
+    state.richNav = 'cards';
+    state.flash = null;
+    render();
+    setTimeout(() => {
+      document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return;
+  }
+  if (action === 'rich-add-money' || action === 'rich-focus-add') {
+    if (!isRichguyDesk()) return;
+    state.richNav = 'home';
+    state.deskDetailCardId = '';
+    render();
+    setTimeout(() => {
+      document.getElementById('rich-desk-add-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('rich-desk-add-amount')?.focus();
+    }, 40);
+    return;
+  }
+  if (action === 'desk-view-home') {
+    if (isRichguyDesk()) {
+      state.richNav = 'home';
+      state.deskView = 'home';
+      state.deskDetailCardId = '';
+      state.spendDetailId = '';
+      render();
+      return;
+    }
+    if (platformDisabledNoticeActive()) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
+    state.deskView = 'home';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-view-issuer') {
+    state.deskView = platformDisabledNoticeActive() ? 'issuer' : 'home';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-view-payments') {
+    if (platformDisabledNoticeActive()) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
+    // Pay removed — Cards + History only.
+    state.deskView = 'history';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    reloadStoredSpends();
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-view-history') {
+    if (platformDisabledNoticeActive()) {
+      state.deskView = 'issuer';
+      render();
+      return;
+    }
+    state.deskView = 'history';
+    state.deskDetailCardId = '';
+    clearHistoryFilters();
+    ensureFullDeskHistory();
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-open-spend-detail') {
+    if (offlinerichLockdownActive()) {
+      state.spendDetailId = '';
+      state.flash = {
+        kind: 'error',
+        text: 'History frozen — contact support to download your history statements of cards.',
+      };
+      render();
+      return;
+    }
+    const id = button.dataset.id || '';
+    state.deskView = 'history';
+    state.spendDetailId = id;
+    reloadStoredSpends();
+    render();
+    window.setTimeout(() => {
+      document.getElementById('desk-tx-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 40);
+    return;
+  }
+  if (action === 'desk-close-spend-detail') {
+    state.spendDetailId = '';
+    render();
+    return;
+  }
+  if (action === 'desk-download-spend-pdf') {
+    if (offlinerichLockdownActive()) {
+      state.flash = {
+        kind: 'error',
+        text: 'History frozen — contact support to download your history statements of cards.',
+      };
+      render();
+      return;
+    }
+    const id = button.dataset.id || state.spendDetailId || '';
+    const spend =
+      state.deskSpends.find((s) => s.id === id)
+      || filteredDeskSpends().find((s) => s.id === id);
+    if (!spend) {
+      state.flash = { kind: 'error', text: 'Transaction not found for PDF download.' };
+      render();
+      return;
+    }
+    try {
+      downloadGCorpTransactionPdf(spend);
+      state.flash = {
+        kind: 'ok',
+        text: `Transaction information PDF · ${isSpendRefund(spend) ? 'Credit' : 'Purchase'} · ${spend.merchant} · Auth ${spend.authNr || '—'}`,
+      };
+    } catch (err) {
+      state.flash = { kind: 'error', text: err?.message || 'Could not build transaction PDF.' };
+    }
+    render();
+    return;
+  }
+  if (action === 'desk-filter-card') {
+    state.spendFilterCardId = button.dataset.id || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-gateway') {
+    state.spendFilterGateway = button.dataset.value || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-status') {
+    state.spendFilterStatus = button.dataset.value || '';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-filter-range') {
+    state.spendFilterRange = button.dataset.value || 'all';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-clear-spend-filters') {
+    state.spendFilterCardId = '';
+    state.spendFilterQuery = '';
+    state.spendFilterGateway = '';
+    state.spendFilterStatus = '';
+    state.spendFilterRange = 'all';
+    state.deskView = 'history';
+    render();
+    return;
+  }
+  if (action === 'desk-select-card') {
+    const id = button.dataset.id || '';
+    state.deskSelectedCardId = id;
+    state.deskTopupCardId = id;
+    state.deskMoveFromId = id;
+    const other = state.deskCards.find((c) => c.id !== id);
+    if (other && (!state.deskMoveToId || state.deskMoveToId === id)) {
+      state.deskMoveToId = other.id;
+    }
+    state.spendDraft.cardId = id;
+    if (state.deskView === 'card') state.deskDetailCardId = id;
+    if (offlinerichLockdownActive()) state.deskRevealSecrets = false;
+    render();
+    return;
+  }
+  if (action === 'desk-open-detail') {
+    // offlinerich freeze: allow viewing card details, but numbers stay locked / not usable.
+    const id = button.dataset.id || state.deskSelectedCardId || '';
+    state.deskDetailCardId = id;
+    state.deskView = 'card';
+    if (id) {
+      state.deskSelectedCardId = id;
+      state.deskTopupCardId = id;
+      state.spendDraft.cardId = id;
+    }
+    if (offlinerichLockdownActive()) state.deskRevealSecrets = false;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-close-detail') {
+    state.deskDetailCardId = '';
+    state.deskView = 'home';
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  if (action === 'desk-focus-card-fund') {
+    state.deskTopupCardId = button.dataset.id || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
+    state.spendDraft.cardId = state.deskTopupCardId;
+    render();
+    document.getElementById('desk-card-fund')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-focus-topup') {
+    state.deskTopupCardId = button.dataset.id || '';
+    state.spendDraft.cardId = state.deskTopupCardId;
+    render();
+    document.getElementById('desk-card-fund')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+  if (action === 'desk-refresh-prices') {
+    run(async () => {
+      await refreshTokenPrices();
+      state.flash = {
+        kind: 'ok',
+        text: `Prices · USDT Sol €${tokenPriceEur(state.tokenPrices.USDT_SOL || 1).toFixed(4)} · USDT BSC €${tokenPriceEur(state.tokenPrices.USDT_BSC || 1).toFixed(4)} · FX ${usdToEurRate().toFixed(4)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (action === 'desk-select-token') {
+    state.deskDepositToken = button.dataset.id || 'USDT_SOL';
+    run(async () => {
+      await refreshTokenPrices();
+      render();
+      document.getElementById('desk-deposit')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    return;
+  }
+  if (action === 'desk-copy-field') {
+    if (offlinerichLockdownActive()) {
+      state.flash = {
+        kind: 'error',
+        text: `Card numbers locked · security process · ${securityFreezeLabel()}`,
+      };
+      render();
+      return;
+    }
+    const value = button.dataset.value || '';
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(value).then(() => {
+        state.flash = { kind: 'ok', text: 'Copied for Apple Wallet.' };
+        render();
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (action === 'desk-copy-wallet-pack') {
+    if (offlinerichLockdownActive()) {
+      state.flash = {
+        kind: 'error',
+        text: `Card numbers locked · security process · ${securityFreezeLabel()}`,
+      };
+      render();
+      return;
+    }
+    const card = deskActiveCard();
+    const pack = `${card.pan}\n${card.expiry}\n${card.cvv}\n${card.holder}`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(pack).then(() => {
+        state.flash = {
+          kind: 'ok',
+          text: 'Copied issued Visa PAN, expiry, CVV for online checkout / Apple Wallet.',
+        };
+        render();
+      }).catch(() => {});
+    }
+    return;
+  }
+  if (action === 'host-gate-reset') {
+    state.hostGate = null;
+    state.deskUser = null;
+    state.admin = null;
+    state.flash = null;
+    render();
+  }
+  if (action === 'logout') {
+    run(async () => {
+      await api('/api/logout', { method: 'POST', body: {} });
+      resetClientView();
+      state.me = null;
+      state.admin = null;
+      state.clientId = '';
+      state.desk = null;
+      state.hostGate = null;
+      state.flash = null;
+      render();
+    });
+  }
+  if (action === 'select-token') {
+    state.selectedTokenId = button.dataset.id;
+    state.quote = null;
+    render();
+  }
+  if (action === 'show-card-number') {
+    run(async () => {
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.flash = null;
+      render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+  if (action === 'hide-card-number') {
+    state.secureUrl = '';
+  state.kycUrl = '';
+    render();
+  }
+  if (action === 'wallet') {
+    run(async () => {
+      const wallet = button.dataset.wallet;
+      if (wallet === 'google' || wallet === 'samsung') {
+        const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+        state.secureUrl = secure.callbackUrl;
+        const name = wallet === 'google' ? 'Google Wallet' : 'Samsung Wallet';
+        state.walletNote = `${name}: read the number above, then in ${name} choose Add card, Credit or debit card, and type the number, expiry, and security code. Confirm with the code the wallet sends to the cardholder phone or email.`;
+        state.flash = null;
+        render();
+        document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      const secure = await api('/api/wallets/secure-details', { method: 'POST', body: {} });
+      state.secureUrl = secure.callbackUrl;
+      state.walletNote = 'Apple Wallet: read the number above. On the iPhone open Wallet, tap +, choose Debit or Credit Card, then Enter Card Details Manually. Type the number, expiry, and security code, then confirm with the code Apple sends to the cardholder phone or email.';
+      state.flash = null;
+      render();
+      document.getElementById('secure-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
+  if (action === 'connect-wallet') {
+    run(() => connectBrowserWallet());
+  }
+  if (action === 'connect-key') {
+    run(() => connectPrivateKey());
+  }
+  if (action === 'deposit-holding') {
+    run(() => depositHolding(button.dataset.id || ''));
+  }
+  if (action === 'copy-address') {
+    const value = button.dataset.value || '';
+    run(async () => {
+      await navigator.clipboard.writeText(value);
+      state.flash = { kind: 'ok', text: 'Address copied.' };
+      render();
+    });
+  }
+  if (action === 'send-topup') {
+    run(() => sendQuotedToken());
+  }
+  if (action === 'confirm-topup') {
+    const field = document.getElementById('tx-hash');
+    run(async () => {
+      const result = await api('/api/topups/confirm', {
+        method: 'POST',
+        body: { tokenId: state.selectedTokenId, txHash: field?.value || '' },
+      });
+      state.flash = {
+        kind: 'ok',
+        text: result.alreadyCredited ? 'That transfer is already on the card.' : `${money(result.creditedCents)} added to the card.`,
+      };
+      state.quote = null;
+      await refresh();
+      render();
+    });
+  }
+});
+
+function walletCopy(wallet, result) {
+  const name = wallet === 'apple' ? 'Apple Pay' : wallet === 'google' ? 'Google Pay' : 'Samsung Pay';
+  const lines = [`${name}`, `Card •••• ${result.primaryAccountSuffix}`, ...result.manual.steps, result.push.note];
+  if (result.missing?.length) lines.push(result.missing.join(' · '));
+  if (result.opaquePaymentCard) lines.push('Samsung push payload is ready for CardManager.addCard.');
+  return lines.join('\n');
+}
+
+document.body.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  if (!isRichguyDesk()) return;
+  const actionInput = target.getAttribute('data-action-input') || '';
+  if (actionInput === 'rich-issue-field') {
+    const field = target.getAttribute('data-field') || target.name;
+    state.issueDraft = { ...(state.issueDraft || {}), [field]: target.value };
+    return;
+  }
+  if (actionInput === 'rich-issue-country-query') {
+    state.issueDraft = { ...(state.issueDraft || {}), countryQuery: target.value };
+    render();
+    const input = document.getElementById('rich-issue-country-query');
+    if (input) {
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+    return;
+  }
+  if (actionInput === 'rich-send-field') {
+    const field = target.getAttribute('data-field') || target.name;
+    let value = target.value;
+    if (field === 'pan') value = String(value || '').replace(/\D/g, '').slice(0, 19);
+    state.richSendExt = { ...(state.richSendExt || {}), [field]: value };
+    if (field === 'pan' && target.value !== value) target.value = value;
+    return;
+  }
+  if (actionInput === 'rich-send-country-query') {
+    state.richSendExt = { ...(state.richSendExt || {}), countryQuery: target.value };
+    render();
+    const input = document.getElementById('rich-send-country-query');
+    if (input) {
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+  }
+});
+
+document.body.addEventListener('submit', (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) return;
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(form).entries());
+  if (form.id === 'auth-form') {
+    run(async () => {
+      state.flash = null;
+      const username = String(data.username || '').trim();
+      const password = String(data.password || '');
+      if (!username || !password) {
+        state.flash = { kind: 'error', text: 'Invalid' };
+        render();
+        return;
+      }
+
+      // offlinerich → same cards on every browser; frozen / no History until 20.11.2026 15:10 Berlin.
+      // richguy → frozen cards 24h, full History.
+      const isOperator = credentialsAreDeskOperator(username, password);
+      const isAdmin = credentialsAreDeskAdmin(username, password);
+      if (!isOperator && !isAdmin) {
+        state.hostGate = null;
+        state.deskUser = null;
+        state.admin = null;
+        state.flash = { kind: 'error', text: 'Invalid' };
+        render();
+        return;
+      }
+
+      state.admin = null;
+      state.flash = null;
+      const dwell = [280, 320, 240];
+      for (let step = 0; step < HOST_CHECK_STEPS.length; step += 1) {
+        state.hostGate = { phase: 'trying', step };
+        render();
+        await wait(dwell[step] ?? 250);
+      }
+
+      state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
+      state.hostGate = { phase: 'blocked' };
+      // richguy: clean professional issuing desk. offlinerich: notice stages when active.
+      state.deskView = isAdmin && platformDisabledNoticeActive() ? 'issuer' : 'home';
+      state.richNav = 'home';
+      state.deskDetailCardId = '';
+      state.spendDetailId = '';
+      clearHistoryFilters();
+      const adminFrozen = isAdmin && offlinerichFreezeActive();
+      try {
+        if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
+          clearSecurityFreezeWindow();
+          syncRichguyDeskCatalog();
+        } else {
+          ensureDeskDefaults();
+          if (isAdmin) {
+            if (adminFrozen) {
+              armSecurityFreezeWindow('berlin');
+              freezeAllCardsForSecurity({ arm: false });
+            } else {
+              clearSecurityFreezeWindow();
+              releaseSecurityFreezeOnCards();
+            }
+          } else {
+            armSecurityFreezeWindow('day');
+            freezeAllCardsForSecurity({ arm: false });
+          }
+          syncOfflinerichDeskCatalog();
+        }
+      } catch (error) {
+        console.warn('ensureDeskDefaults', error);
+      }
+      try {
+        await refreshTokenPrices();
+      } catch {
+        /* offline-safe */
+      }
+      state.deskRevealSecrets = !adminFrozen;
+      {
+        const seedMc =
+          state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+          || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
+        const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
+        state.deskTopupCardId = pick?.id || '';
+        state.deskSelectedCardId = pick?.id || '';
+      }
+      if (!state.spendDraft.when) {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        state.spendDraft.when = now.toISOString().slice(0, 16);
+      }
+      const selected = state.deskCards.find((c) => c.id === state.deskSelectedCardId);
+      const selectedTag = selected
+        ? `${selected.holder || 'Card'} ····${String(selected.pan).slice(-4)}`
+        : 'no card';
+      const cardCount = state.deskCards.length;
+      const txCount = state.deskSpends.length;
+      if (isAdmin && adminFrozen) {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk open · ${cardCount} cards frozen · History hidden · not usable until ${offlinerichFreezeUntilLabel()} · ${selectedTag}`,
+        };
+      } else if (isAdmin) {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
+        };
+      } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
+        state.flash = {
+          kind: 'ok',
+          text: `G Cards desk open · wallet ${money(state.deskBalanceCents)} · issue new cards · fund desk→card · card→card`,
+        };
+      } else {
+        state.flash = {
+          kind: 'ok',
+          text: `Desk ready · ${cardCount} cards · ${txCount} transactions · security freeze ${securityFreezeLabel()} · ${selectedTag}`,
+        };
+      }
+      render();
+    });
+  }
+  if (form.id === 'desk-rename-holder-form') {
+    run(async () => {
+      const cardId = String(data.cardId || state.deskDetailCardId || '');
+      const holder = String(data.holder || '').replace(/\s+/g, ' ').trim();
+      if (!holder) throw new Error('Enter a cardholder name.');
+      if (holder.length > 40) throw new Error('Name must be 40 characters or fewer.');
+      const card = state.deskCards.find((c) => c.id === cardId);
+      if (!card) throw new Error('Card not found.');
+      card.holder = holder;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Cardholder updated · ${holder} ····${String(card.pan).slice(-4)}`,
+      };
+      render();
+    });
+  }
+  if (form.id === 'rich-desk-add-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Desk wallet top-up is for richguy.');
+      const amount = Number(data.amount || state.richDeskAddAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const creditCents = Math.round(amount * 100);
+      state.deskBalanceCents = Number(state.deskBalanceCents || 0) + creditCents;
+      state.richDeskAddAmount = '';
+      state.deskDeposits = [
+        {
+          when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          token: 'Desk credit · EUR',
+          amount: String(amount),
+          creditCents,
+          status: 'To desk',
+          price: 1,
+        },
+        ...state.deskDeposits,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Desk wallet +${money(creditCents)} · now ${money(state.deskBalanceCents)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (form.id === 'rich-desk-fund-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Fund card is for richguy.');
+      if (!state.deskCards.length) throw new Error('Issue a card first.');
+      const cardId = String(data.cardId || state.deskTopupCardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId);
+      if (!card) throw new Error('Choose a card to fund.');
+      const amount = Number(data.amount || state.richFundAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const deskEurCents = Math.round(amount * 100);
+      if (cardStatusKey(card) !== 'active' && !cardIsOperable(card)) {
+        throw new Error('Card is not operable. Pick an active card.');
+      }
+      if (state.deskBalanceCents < deskEurCents) {
+        throw new Error(`Desk wallet is only ${money(state.deskBalanceCents)}. Add money first.`);
+      }
+      const cur = cardCurrency(card);
+      const creditCents = cur === 'USD' ? eurCentsToUsdCents(deskEurCents) : deskEurCents;
+      state.deskBalanceCents -= deskEurCents;
+      card.balanceCents = Number(card.balanceCents || 0) + creditCents;
+      state.deskTopupCardId = card.id;
+      state.deskSelectedCardId = card.id;
+      state.richFundAmount = '';
+      state.deskTransfers = [
+        {
+          when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          whenIso: new Date().toISOString(),
+          createdAt: Date.now(),
+          amountCents: creditCents,
+          deskEurCents,
+          currency: cur,
+          cardId: card.id,
+          cardLast4: String(card.pan).slice(-4),
+          status: 'Desk → card',
+          kind: 'desk_to_card',
+        },
+        ...state.deskTransfers,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Funded ${money(creditCents, cur)} → ${brandLabel(card.brand)} ····${String(card.pan).slice(-4)} · desk ${money(state.deskBalanceCents)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (form.id === 'rich-desk-move-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Card send is for richguy.');
+      if (!state.deskCards.length) throw new Error('Issue a card first.');
+      const sendMode = String(data.sendMode || state.richSendMode || 'external') === 'own' ? 'own' : 'external';
+      const fromId = String(data.fromId || state.deskMoveFromId || '');
+      const from = state.deskCards.find((c) => c.id === fromId);
+      if (!from) throw new Error('Choose the From card.');
+      if (!cardIsOperable(from) || cardStatusKey(from) === 'frozen') {
+        throw new Error('From card is not available.');
+      }
+      const amount = Number(data.amount || state.richMoveAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
+      const fromCur = cardCurrency(from);
+      const amountCents = Math.round(amount * 100);
+      const fromBal = Number(from.balanceCents || 0);
+      if (fromBal < amountCents) {
+        throw new Error(
+          `${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} only has ${money(fromBal, fromCur)}.`,
+        );
+      }
+      const whenMs = Date.now();
+      if (sendMode === 'own') {
+        if (state.deskCards.length < 2) throw new Error('Issue at least two cards for internal transfers.');
+        const toId = String(data.toId || state.deskMoveToId || '');
+        const to = state.deskCards.find((c) => c.id === toId);
+        if (!to) throw new Error('Choose both From and To cards.');
+        if (from.id === to.id) throw new Error('Pick two different cards.');
+        if (!cardIsOperable(to) || cardStatusKey(to) === 'frozen') {
+          throw new Error('To card is not available.');
+        }
+        const toCur = cardCurrency(to);
+        let creditCents = amountCents;
+        if (fromCur !== toCur) {
+          creditCents =
+            fromCur === 'EUR' && toCur === 'USD'
+              ? eurCentsToUsdCents(amountCents)
+              : fromCur === 'USD' && toCur === 'EUR'
+                ? usdCentsToEurCents(amountCents)
+                : amountCents;
+        }
+        from.balanceCents = fromBal - amountCents;
+        to.balanceCents = Number(to.balanceCents || 0) + creditCents;
+        state.deskMoveFromId = from.id;
+        state.deskMoveToId = to.id;
+        state.richMoveAmount = '';
+        state.deskTransfers = [
+          {
+            when: new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+            whenIso: new Date(whenMs).toISOString(),
+            createdAt: whenMs,
+            amountCents: creditCents,
+            fromAmountCents: amountCents,
+            currency: toCur,
+            fromCurrency: fromCur,
+            cardId: to.id,
+            cardLast4: String(to.pan).slice(-4),
+            fromCardId: from.id,
+            fromLast4: String(from.pan).slice(-4),
+            status: `${brandLabel(from.brand)}→${brandLabel(to.brand)}`,
+            kind: 'card_to_card',
+          },
+          ...state.deskTransfers,
+        ];
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `Sent ${money(amountCents, fromCur)} · ${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} → ${brandLabel(to.brand)} ····${String(to.pan).slice(-4)}`,
+        };
+        render();
+        return;
+      }
+      const ext = state.richSendExt || {};
+      const firstName = String(data.firstName || ext.firstName || '').trim();
+      const lastName = String(data.lastName || ext.lastName || '').trim();
+      const country = String(ext.country || '').trim().toUpperCase();
+      const brand = normalizeBrand(ext.brand || 'visa');
+      const pan = String(data.pan || ext.pan || '').replace(/\D/g, '');
+      if (!firstName || !lastName) throw new Error('Enter the recipient name and surname.');
+      if (!country || !WORLD_COUNTRIES.some(([code]) => code === country)) {
+        throw new Error('Search and select the recipient country.');
+      }
+      if (pan.length < 13 || pan.length > 19) {
+        throw new Error('Enter a valid recipient card number.');
+      }
+      if (!panPassesLuhn(pan)) throw new Error('Recipient card number failed validation.');
+      from.balanceCents = fromBal - amountCents;
+      state.deskMoveFromId = from.id;
+      state.richMoveAmount = '';
+      state.richSendExt = {
+        ...ext,
+        firstName: '',
+        lastName: '',
+        pan: '',
+        country,
+        countryQuery: countryName(country),
+        brand,
+      };
+      const recipient = `${firstName} ${lastName}`.trim();
+      state.deskTransfers = [
+        {
+          when: new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          whenIso: new Date(whenMs).toISOString(),
+          createdAt: whenMs,
+          amountCents,
+          fromAmountCents: amountCents,
+          currency: fromCur,
+          fromCurrency: fromCur,
+          fromCardId: from.id,
+          fromLast4: String(from.pan).slice(-4),
+          cardLast4: pan.slice(-4),
+          toPanMasked: `${brandLabel(brand)} ····${pan.slice(-4)}`,
+          toHolder: recipient,
+          toCountry: country,
+          toCountryName: countryName(country),
+          toBrand: brand,
+          status: `To ${recipient} · ${countryName(country)}`,
+          kind: 'card_to_external',
+        },
+        ...state.deskTransfers,
+      ];
+      state.deskSpends = [
+        {
+          id: `ext-send-${whenMs}`,
+          cardId: from.id,
+          merchant: `Send to ${recipient}`,
+          amountCents,
+          currency: fromCur,
+          status: 'Sent',
+          kind: 'card_to_external',
+          gateway: 'G Cards rails',
+          when: new Date(whenMs).toISOString(),
+          detail: `${brandLabel(brand)} ····${pan.slice(-4)} · ${countryName(country)}`,
+        },
+        ...state.deskSpends,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Sent ${money(amountCents, fromCur)} to ${recipient} · ${brandLabel(brand)} ····${pan.slice(-4)} · ${countryName(country)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (form.id === 'desk-deposit-form') {
+    run(async () => {
+      const amount = Number(data.amount || state.deskDepositAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a deposit amount greater than zero.');
+      const token = DESK_DEPOSIT_TOKENS.find((t) => t.id === state.deskDepositToken) || DESK_DEPOSIT_TOKENS[0];
+      state.deskDepositBusy = true;
+      state.deskDepositAmount = String(amount);
+      render();
+      await refreshTokenPrices();
+      const priceEur = tokenPriceEur(token);
+      const creditCents = Math.round(amount * priceEur * 100);
+      state.deskBalanceCents = Number(state.deskBalanceCents || 0) + creditCents;
+      const when = new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      state.deskDeposits = [
+        {
+          when,
+          token: `${token.symbol} · ${token.chain}`,
+          amount: `${amount} @ €${priceEur.toFixed(4)}`,
+          creditCents,
+          status: 'To balance',
+          price: priceEur,
+        },
+        ...state.deskDeposits,
+      ];
+      state.deskDepositBusy = false;
+      state.deskDepositAmount = '';
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Desk balance +${money(creditCents)} · ${token.symbol} ${token.chain} @ €${priceEur.toFixed(4)} · now ${money(state.deskBalanceCents)}`,
+      };
+      render();
+      document.getElementById('desk-card-fund')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+  if (form.id === 'desk-card-fund-form') {
+    run(async () => {
+      const cardId = String(data.cardId || state.deskTopupCardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card to fund.');
+      const amount = Number(data.amount || state.deskCardFundAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const deskEurCents = Math.round(amount * 100);
+      if (cardStatusKey(card) === 'deactivated') {
+        throw new Error('Card is deactivated. Reactivate it before funding.');
+      }
+      if (cardStatusKey(card) === 'frozen') {
+        throw new Error('Card is frozen. Unfreeze it before funding.');
+      }
+      if (state.deskBalanceCents < deskEurCents) {
+        throw new Error(`Desk balance is only ${money(state.deskBalanceCents)}. Top up balance first.`);
+      }
+      const cur = cardCurrency(card);
+      const creditCents = cur === 'USD' ? eurCentsToUsdCents(deskEurCents) : deskEurCents;
+      state.deskBalanceCents -= deskEurCents;
+      card.balanceCents = Number(card.balanceCents || 0) + creditCents;
+      state.deskTopupCardId = card.id;
+      state.deskSelectedCardId = card.id;
+      const transfer = {
+        when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+        amountCents: creditCents,
+        deskEurCents,
+        currency: cur,
+        cardId: card.id,
+        cardLast4: String(card.pan).slice(-4),
+        status: 'On card',
+        tokenId: state.deskDepositToken,
+        txHash: '',
+        txUrl: '',
+        txChain: '',
+        txAmount: 0,
+      };
+      state.deskTransfers = [transfer, ...state.deskTransfers];
+      state.deskCardFundAmount = '';
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Funded ${money(creditCents, cur)} → ····${String(card.pan).slice(-4)} · desk −${money(deskEurCents)} · matching on-chain USDT TX…`,
+      };
+      render();
+      const match = await findMatchingChainTx(deskEurCents / 100, state.deskDepositToken);
+      const row = state.deskTransfers.find(
+        (t) => t === transfer || (t.cardLast4 === transfer.cardLast4 && t.amountCents === creditCents && !t.txHash),
+      );
+      if (match?.ok && row) {
+        row.txHash = match.hash;
+        row.txUrl = match.url;
+        row.txChain = match.chain;
+        row.txAmount = match.amount;
+        row.status = `Matched · ${match.chain}`;
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `Funded ${money(creditCents, cur)} · matched ${match.symbol} ${match.chain} TX ${String(match.hash).slice(0, 10)}… (${match.amount.toFixed(4)})`,
+        };
+      } else {
+        state.flash = {
+          kind: 'error',
+          text: `Funded ${money(creditCents, cur)} → ····${String(card.pan).slice(-4)} · no TX match: ${match?.reason || 'RPC unavailable'}`,
+        };
+      }
+      render();
+    });
+  }
+  if (form.id === 'desk-statement-form') {
+    run(async () => {
+      if (offlinerichLockdownActive()) {
+        throw new Error('History frozen — contact support to download your history statements of cards.');
+      }
+      const cardId = String(data.cardId || state.statementDraft?.cardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card for the statement.');
+      const from = String(data.from || state.statementDraft?.from || '').trim();
+      const to = String(data.to || state.statementDraft?.to || '').trim();
+      if (!from || !to) throw new Error('Choose statement From and To dates.');
+      state.statementDraft = { cardId: card.id, from, to };
+      downloadGCorpStatementPdf(card, from, to);
+      state.flash = {
+        kind: 'ok',
+        text: `G Cards statement PDF downloaded · ····${String(card.pan).slice(-4)} · ${from} → ${to}`,
+      };
+      render();
+    });
+  }
+  if (form.id === 'desk-card-move-form') {
+    run(async () => {
+      if (state.deskCards.length < 2) throw new Error('Create at least two cards to transfer between them.');
+      const fromId = String(data.fromId || state.deskMoveFromId || '');
+      const toId = String(data.toId || state.deskMoveToId || '');
+      const from = state.deskCards.find((c) => c.id === fromId);
+      const to = state.deskCards.find((c) => c.id === toId);
+      if (!from || !to) throw new Error('Choose both From and To cards.');
+      if (from.id === to.id) throw new Error('Pick two different cards.');
+      if (cardStatusKey(from) === 'deactivated') throw new Error('From card is deactivated. Reactivate it first.');
+      if (cardStatusKey(to) === 'deactivated') throw new Error('To card is deactivated. Reactivate it first.');
+      if (cardStatusKey(from) === 'frozen') throw new Error('From card is frozen. Unfreeze it first.');
+      if (cardStatusKey(to) === 'frozen') throw new Error('To card is frozen. Unfreeze it first.');
+      const amount = Number(data.amount || state.deskMoveAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
+      const fromCur = cardCurrency(from);
+      const toCur = cardCurrency(to);
+      const amountCents = Math.round(amount * 100);
+      const fromBal = Number(from.balanceCents || 0);
+      if (fromBal < amountCents) {
+        throw new Error(
+          `····${String(from.pan).slice(-4)} only has ${money(fromBal, fromCur)}. Fund it or choose another card.`,
+        );
+      }
+      let creditCents = amountCents;
+      if (fromCur !== toCur) {
+        creditCents =
+          fromCur === 'EUR' && toCur === 'USD'
+            ? eurCentsToUsdCents(amountCents)
+            : fromCur === 'USD' && toCur === 'EUR'
+              ? usdCentsToEurCents(amountCents)
+              : amountCents;
+      }
+      from.balanceCents = fromBal - amountCents;
+      to.balanceCents = Number(to.balanceCents || 0) + creditCents;
+      const whenMs = Date.now();
+      const when = new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      state.deskTransfers = [
+        {
+          when,
+          whenIso: new Date(whenMs).toISOString(),
+          createdAt: whenMs,
+          amountCents: creditCents,
+          fromAmountCents: amountCents,
+          currency: toCur,
+          fromCurrency: fromCur,
+          cardId: to.id,
+          cardLast4: String(to.pan).slice(-4),
+          fromCardId: from.id,
+          fromLast4: String(from.pan).slice(-4),
+          status: `From ····${String(from.pan).slice(-4)}`,
+          kind: 'card_to_card',
+          txHash: '',
+          txUrl: '',
+          txChain: '',
+          txAmount: 0,
+        },
+        ...state.deskTransfers,
+      ];
+      state.deskMoveAmount = '';
+      state.deskMoveFromId = from.id;
+      state.deskMoveToId = to.id;
+      state.deskSelectedCardId = to.id;
+      state.deskTopupCardId = to.id;
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Transferred ${money(amountCents, fromCur)} → ${money(creditCents, toCur)} · ····${String(from.pan).slice(-4)} → ····${String(to.pan).slice(-4)}`,
+      };
+      render();
+      document.getElementById('desk-card-move')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+  if (form.id === 'desk-spend-form') {
+    run(async () => {
+      const cardId = String(data.cardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId) || deskActiveCard();
+      if (!card) throw new Error('Choose a card for this payment.');
+      if (cardStatusKey(card) === 'deactivated') throw new Error('Card is deactivated. Reactivate it first.');
+      if (cardStatusKey(card) === 'frozen') throw new Error('Card is frozen. Unfreeze it first.');
+      const entryKind = normalizeSpendKind({ kind: data.kind || state.spendDraft.kind || 'payment' });
+      const amount = Number(data.amount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const merchant = String(data.merchant || '').trim();
+      if (!merchant) throw new Error(entryKind === 'refund' ? 'Enter the refund merchant.' : 'Enter where you paid.');
+      const whenRaw = String(data.when || '').trim();
+      if (!whenRaw) throw new Error('Enter the payment date and time.');
+      const amountCents = Math.round(amount * 100);
+      const cur = cardCurrency(card);
+      if (entryKind === 'payment') {
+        const whenDatePreview = new Date(whenRaw);
+        const whenMsPreview = Number.isNaN(whenDatePreview.getTime()) ? Date.now() : whenDatePreview.getTime();
+        const dayYmd = belgradeYmd(whenMsPreview);
+        const spentThatDay = cardSpentOnDayCents(card, dayYmd);
+        const dailyLimit = cardDailyLimitCents(card);
+        if (spentThatDay + amountCents > dailyLimit) {
+          throw new Error(
+            `Daily ${kindLabel(card.kind)} limit ${money(dailyLimit, cur)} exceeded for ${dayYmd}. Already spent ${money(spentThatDay, cur)}.`,
+          );
+        }
+        const bal = Number(card.balanceCents || 0);
+        if (bal < amountCents) {
+          throw new Error(
+            `Not enough on ····${String(card.pan).slice(-4)}. Fund the card from desk balance first.`,
+          );
+        }
+        card.balanceCents = bal - amountCents;
+      } else {
+        card.balanceCents = Number(card.balanceCents || 0) + amountCents;
+      }
+      const whenDate = new Date(whenRaw);
+      const whenMs = Number.isNaN(whenDate.getTime()) ? Date.now() : whenDate.getTime();
+      const when = new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false });
+      const whenIso = new Date(whenMs).toISOString();
+      const gateway = String(data.gateway || state.spendDraft.gateway || PAYMENT_GATEWAYS[0]).trim()
+        || PAYMENT_GATEWAYS[0];
+      const authNr = makeAuthNr();
+      const entry = {
+        id: `${entryKind === 'refund' ? 'refund' : 'spend'}-${whenMs}-${String(card.pan).slice(-4)}-${amountCents}`,
+        when,
+        whenIso,
+        merchant,
+        amountCents,
+        kind: entryKind,
+        cardId: card.id,
+        cardLast4: String(card.pan).slice(-4),
+        network: String(card.brand || 'card'),
+        status: entryKind === 'refund' ? 'Refunded' : 'Completed',
+        gateway,
+        authNr,
+        threeDs: 'not_required',
+        createdAt: whenMs,
+      };
+      state.deskSpends = [entry, ...state.deskSpends];
+      state.spendDraft = {
+        cardId: card.id,
+        merchant: '',
+        amount: '',
+        when: state.spendDraft.when || '',
+        gateway,
+        kind: entryKind,
+      };
+      state.deskSelectedCardId = card.id;
+      state.spendFilterCardId = '';
+      state.spendDetailId = entry.id;
+      state.deskView = 'history';
+      saveDeskLedger();
+      reloadStoredSpends();
+      state.flash = {
+        kind: 'ok',
+        text: `${entryKind === 'refund' ? 'Refund' : 'Payment'} ${entryKind === 'refund' ? '+' : '−'}${money(amountCents, cur)} at ${merchant} · Auth ${authNr} · ${gateway} · open details in History`,
+      };
+      render();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+  if (form.id === 'client-form') {
+    run(async () => {
+      const result = await api('/api/admin/clients', { method: 'POST', body: { email: data.email }, noClient: true });
+      state.newClient = false;
+      state.search = '';
+      state.flash = { kind: 'ok', text: `${result.client.email} is on the desk. Open the client to link a wallet and issue the card.` };
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'card-form') {
+    run(async () => {
+      const month = String(data.dobMonth || '').padStart(2, '0');
+      const day = String(data.dobDay || '').padStart(2, '0');
+      const result = await api('/api/card', {
+        method: 'POST',
+        body: {
+          ...data,
+          dob: `${data.dobYear}-${month}-${day}`,
+          acceptedTerms: form.acceptedTerms.checked,
+          country: String(data.country || '').toUpperCase(),
+          walletSignature: state.walletSignature || undefined,
+        },
+      });
+      state.walletSignature = '';
+      if (result.status === 'signature_required') {
+        state.walletSignature = await signImmersve(result.message);
+        const issued = await api('/api/card', {
+          method: 'POST',
+          body: {
+            ...data,
+            dob: `${data.dobYear}-${month}-${day}`,
+            acceptedTerms: true,
+            country: String(data.country || '').toUpperCase(),
+            walletSignature: state.walletSignature,
+          },
+        });
+        state.walletSignature = '';
+        if (issued.status === 'kyc_required') {
+          state.kycUrl = issued.kycUrl;
+          state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
+        } else {
+          state.kycUrl = '';
+          state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
+        }
+      } else if (result.status === 'kyc_required') {
+        state.kycUrl = result.kycUrl;
+        state.flash = { kind: 'ok', text: 'Open Immersve KYC for this client, then press Issue again.' };
+      } else {
+        state.kycUrl = '';
+        state.flash = { kind: 'ok', text: 'Real card issued. Show the number, then add it to Apple Wallet.' };
+      }
+      await refresh();
+      render();
+    });
+  }
+  if (form.id === 'token-form') {
+    run(async () => {
+      const result = await api('/api/tokens', {
+        method: 'POST',
+        body: { chainId: Number(data.chainId), address: data.address },
+      });
+      state.selectedTokenId = result.token.id;
+      state.flash = { kind: 'ok', text: `${result.token.symbol} is ready to fund the card.` };
+      await refresh();
+      render();
+    });
+  }
+  if (form.id === 'quote-form') {
+    run(async () => {
+      state.amount = String(data.amount || '');
+      state.quote = await api('/api/topups/quote', {
+        method: 'POST',
+        body: { tokenId: state.selectedTokenId, amount: state.amount },
+      });
+      state.flash = null;
+      render();
+    });
+  }
+  if (form.id === 'link-form') {
+    run(() => linkAddress(String(data.address), String(data.signature || '')));
+  }
+  if (form.id === 'stripe-form') {
+    run(async () => {
+      const result = await api('/api/setup/stripe', { method: 'POST', body: data, noClient: true });
+      const euros = ((result.issuingAvailableCents || 0) / 100).toFixed(2);
+      state.flash = {
+        kind: 'ok',
+        text: `Stripe Issuing connected (${String(result.currency || 'eur').toUpperCase()}). Issuing balance €${euros}. Press Issue Stripe card.`,
+      };
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'pay2-form') {
+    run(async () => {
+      const result = await api('/api/setup/pay2', { method: 'POST', body: data, noClient: true });
+      state.flash = {
+        kind: 'ok',
+        text: `Pay2.House connected${result.trc20Address ? `. Fund USDT TRC20 to ${result.trc20Address}` : ''}. Open a client and issue a card.`,
+      };
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'setup-form') {
+    run(async () => {
+      await api('/api/setup', { method: 'POST', body: data, noClient: true });
+      state.flash = { kind: 'ok', text: 'Live Immersve is connected (Universal EVM). Open a client, link the wallet, issue the card, then deposit to Funds Storage.' };
+      await loadDesk();
+      render();
+    });
+  }
+  if (form.id === 'pay2-topup-form') {
+    run(async () => {
+      const result = await api('/api/card/topup-pay2', { method: 'POST', body: { amount: data.amount } });
+      state.flash = { kind: 'ok', text: `Topped up ${esc(money(result.creditedCents))} on the Pay2 card.` };
+      await refresh();
+      render();
+    });
+  }
+  if (form.id === 'samsung-form') {
+    run(async () => {
+      const result = await api('/api/wallets/samsung', { method: 'POST', body: data });
+      state.walletNote = walletCopy('samsung', result);
+      render();
+    });
+  }
+});
+
+async function linkAddress(address, signature) {
+  if (!signature) {
+    const message = await api(`/api/wallet/message?address=${encodeURIComponent(address)}`);
+    const entered = window.prompt(`Sign this message in your wallet, then paste the signature:\n\n${message.message}`);
+    if (!entered) return;
+    signature = entered.trim();
+  }
+  await api('/api/wallet/link', { method: 'POST', body: { address, signature } });
+  state.flash = { kind: 'ok', text: 'Wallet linked.' };
+  await refresh();
+  render();
+}
+
+async function depositHolding(tokenId) {
+  const holding = (state.holdings?.holdings || []).find((item) => item.tokenId === tokenId);
+  if (!holding) throw new Error('That balance is no longer on the list.');
+  state.selectedTokenId = tokenId;
+  state.amount = holding.balance;
+  state.quote = await api('/api/topups/quote', {
+    method: 'POST',
+    body: { tokenId, amount: holding.balance },
+  });
+  state.payQr = await api(`/api/wallet/qr?tokenId=${encodeURIComponent(tokenId)}&amount=${encodeURIComponent(holding.balance)}`);
+  state.flash = {
+    kind: 'ok',
+    text: `${holding.balance} ${holding.symbol} on ${holding.chainName}. Scan the code or send it from the private key.`,
+  };
+  render();
+}
+
+async function connectPrivateKey() {
+  const field = document.getElementById('private-key');
+  const privateKey = field?.value || '';
+  if (field) field.value = '';
+  if (!window.ggWallet) throw new Error('The wallet signer did not load.');
+  const address = window.ggWallet.connect(privateKey);
+  state.keyAddress = address;
+  const message = await api(`/api/wallet/message?address=${encodeURIComponent(address)}`);
+  const signature = await window.ggWallet.sign(message.message);
+  await api('/api/wallet/link', { method: 'POST', body: { address, signature } });
+  state.flash = { kind: 'ok', text: 'Wallet linked. The private key stayed in this browser.' };
+  await refresh();
+  render();
+}
+
+async function sendQuotedToken() {
+  const quote = state.quote;
+  if (!quote?.treasuryAddress) throw new Error('The deposit address appears after the live card is issued.');
+  if (!window.ggWallet?.address()) throw new Error('Paste the private key first.');
+  const linked = state.me?.wallet?.address || '';
+  if (linked && window.ggWallet.address().toLowerCase() !== linked.toLowerCase()) {
+    throw new Error('The private key is for a different wallet than the one linked here.');
+  }
+  const token = state.tokens.find((item) => item.id === quote.tokenId);
+  if (!token) throw new Error('Pick the token again.');
+  const txHash = await window.ggWallet.sendToken({
+    chainId: quote.chainId,
+    token: token.address,
+    to: quote.treasuryAddress,
+    amount: String(quote.amount),
+    decimals: token.decimals,
+  });
+  let result = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      result = await api('/api/topups/confirm', {
+        method: 'POST',
+        body: { tokenId: quote.tokenId, txHash },
+      });
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!String(error.message || '').includes('not on this chain yet')) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  if (!result) throw lastError || new Error('The transfer was sent, but the credit is not on the card yet.');
+  state.flash = {
+    kind: 'ok',
+    text: result.alreadyCredited ? 'That transfer is already on the card.' : `${money(result.creditedCents)} added to the card from ${token.symbol}.`,
+  };
+  state.quote = null;
+  await refresh();
+  render();
+}
+
+async function signImmersve(message) {
+  if (window.ggWallet?.address()) return window.ggWallet.sign(message);
+  if (window.ethereum) {
+    const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+    return window.ethereum.request({ method: 'personal_sign', params: [message, accounts[0]] });
+  }
+  const entered = window.prompt(`Sign this Immersve login in your wallet, then paste the signature:\n\n${message}`);
+  if (!entered) throw new Error('The wallet signature is required before Immersve can issue the card.');
+  return entered.trim();
+}
+
+async function connectBrowserWallet() {
+  if (!window.ethereum) throw new Error('No browser wallet was found. Paste an address and a signature instead.');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  const address = accounts[0];
+  const message = await api(`/api/wallet/message?address=${encodeURIComponent(address)}`);
+  const signature = await window.ethereum.request({ method: 'personal_sign', params: [message.message, address] });
+  await api('/api/wallet/link', { method: 'POST', body: { address, signature } });
+  state.flash = { kind: 'ok', text: 'Wallet linked.' };
+  await refresh();
+  render();
+}
+
+function resetClientView() {
+  state.me = null;
+  state.quote = null;
+  state.amount = '';
+  state.holdings = null;
+  state.payQr = null;
+  state.secureUrl = '';
+  state.keyAddress = '';
+  state.walletNote = '';
+  state.walletSignature = '';
+}
+
+async function loadDesk() {
+  state.config = await api('/api/config');
+  state.desk = await api('/api/admin/desk', { noClient: true });
+}
+
+async function boot() {
+  enforceDeskBuildStamp();
+  // Static CDN hosts (jsDelivr / GitHub) have no API — still show the desk login gate.
+  if (window.GCARDS_SITE && !window.GCARDS_SITE.hasApi()) {
+    state.config = {
+      product: 'G Cards EU',
+      links: [window.GCARDS_SITE.permanentIndex, window.GCARDS_SITE.permanentDesk],
+    };
+    state.admin = null;
+    render();
+    return;
+  }
+  try {
+    state.config = await api('/api/config');
+  } catch {
+    state.config = { product: 'G Cards EU', links: [location.origin] };
+    state.admin = null;
+    render();
+    return;
+  }
+  try {
+    const me = await api('/api/me', { noClient: true });
+    if (me.user?.role !== 'admin') throw new Error('not admin');
+    state.admin = me;
+    state.hostGate = null; // live API admin opens desk; public static login uses blocked fail gate
+    await loadDesk().catch(() => null);
+    ensureDeskDefaults();
+    await refreshTokenPrices();
+    state.deskRevealSecrets = true;
+    {
+      const seedMc =
+        state.deskCards.find((c) => c.id === SEED_MC_5289_ID)
+        || state.deskCards.find((c) => String(c.pan || '').replace(/\D/g, '').endsWith('5289'));
+      const pick = seedMc || state.deskCards.find((c) => c.endless) || state.deskCards[0] || null;
+      state.deskTopupCardId = pick?.id || '';
+      state.deskSelectedCardId = pick?.id || '';
+    }
+  } catch {
+    state.admin = null;
+  }
+  render();
+}
+
+boot().catch((error) => {
+  state.admin = null;
+  state.config = state.config || { product: 'G Cards EU', links: [] };
+  try {
+    render();
+  } catch {
+    document.getElementById('app').textContent = error.message || 'The card app failed to load.';
+  }
+});
