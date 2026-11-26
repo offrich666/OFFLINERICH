@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126j';
+const DESK_BUILD = '20261126k';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3995,8 +3995,16 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // Notice-only lock: contacting → accept → API wait → issuer implementation.
-  // richguy sees the issuer implementation message immediately; Off Grid desk opens at 15:00.
+  // richguy: show EXACTLY the issuer message offlinerich gets after the API countdown — no Off Grid yet.
+  if (isRichguyDesk() && richguyIssuerImplNoticeActive()) {
+    startUnfreezeProcessWatch();
+    state.deskView = 'issuer';
+    state.richNav = 'home';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    return deskShellHtml(deskIssuerImplNoticePageHtml());
+  }
+  // Notice-only lock: contacting → accept → API wait → issuer implementation (offlinerich).
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -4015,7 +4023,7 @@ function capacityDeskHtml() {
               : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
-  // richguy: Off Grid issuing desk (after issuer program opens).
+  // richguy: Off Grid issuing desk only after issuer program opens (tomorrow 15:00).
   if (isRichguyDesk()) {
     return richguyOffgridDeskHtml();
   }
@@ -4609,7 +4617,11 @@ function deskNetworkAcceptNoticePageHtml() {
         </section>`;
 }
 
-/** After API wait (offlinerich) / immediately (richguy): issuer implementation until tomorrow 15:00. */
+/**
+ * Same page for both users:
+ * - offlinerich: after API countdown ends
+ * - richguy: right now (preview of that offlinerich post-countdown message)
+ */
 function deskIssuerImplNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
     (addr) =>
@@ -4621,7 +4633,6 @@ function deskIssuerImplNoticePageHtml() {
   const openLabel = issuerProgramOpenLabel();
   const privateLimit = money(PRIVATE_DAILY_LIMIT_CENTS, 'EUR');
   const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
-  const who = isRichguyDesk() ? 'richguy' : 'offlinerich';
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Issuer implementation</p>
@@ -4633,7 +4644,7 @@ function deskIssuerImplNoticePageHtml() {
             <h2 id="desk-issuer-impl-title">Issuing opens tomorrow at 15:00</h2>
           </div>
           <p class="desk-issuer-reason">
-            The issuer is being implemented for account <strong>${esc(who)}</strong>.
+            The issuer is being implemented.
             You can <strong>issue new cards starting ${esc(openLabel)}</strong>.
             Until then, the desk stays on this status page while the issuing program is prepared.
           </p>
@@ -7346,8 +7357,12 @@ document.body.addEventListener('submit', (event) => {
 
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
-      // richguy: clean professional issuing desk. offlinerich: notice stages when active.
-      state.deskView = isAdmin && platformDisabledNoticeActive() ? 'issuer' : 'home';
+      // richguy: same issuer message offlinerich gets after API countdown. offlinerich: notice stages.
+      state.deskView =
+        (isOperator && richguyIssuerImplNoticeActive())
+        || (isAdmin && platformDisabledNoticeActive())
+          ? 'issuer'
+          : 'home';
       state.richNav = 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
@@ -7410,6 +7425,11 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
+        };
+      } else if (isOperator && richguyIssuerImplNoticeActive()) {
+        state.flash = {
+          kind: 'ok',
+          text: `Issuer implementation · same status offlinerich gets after API countdown · issuing opens ${issuerProgramOpenLabel()}`,
         };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
         state.flash = {
