@@ -85,6 +85,8 @@ const state = {
     country: '',
     countryQuery: '',
   },
+  /** @type {null | { bin: string, loading?: boolean, country?: string, bank?: string, scheme?: string, error?: string }} */
+  binLookup: null,
   statementDraft: { cardId: '', from: '', to: '' },
 };
 
@@ -107,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126g';
+const DESK_BUILD = '20261126k';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -123,10 +125,20 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * After Berlin freeze ends:
  * 1) contacting Visa / Mastercard / Amex
  * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
- * 3) offlinerich → platform error until 19:00 → API integrated / 48h wait → issue
- *    richguy → same API-integrated / 48h wait immediately (preview)
+ * 3) offlinerich → platform error → API integrated / 48h wait
+ * 4) issuer implementation notice → issuing + direct spend opens at ISSUER_PROGRAM_OPEN_FROM
+ *    richguy → same issuer notice immediately (no wait for offlinerich's API countdown)
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
+/** Issuing program + direct spend opens at this Berlin civil time. */
+const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 27,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
 const RICHGUY_FREEZE_UNTIL = Object.freeze({
   year: 2026,
@@ -188,7 +200,7 @@ const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
 const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
 /** richguy clean issuing desk: no seed cards; fundable wallet. */
 const RICHGUY_CLEAN_ISSUE_DESK = true;
-const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26f';
+const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26i';
 const RICHGUY_DESK_START_CENTS = 10_000_000; // €100,000.00 starting desk wallet
 /** ISO country list for richguy issuing / external sends (searchable). */
 const WORLD_COUNTRIES = Object.freeze([
@@ -498,14 +510,29 @@ function countryName(code) {
   return row ? row[1] : String(code || '').trim();
 }
 
-function filterWorldCountries(query, limit = 12) {
+function issuableCountryCodes() {
+  return Object.keys(COUNTRY_ISSUE_BINS);
+}
+
+function brandsForIssueCountry(countryCode) {
+  const row = COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(countryCode)] || null;
+  if (!row) return [];
+  return ['visa', 'mastercard', 'amex'].filter((b) => String(row[b] || '').replace(/\D/g, '').length >= 4);
+}
+
+function filterWorldCountries(query, limit = 12, { issuableOnly = false } = {}) {
   const q = String(query || '').trim().toLowerCase();
+  const base = issuableOnly
+    ? WORLD_COUNTRIES.filter(([code]) => Boolean(COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(code)]))
+    : WORLD_COUNTRIES;
   const rows = !q
-    ? WORLD_COUNTRIES.slice(0, limit)
-    : WORLD_COUNTRIES.filter(
-        ([code, name]) =>
-          name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
-      ).slice(0, limit);
+    ? base.slice(0, limit)
+    : base
+        .filter(
+          ([code, name]) =>
+            name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
+        )
+        .slice(0, limit);
   return rows;
 }
 
@@ -516,15 +543,20 @@ function countryPickerHtml({
   pickAction = 'rich-country-pick',
   inputId = 'rich-country-query',
   scope = 'issue',
+  issuableOnly = false,
 } = {}) {
   const selectedName = selected ? countryName(selected) : '';
-  const rows = filterWorldCountries(query || selectedName, 10);
+  const rows = filterWorldCountries(query || selectedName, 10, { issuableOnly });
   const list = rows
     .map(
       ([code, name]) =>
         `<button type="button" class="og-country-option ${code === selected ? 'on' : ''}" data-action="${pickAction}" data-scope="${esc(scope)}" data-code="${esc(code)}" data-name="${esc(name)}">${esc(name)} <small>${esc(code)}</small></button>`,
     )
     .join('');
+  const brands = selected ? brandsForIssueCountry(selected) : [];
+  const brandHint = brands.length
+    ? `<p class="og-country-selected">BIN networks for ${esc(selectedName)}: <strong>${esc(brands.map(brandLabel).join(' · '))}</strong></p>`
+    : '';
   return `
     <div class="og-country-picker" data-scope="${esc(scope)}">
       <label class="og-3ds-label" for="${esc(inputId)}">Country</label>
@@ -533,12 +565,13 @@ function countryPickerHtml({
         id="${esc(inputId)}"
         type="search"
         autocomplete="off"
-        placeholder="Search all countries…"
+        placeholder="${issuableOnly ? 'Search issuable countries…' : 'Search all countries…'}"
         value="${esc(query || selectedName)}"
         data-action-input="${esc(queryAction)}"
         data-scope="${esc(scope)}"
       />
-      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)})</p>` : '<p class="og-country-selected muted">Select a country to issue from</p>'}
+      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)}) — PAN BIN matches this country on BIN check</p>` : `<p class="og-country-selected muted">${issuableOnly ? 'Select a country with a verified issuer BIN' : 'Select a country to issue from'}</p>`}
+      ${brandHint}
       <div class="og-country-list" role="listbox">${list || '<p class="muted">No countries match.</p>'}</div>
     </div>`;
 }
@@ -562,8 +595,10 @@ function normalizeDeskCard(card) {
     endless,
     firstName,
     lastName,
-    country: String(card.country || '').toUpperCase(),
+    country: normalizeIssueCountryCode(card.country || ''),
     countryName: card.countryName || countryName(card.country),
+    issuerBank: String(card.issuerBank || '').trim(),
+    bin: String(card.bin || '').replace(/\D/g, ''),
     holder:
       card.holder
       || holderFromParts
@@ -2894,9 +2929,41 @@ function richguyPlatformErrorActive(_nowMs = Date.now()) {
   return false;
 }
 
-/** richguy: countdown removed — issuing is open. */
+/** richguy: skip offlinerich's API 48h wait — issuer notice is shown instead. */
 function richguyApiWaitActive(_nowMs = Date.now()) {
   return false;
+}
+
+function issuerProgramOpenFromMs() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function issuerProgramOpenLabel() {
+  const t = ISSUER_PROGRAM_OPEN_FROM;
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+}
+
+/** offlinerich: after API 48h countdown — issuer implementation until tomorrow 15:00. */
+function offlinerichIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  if (nowMs < offlinerichApiIssueUnlockMs()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+/** richguy: show the issuer implementation message immediately (preview). */
+function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
+  if (!isRichguyDesk()) return false;
+  return nowMs < issuerProgramOpenFromMs();
+}
+
+function issuerImplNoticeActive(nowMs = Date.now()) {
+  return offlinerichIssuerImplNoticeActive(nowMs) || richguyIssuerImplNoticeActive(nowMs);
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -2945,6 +3012,7 @@ function platformDisabledNoticeActive() {
     || networkAcceptNoticeActive()
     || platformErrorNoticeActive()
     || apiWaitNoticeActive()
+    || issuerImplNoticeActive()
   );
 }
 
@@ -2965,7 +3033,7 @@ function startUnfreezeProcessWatch() {
   unfreezeProcessWatchTimer = window.setInterval(() => {
     try {
       if (!deskSessionOpen()) return;
-      if (isRichguyDesk() && UNFREEZE_PROCESS_PREVIEW_RICHGUY) {
+      if (platformDisabledNoticeActive() || issuerImplNoticeActive()) {
         render();
         return;
       }
@@ -3080,13 +3148,150 @@ function nextBrand() {
   return 'amex';
 }
 
+/**
+ * Country → verified scheme BINs (handyapi / binlist country match).
+ * Only brand slots confirmed for that country — never borrow another country’s BIN.
+ * Kosovo: 490414 / 532455 → XK (Raiffeisen / TEB), not ES/Bankia.
+ */
+const COUNTRY_ISSUE_BINS = Object.freeze({
+  XK: {
+    visa: '490414',
+    mastercard: '532455',
+    bank: { visa: 'RAIFFEISEN BANK KOSOVO JSC', mastercard: 'TEB SHA' },
+  },
+  DE: {
+    visa: '454618',
+    bank: { visa: 'COMMERZBANK AG' },
+  },
+  FR: {
+    visa: '497401',
+    mastercard: '513167',
+    bank: { visa: 'BNP PARIBAS', mastercard: 'CREDIT AGRICOLE' },
+  },
+  IT: {
+    visa: '453997',
+    mastercard: '525500',
+    bank: { visa: 'NEXI PAYMENTS', mastercard: 'NEXI PAYMENTS' },
+  },
+  ES: {
+    visa: '454881',
+    bank: { visa: 'SERVIRED / CAIXABANK' },
+  },
+  GB: {
+    visa: '475129',
+    mastercard: '552213',
+    amex: '374245',
+    bank: { visa: 'NATWEST', mastercard: 'NATWEST', amex: 'AMERICAN EXPRESS' },
+  },
+  BE: {
+    mastercard: '520474',
+    bank: { mastercard: 'MASTERCARD EUROPE' },
+  },
+  PL: {
+    visa: '440573',
+    mastercard: '557523',
+    bank: { visa: 'BANK HANDLOWY', mastercard: 'BNP PARIBAS BANK POLSKA' },
+  },
+  CZ: {
+    mastercard: '516844',
+    bank: { mastercard: 'AIR BANK' },
+  },
+  TR: {
+    visa: '454360',
+    mastercard: '521807',
+    bank: { visa: 'ISBANK', mastercard: 'AKBANK' },
+  },
+  UA: {
+    visa: '414949',
+    mastercard: '535148',
+    bank: { visa: 'PRIVATBANK', mastercard: 'FUIB' },
+  },
+  US: {
+    visa: '414720',
+    mastercard: '542418',
+    amex: '378282',
+    bank: { visa: 'JPMORGAN CHASE', mastercard: 'CITIBANK', amex: 'AMERICAN EXPRESS' },
+  },
+  CA: {
+    visa: '450644',
+    mastercard: '519123',
+    bank: { visa: 'CIBC', mastercard: 'BANK OF MONTREAL' },
+  },
+  MX: {
+    mastercard: '547046',
+    amex: '376712',
+    bank: { mastercard: 'SANTANDER MEXICO', amex: 'AMERICAN EXPRESS' },
+  },
+  AR: {
+    mastercard: '546553',
+    amex: '376712',
+    bank: { mastercard: 'BANCO DE LA NACION', amex: 'AMERICAN EXPRESS' },
+  },
+});
+
+function normalizeIssueCountryCode(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (c === 'KV' || c === 'KOS' || c === 'XKX') return 'XK';
+  return c;
+}
+
+function issueProfileForCountry(countryCode, brand) {
+  const code = normalizeIssueCountryCode(countryCode);
+  const b = normalizeBrand(brand || 'visa');
+  const row = COUNTRY_ISSUE_BINS[code] || null;
+  if (!row) return null;
+  // Exact brand BIN only — never fall back to another network’s range.
+  const bin = String(row[b] || '').replace(/\D/g, '');
+  if (!bin) return null;
+  return {
+    country: code,
+    bin,
+    bank: (row.bank && row.bank[b]) || 'G CARDS PARTNER BANK',
+  };
+}
+
+function panMatchesIssueCountry(card) {
+  if (!card || card.endless) return true;
+  const country = normalizeIssueCountryCode(card.country || '');
+  if (!country) return true;
+  const profile = issueProfileForCountry(country, card.brand);
+  if (!profile) return false;
+  const pan = String(card.pan || '').replace(/\D/g, '');
+  return pan.startsWith(profile.bin);
+}
+
+function cardBinDigits(card) {
+  const fromField = String(card?.bin || '').replace(/\D/g, '');
+  if (fromField.length >= 6) return fromField.slice(0, 6);
+  return String(card?.pan || '').replace(/\D/g, '').slice(0, 6);
+}
+
+function binCheckPageUrl(bin) {
+  const b = String(bin || '').replace(/\D/g, '').slice(0, 8);
+  return b ? `https://bincheck.io/${encodeURIComponent(b)}` : '';
+}
+
 /** Issue Visa, Mastercard, or Amex (Luhn-valid). Private/Corporate product + daily limit. */
 function makeIssuedCard(options = {}) {
   const endless = Boolean(options.endless);
   const meta = cardProductMeta(options.brand || nextBrand(), options.kind || 'private');
   const brand = endless ? 'mastercard' : meta.brand;
   const kind = endless ? 'private' : meta.kind;
-  const bin = brand === 'visa' ? '4532' : brand === 'amex' ? '378282' : '545020';
+  const countryCode = normalizeIssueCountryCode(options.country || '');
+  const profile = endless ? null : issueProfileForCountry(countryCode, brand);
+  // Prefer country BIN; only use legacy generic bins when no country was requested (non-richguy).
+  const bin = endless
+    ? '545020'
+    : profile
+      ? profile.bin
+      : brand === 'visa'
+        ? '453997'
+        : brand === 'amex'
+          ? '378282'
+          : '545020';
+  const issuerBank = endless
+    ? 'G CARDS'
+    : profile?.bank || options.issuerBank || 'G CARDS PARTNER BANK';
   const pan = endless
     ? PRIMARY_1955_PAN
     : makePanWithBin(bin, { length: brand === 'amex' ? 15 : 16 });
@@ -3104,8 +3309,10 @@ function makeIssuedCard(options = {}) {
   const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
   const firstName = String(options.firstName || '').trim();
   const lastName = String(options.lastName || '').trim();
-  const country = String(options.country || '').trim().toUpperCase();
-  const cName = String(options.countryName || countryName(country) || '').trim();
+  const country = countryCode || normalizeIssueCountryCode(options.country || '');
+  const cName = String(
+    options.countryName || countryName(country) || (country === 'XK' ? 'Kosovo' : ''),
+  ).trim();
   const holderCustom = String(options.holder || '').trim();
   const holderFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
   const holder =
@@ -3123,6 +3330,7 @@ function makeIssuedCard(options = {}) {
     currency,
     dailyLimitCents,
     pan,
+    bin: String(bin || '').replace(/\D/g, ''),
     expiry: endless ? '12/35' : `${month}/${year}`,
     cvv,
     holder,
@@ -3130,6 +3338,7 @@ function makeIssuedCard(options = {}) {
     lastName,
     country,
     countryName: cName,
+    issuerBank,
     status: 'active',
     ready: true,
     frozen: false,
@@ -3374,6 +3583,16 @@ function syncRichguyDeskCatalog() {
     if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
       state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
       state.deskBalanceSeeded = true;
+    }
+  }
+  // Drop cards whose PAN BIN does not match the issuing country (old ES 4532* leftovers).
+  const beforeBinFilter = state.deskCards.length;
+  state.deskCards = (state.deskCards || []).filter((c) => panMatchesIssueCountry(c));
+  if (state.deskCards.length !== beforeBinFilter) {
+    try {
+      saveDeskLedger();
+    } catch {
+      /* ignore */
     }
   }
   // Drop spend/transfer rows tied to removed seed cards.
@@ -3776,12 +3995,16 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // richguy: Off Grid–style desk shell (Home / Activity / Cards / Settings).
-  if (isRichguyDesk()) {
-    if (platformDisabledNoticeActive()) startUnfreezeProcessWatch();
-    return richguyOffgridDeskHtml();
+  // richguy: show EXACTLY the issuer message offlinerich gets after the API countdown — no Off Grid yet.
+  if (isRichguyDesk() && richguyIssuerImplNoticeActive()) {
+    startUnfreezeProcessWatch();
+    state.deskView = 'issuer';
+    state.richNav = 'home';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    return deskShellHtml(deskIssuerImplNoticePageHtml());
   }
-  // Notice-only lock: contacting → accept → error → API integrated / 48h wait.
+  // Notice-only lock: contacting → accept → API wait → issuer implementation (offlinerich).
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -3793,10 +4016,16 @@ function capacityDeskHtml() {
         ? deskNetworkAcceptNoticePageHtml()
         : apiWaitNoticeActive()
           ? deskApiIntegratedWaitPageHtml()
-          : platformErrorNoticeActive()
-            ? deskPlatformDisabledNoticePageHtml()
-            : deskIssuerNoticePageHtml();
+          : issuerImplNoticeActive()
+            ? deskIssuerImplNoticePageHtml()
+            : platformErrorNoticeActive()
+              ? deskPlatformDisabledNoticePageHtml()
+              : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
+  }
+  // richguy: Off Grid issuing desk only after issuer program opens (tomorrow 15:00).
+  if (isRichguyDesk()) {
+    return richguyOffgridDeskHtml();
   }
   // Pay tab removed — Cards + History only.
   if (state.deskView === 'payments') {
@@ -4129,7 +4358,20 @@ function richguyCardDetailHtml(card) {
         <div class="og-detail-row"><span>Name</span><strong>${esc(card.firstName || '—')}</strong></div>
         <div class="og-detail-row"><span>Surname</span><strong>${esc(card.lastName || '—')}</strong></div>
         <div class="og-detail-row"><span>Holder</span><strong>${esc(card.holder || 'G Cards Member')}</strong></div>
-        <div class="og-detail-row"><span>Country</span><strong>${esc(card.countryName || countryName(card.country) || '—')}</strong></div>
+        <div class="og-detail-row"><span>Country</span><strong>${esc(card.countryName || countryName(card.country) || '—')}${card.country ? ` (${esc(card.country)})` : ''}</strong></div>
+        <div class="og-detail-row"><span>Issuer bank</span><strong>${esc(card.issuerBank || '—')}</strong></div>
+        <div class="og-detail-row"><span>BIN</span><strong class="og-mono">${esc(cardBinDigits(card) || '—')}</strong>
+          <button class="og-pill" type="button" data-action="desk-bin-check" data-bin="${esc(cardBinDigits(card))}">Check BIN</button>
+          ${binCheckPageUrl(cardBinDigits(card)) ? `<a class="og-pill" href="${esc(binCheckPageUrl(cardBinDigits(card)))}" target="_blank" rel="noopener noreferrer">Open checker</a>` : ''}
+        </div>
+        ${state.binLookup && state.binLookup.bin === cardBinDigits(card) ? `
+        <div class="og-detail-row"><span>BIN lookup</span><strong>${
+          state.binLookup.loading
+            ? 'Checking…'
+            : state.binLookup.error
+              ? esc(state.binLookup.error)
+              : esc(`${state.binLookup.country || '—'} · ${state.binLookup.bank || '—'} · ${state.binLookup.scheme || ''}`)
+        }</strong></div>` : ''}
         <div class="og-detail-row"><span>PAN</span><strong class="og-mono">${esc(panShown)}</strong>
           <button class="og-pill" type="button" data-action="desk-copy-field" data-value="${esc(String(card.pan || ''))}">Copy</button>
         </div>
@@ -4375,6 +4617,58 @@ function deskNetworkAcceptNoticePageHtml() {
         </section>`;
 }
 
+/**
+ * Same page for both users:
+ * - offlinerich: after API countdown ends
+ * - richguy: right now (preview of that offlinerich post-countdown message)
+ */
+function deskIssuerImplNoticePageHtml() {
+  const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
+    (addr) =>
+      `<li><a class="desk-issuer-mail" href="mailto:${esc(addr)}">${esc(addr)}</a></li>`,
+  ).join('');
+  const openMs = issuerProgramOpenFromMs();
+  const remainMs = Math.max(0, openMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const openLabel = issuerProgramOpenLabel();
+  const privateLimit = money(PRIVATE_DAILY_LIMIT_CENTS, 'EUR');
+  const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Issuer implementation</p>
+          <h1>Starting the issuing program</h1>
+          <p class="lede desk-home-lede">We are implementing the issuer so you can start issuing cards and using direct spend with your program limits.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-impl" role="status" aria-labelledby="desk-issuer-impl-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-issuer-impl-title">Issuing opens tomorrow at 15:00</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            The issuer is being implemented.
+            You can <strong>issue new cards starting ${esc(openLabel)}</strong>.
+            Until then, the desk stays on this status page while the issuing program is prepared.
+          </p>
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining until issuing opens:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Issuing program (ready at open)</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>Issue cards</strong> — Visa, Mastercard, American Express (Private &amp; Corporate)</li>
+              <li><strong>Direct spend</strong> — authorizations against issued cards with your daily limits</li>
+              <li><strong>Private daily limit</strong> — ${esc(privateLimit)}</li>
+              <li><strong>Corporate daily limit</strong> — ${esc(corporateLimit)}</li>
+            </ul>
+            <p class="desk-issuer-refund">
+              After ${esc(openLabel)}, open the desk to issue cards and spend directly under those limits. Your funds remain safe during implementation.
+            </p>
+            <p><strong>Partnership support</strong></p>
+            <ul class="desk-issuer-emails">${emails}</ul>
+          </div>
+        </section>`;
+}
+
 /** API accepted + integrated — countdown 48h; cards/history unavailable except by request. */
 function deskApiIntegratedWaitPageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
@@ -4418,7 +4712,7 @@ function deskApiIntegratedWaitPageHtml() {
               <a class="primary" href="${esc(requestHref)}">Request history download</a>
             </p>
             <p class="desk-issuer-refund">
-              After the countdown, you can issue new cards and resume spending. Your funds remain safe.
+              After this countdown, issuer implementation starts. You can issue cards and use direct spend from <strong>${esc(issuerProgramOpenLabel())}</strong> with Private / Corporate daily limits. Your funds remain safe.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
@@ -4529,15 +4823,17 @@ function deskIssuePanelHtml(options = {}) {
   const meta = cardProductMeta(brand, kind);
   const limitTxt = money(meta.dailyLimitCents, meta.currency);
   const richguy = Boolean(options.richguy) || isRichguyDesk();
+  const draft = state.issueDraft || {};
+  const allowedBrands = draft.country ? brandsForIssueCountry(draft.country) : ['visa', 'mastercard', 'amex'];
   const brandBtns = [
     ['visa', 'Visa'],
     ['mastercard', 'Mastercard'],
     ['amex', 'Amex'],
   ]
-    .map(
-      ([id, label]) =>
-        `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}">${label}</button>`,
-    )
+    .map(([id, label]) => {
+      const allowed = !draft.country || allowedBrands.includes(id);
+      return `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}" ${allowed ? '' : 'disabled title="No verified BIN for this network in the selected country"'}>${label}</button>`;
+    })
     .join('');
   const kindBtns = [
     ['private', 'Private'],
@@ -4549,7 +4845,9 @@ function deskIssuePanelHtml(options = {}) {
     )
     .join('');
   const issueBtnClass = richguy ? 'og-cta og-issue-btn' : 'primary';
-  const draft = state.issueDraft || {};
+  const profilePreview = draft.country
+    ? issueProfileForCountry(draft.country, brand)
+    : null;
   const identityBlock = richguy
     ? `<div class="og-issue-identity">
           <div class="og-issue-names">
@@ -4569,11 +4867,12 @@ function deskIssuePanelHtml(options = {}) {
             pickAction: 'rich-issue-country-pick',
             inputId: 'rich-issue-country-query',
             scope: 'issue',
+            issuableOnly: true,
           })}
         </div>`
     : '';
   const countryMeta = richguy && draft.country
-    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}</strong></div>`
+    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}${profilePreview ? ` · BIN ${esc(profilePreview.bin)}` : ''}</strong></div>`
     : '';
   return `
         <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
@@ -4583,7 +4882,7 @@ function deskIssuePanelHtml(options = {}) {
               <h2>New card</h2>
               <p class="muted desk-panel-help">${
                 richguy
-                  ? 'Enter name, surname and issuing country, then choose network and product. Card is issued from that country.'
+                  ? 'Enter name, surname and issuing country, then choose network and product. The card number’s BIN resolves to that country on BIN checkers.'
                   : 'Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.'
               }</p>
             </div>
@@ -6232,19 +6531,32 @@ document.body.addEventListener('click', (event) => {
         render();
         return;
       }
+      const profile = issueProfileForCountry(country, brandHint);
+      if (!profile) {
+        const alts = brandsForIssueCountry(country);
+        state.flash = {
+          kind: 'error',
+          text: alts.length
+            ? `No ${brandLabel(brandHint)} BIN for ${countryName(country) || country} — use ${alts.map(brandLabel).join(' / ')}.`
+            : `No issuer BIN mapped for ${countryName(country) || country} yet — pick Kosovo, Germany, France, etc.`,
+        };
+        render();
+        return;
+      }
     }
     run(async () => {
       state.deskIssuing = true;
       state.flash = { kind: 'ok', text: 'Issuing card…' };
       render();
       await wait(280);
+      const issueCountry = normalizeIssueCountryCode(country);
       const card = makeIssuedCard({
         brand: brandHint,
         kind: kindHint,
         firstName,
         lastName,
-        country,
-        countryName: countryName(country),
+        country: issueCountry,
+        countryName: countryName(issueCountry) || countryName(country),
         holder: [firstName, lastName].filter(Boolean).join(' ').trim(),
       });
       if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
@@ -6280,12 +6592,59 @@ document.body.addEventListener('click', (event) => {
       };
       if (!state.deskMoveFromId) state.deskMoveFromId = card.id;
       saveDeskLedger();
+      state.binLookup = null;
       state.flash = {
         kind: 'ok',
-        text: `Issued ${brandLabel(card.brand)} for ${card.holder} · ${card.countryName || country} · ····${String(card.pan).slice(-4)} · active now`,
+        text: `Issued ${brandLabel(card.brand)} · ${card.countryName || country} · BIN ${card.bin || cardBinDigits(card)} (${card.issuerBank || 'issuer'}) · ····${String(card.pan).slice(-4)} — BIN check matches this country`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return;
+  }
+  if (action === 'desk-bin-check') {
+    const bin = String(button.dataset.bin || cardBinDigits(
+      state.deskCards.find((c) => c.id === state.deskDetailCardId),
+    ) || '').replace(/\D/g, '').slice(0, 8);
+    if (!bin) {
+      state.flash = { kind: 'error', text: 'No BIN to check on this card.' };
+      render();
+      return;
+    }
+    state.binLookup = { bin, loading: true };
+    render();
+    run(async () => {
+      try {
+        const res = await fetch(`https://data.handyapi.com/bin/${encodeURIComponent(bin)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        const data = await res.json();
+        if (String(data?.Status || '').toUpperCase() === 'SUCCESS') {
+          const a2 = String(data?.Country?.A2 || '').toUpperCase();
+          const name = String(data?.Country?.Name || a2 || 'Unknown');
+          state.binLookup = {
+            bin,
+            country: a2 ? `${name} (${a2})` : name,
+            bank: String(data?.Issuer || '—'),
+            scheme: String(data?.Scheme || ''),
+          };
+          state.flash = {
+            kind: 'ok',
+            text: `BIN ${bin} → ${state.binLookup.country} · ${state.binLookup.bank}`,
+          };
+        } else {
+          state.binLookup = {
+            bin,
+            error: String(data?.Status || 'Lookup failed — use Open checker'),
+          };
+        }
+      } catch {
+        state.binLookup = {
+          bin,
+          error: 'Live lookup blocked — use Open checker',
+        };
+      }
+      render();
     });
     return;
   }
@@ -6448,10 +6807,14 @@ document.body.addEventListener('click', (event) => {
         countryQuery: name,
       };
     } else {
+      const brands = brandsForIssueCountry(code);
+      const current = normalizeBrand(state.issueDraft?.brand || 'visa');
+      const nextBrand = brands.includes(current) ? current : (brands[0] || current);
       state.issueDraft = {
         ...(state.issueDraft || {}),
         country: code,
         countryQuery: name,
+        brand: nextBrand,
       };
     }
     render();
@@ -6994,8 +7357,12 @@ document.body.addEventListener('submit', (event) => {
 
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
-      // richguy: clean professional issuing desk. offlinerich: notice stages when active.
-      state.deskView = isAdmin && platformDisabledNoticeActive() ? 'issuer' : 'home';
+      // richguy: same issuer message offlinerich gets after API countdown. offlinerich: notice stages.
+      state.deskView =
+        (isOperator && richguyIssuerImplNoticeActive())
+        || (isAdmin && platformDisabledNoticeActive())
+          ? 'issuer'
+          : 'home';
       state.richNav = 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
@@ -7058,6 +7425,11 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
+        };
+      } else if (isOperator && richguyIssuerImplNoticeActive()) {
+        state.flash = {
+          kind: 'ok',
+          text: `Issuer implementation · same status offlinerich gets after API countdown · issuing opens ${issuerProgramOpenLabel()}`,
         };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
         state.flash = {
