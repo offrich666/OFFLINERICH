@@ -85,6 +85,8 @@ const state = {
     country: '',
     countryQuery: '',
   },
+  /** @type {null | { bin: string, loading?: boolean, country?: string, bank?: string, scheme?: string, error?: string }} */
+  binLookup: null,
   statementDraft: { cardId: '', from: '', to: '' },
 };
 
@@ -107,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126h';
+const DESK_BUILD = '20261126i';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -188,7 +190,7 @@ const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
 const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
 /** richguy clean issuing desk: no seed cards; fundable wallet. */
 const RICHGUY_CLEAN_ISSUE_DESK = true;
-const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26f';
+const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26i';
 const RICHGUY_DESK_START_CENTS = 10_000_000; // €100,000.00 starting desk wallet
 /** ISO country list for richguy issuing / external sends (searchable). */
 const WORLD_COUNTRIES = Object.freeze([
@@ -498,14 +500,29 @@ function countryName(code) {
   return row ? row[1] : String(code || '').trim();
 }
 
-function filterWorldCountries(query, limit = 12) {
+function issuableCountryCodes() {
+  return Object.keys(COUNTRY_ISSUE_BINS);
+}
+
+function brandsForIssueCountry(countryCode) {
+  const row = COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(countryCode)] || null;
+  if (!row) return [];
+  return ['visa', 'mastercard', 'amex'].filter((b) => String(row[b] || '').replace(/\D/g, '').length >= 4);
+}
+
+function filterWorldCountries(query, limit = 12, { issuableOnly = false } = {}) {
   const q = String(query || '').trim().toLowerCase();
+  const base = issuableOnly
+    ? WORLD_COUNTRIES.filter(([code]) => Boolean(COUNTRY_ISSUE_BINS[normalizeIssueCountryCode(code)]))
+    : WORLD_COUNTRIES;
   const rows = !q
-    ? WORLD_COUNTRIES.slice(0, limit)
-    : WORLD_COUNTRIES.filter(
-        ([code, name]) =>
-          name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
-      ).slice(0, limit);
+    ? base.slice(0, limit)
+    : base
+        .filter(
+          ([code, name]) =>
+            name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
+        )
+        .slice(0, limit);
   return rows;
 }
 
@@ -516,15 +533,20 @@ function countryPickerHtml({
   pickAction = 'rich-country-pick',
   inputId = 'rich-country-query',
   scope = 'issue',
+  issuableOnly = false,
 } = {}) {
   const selectedName = selected ? countryName(selected) : '';
-  const rows = filterWorldCountries(query || selectedName, 10);
+  const rows = filterWorldCountries(query || selectedName, 10, { issuableOnly });
   const list = rows
     .map(
       ([code, name]) =>
         `<button type="button" class="og-country-option ${code === selected ? 'on' : ''}" data-action="${pickAction}" data-scope="${esc(scope)}" data-code="${esc(code)}" data-name="${esc(name)}">${esc(name)} <small>${esc(code)}</small></button>`,
     )
     .join('');
+  const brands = selected ? brandsForIssueCountry(selected) : [];
+  const brandHint = brands.length
+    ? `<p class="og-country-selected">BIN networks for ${esc(selectedName)}: <strong>${esc(brands.map(brandLabel).join(' · '))}</strong></p>`
+    : '';
   return `
     <div class="og-country-picker" data-scope="${esc(scope)}">
       <label class="og-3ds-label" for="${esc(inputId)}">Country</label>
@@ -533,12 +555,13 @@ function countryPickerHtml({
         id="${esc(inputId)}"
         type="search"
         autocomplete="off"
-        placeholder="Search all countries…"
+        placeholder="${issuableOnly ? 'Search issuable countries…' : 'Search all countries…'}"
         value="${esc(query || selectedName)}"
         data-action-input="${esc(queryAction)}"
         data-scope="${esc(scope)}"
       />
-      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)})</p>` : '<p class="og-country-selected muted">Select a country to issue from</p>'}
+      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)}) — PAN BIN matches this country on BIN check</p>` : `<p class="og-country-selected muted">${issuableOnly ? 'Select a country with a verified issuer BIN' : 'Select a country to issue from'}</p>`}
+      ${brandHint}
       <div class="og-country-list" role="listbox">${list || '<p class="muted">No countries match.</p>'}</div>
     </div>`;
 }
@@ -3083,83 +3106,84 @@ function nextBrand() {
 }
 
 /**
- * Country → real scheme BINs so BIN lookup matches the selected issuing country.
- * (Old fixed 4532* looked up as Spain / Bankia — that was the bug.)
+ * Country → verified scheme BINs (handyapi / binlist country match).
+ * Only brand slots confirmed for that country — never borrow another country’s BIN.
+ * Kosovo: 490414 / 532455 → XK (Raiffeisen / TEB), not ES/Bankia.
  */
 const COUNTRY_ISSUE_BINS = Object.freeze({
   XK: {
     visa: '490414',
     mastercard: '532455',
-    amex: '375000',
-    bank: {
-      visa: 'RAIFFEISEN BANK KOSOVO JSC',
-      mastercard: 'TEB SHA',
-      amex: 'AMERICAN EXPRESS',
-    },
+    bank: { visa: 'RAIFFEISEN BANK KOSOVO JSC', mastercard: 'TEB SHA' },
   },
-  // Some pickers still use KV for Kosovo
-  KV: {
-    visa: '475187',
-    mastercard: '534476',
-    amex: '375000',
-    bank: {
-      visa: 'RAIFFEISEN BANK KOSOVO JSC',
-      mastercard: 'RAIFFEISEN BANK KOSOVO JSC',
-      amex: 'AMERICAN EXPRESS',
-    },
+  DE: {
+    visa: '454618',
+    bank: { visa: 'COMMERZBANK AG' },
   },
-  AL: { visa: '419183', mastercard: '523626', amex: '375000', bank: { visa: 'BKT', mastercard: 'BKT', amex: 'AMERICAN EXPRESS' } },
-  RS: { visa: '418821', mastercard: '557391', amex: '375000', bank: { visa: 'BANCA INTESA', mastercard: 'BANCA INTESA', amex: 'AMERICAN EXPRESS' } },
-  ME: { visa: '419398', mastercard: '535456', amex: '375000', bank: { visa: 'CRNOGORSKA KOMERCIJALNA BANKA', mastercard: 'CKB', amex: 'AMERICAN EXPRESS' } },
-  MK: { visa: '417724', mastercard: '516793', amex: '375000', bank: { visa: 'STOPANSKA BANKA', mastercard: 'STOPANSKA BANKA', amex: 'AMERICAN EXPRESS' } },
-  BA: { visa: '419821', mastercard: '524354', amex: '375000', bank: { visa: 'UNICREDIT BANK', mastercard: 'UNICREDIT BANK', amex: 'AMERICAN EXPRESS' } },
-  HR: { visa: '424376', mastercard: '543758', amex: '375000', bank: { visa: 'ZAGREBACKA BANKA', mastercard: 'ZABA', amex: 'AMERICAN EXPRESS' } },
-  SI: { visa: '417649', mastercard: '541275', amex: '375000', bank: { visa: 'NLB', mastercard: 'NLB', amex: 'AMERICAN EXPRESS' } },
-  DE: { visa: '454618', mastercard: '557523', amex: '374245', bank: { visa: 'DEUTSCHE BANK', mastercard: 'DEUTSCHE BANK', amex: 'AMERICAN EXPRESS' } },
-  FR: { visa: '497401', mastercard: '513167', amex: '374288', bank: { visa: 'BNP PARIBAS', mastercard: 'BNP PARIBAS', amex: 'AMERICAN EXPRESS' } },
-  IT: { visa: '453997', mastercard: '525678', amex: '375500', bank: { visa: 'INTESA SANPAOLO', mastercard: 'INTESA SANPAOLO', amex: 'AMERICAN EXPRESS' } },
-  ES: { visa: '454881', mastercard: '557107', amex: '375018', bank: { visa: 'CAIXABANK', mastercard: 'CAIXABANK', amex: 'AMERICAN EXPRESS' } },
-  PT: { visa: '450875', mastercard: '514987', amex: '375000', bank: { visa: 'CGD', mastercard: 'CGD', amex: 'AMERICAN EXPRESS' } },
-  NL: { visa: '456738', mastercard: '552033', amex: '375000', bank: { visa: 'ING', mastercard: 'ING', amex: 'AMERICAN EXPRESS' } },
-  BE: { visa: '450773', mastercard: '540189', amex: '375000', bank: { visa: 'KBC', mastercard: 'KBC', amex: 'AMERICAN EXPRESS' } },
-  AT: { visa: '439087', mastercard: '540410', amex: '375000', bank: { visa: 'ERSTE BANK', mastercard: 'ERSTE BANK', amex: 'AMERICAN EXPRESS' } },
-  CH: { visa: '453978', mastercard: '540189', amex: '375000', bank: { visa: 'UBS', mastercard: 'UBS', amex: 'AMERICAN EXPRESS' } },
-  GB: { visa: '475129', mastercard: '557523', amex: '374245', bank: { visa: 'BARCLAYS', mastercard: 'BARCLAYS', amex: 'AMERICAN EXPRESS' } },
-  IE: { visa: '453903', mastercard: '540410', amex: '375000', bank: { visa: 'AIB', mastercard: 'AIB', amex: 'AMERICAN EXPRESS' } },
-  PL: { visa: '426338', mastercard: '512569', amex: '375000', bank: { visa: 'PKO BP', mastercard: 'PKO BP', amex: 'AMERICAN EXPRESS' } },
-  CZ: { visa: '440573', mastercard: '516844', amex: '375000', bank: { visa: 'CESKA SPORITELNA', mastercard: 'CESKA SPORITELNA', amex: 'AMERICAN EXPRESS' } },
-  SK: { visa: '440574', mastercard: '516845', amex: '375000', bank: { visa: 'SLOVENSKA SPORITELNA', mastercard: 'SLSP', amex: 'AMERICAN EXPRESS' } },
-  HU: { visa: '440547', mastercard: '547350', amex: '375000', bank: { visa: 'OTP BANK', mastercard: 'OTP BANK', amex: 'AMERICAN EXPRESS' } },
-  RO: { visa: '409636', mastercard: '522875', amex: '375000', bank: { visa: 'BCR', mastercard: 'BCR', amex: 'AMERICAN EXPRESS' } },
-  BG: { visa: '419773', mastercard: '510069', amex: '375000', bank: { visa: 'UNICREDIT BULBANK', mastercard: 'UNICREDIT', amex: 'AMERICAN EXPRESS' } },
-  GR: { visa: '414720', mastercard: '540707', amex: '375000', bank: { visa: 'ALPHA BANK', mastercard: 'ALPHA BANK', amex: 'AMERICAN EXPRESS' } },
-  TR: { visa: '454360', mastercard: '521807', amex: '375000', bank: { visa: 'ISBANK', mastercard: 'ISBANK', amex: 'AMERICAN EXPRESS' } },
-  US: { visa: '414720', mastercard: '542418', amex: '378282', bank: { visa: 'CHASE', mastercard: 'CHASE', amex: 'AMERICAN EXPRESS' } },
-  CA: { visa: '450644', mastercard: '519123', amex: '373953', bank: { visa: 'RBC', mastercard: 'RBC', amex: 'AMERICAN EXPRESS' } },
-  MX: { visa: '415231', mastercard: '547046', amex: '376712', bank: { visa: 'BBVA', mastercard: 'BBVA', amex: 'AMERICAN EXPRESS' } },
-  BR: { visa: '407843', mastercard: '530034', amex: '377750', bank: { visa: 'ITAU', mastercard: 'ITAU', amex: 'AMERICAN EXPRESS' } },
-  AR: { visa: '450985', mastercard: '527521', amex: '376411', bank: { visa: 'GALICIA', mastercard: 'GALICIA', amex: 'AMERICAN EXPRESS' } },
-  AU: { visa: '456469', mastercard: '521729', amex: '376011', bank: { visa: 'COMMONWEALTH BANK', mastercard: 'CBA', amex: 'AMERICAN EXPRESS' } },
-  NZ: { visa: '454869', mastercard: '521730', amex: '376012', bank: { visa: 'ANZ', mastercard: 'ANZ', amex: 'AMERICAN EXPRESS' } },
-  JP: { visa: '353011', mastercard: '557101', amex: '373235', bank: { visa: 'SUMITOMO MITSUI', mastercard: 'SMBC', amex: 'AMERICAN EXPRESS' } },
-  KR: { visa: '457973', mastercard: '536561', amex: '377911', bank: { visa: 'SHINHAN', mastercard: 'SHINHAN', amex: 'AMERICAN EXPRESS' } },
-  CN: { visa: '622202', mastercard: '521899', amex: '377833', bank: { visa: 'ICBC', mastercard: 'ICBC', amex: 'AMERICAN EXPRESS' } },
-  IN: { visa: '414767', mastercard: '524368', amex: '376968', bank: { visa: 'HDFC', mastercard: 'HDFC', amex: 'AMERICAN EXPRESS' } },
-  AE: { visa: '403203', mastercard: '521234', amex: '377096', bank: { visa: 'EMIRATES NBD', mastercard: 'ENBD', amex: 'AMERICAN EXPRESS' } },
-  SA: { visa: '440795', mastercard: '521345', amex: '377097', bank: { visa: 'AL RAJHI', mastercard: 'AL RAJHI', amex: 'AMERICAN EXPRESS' } },
-  IL: { visa: '458000', mastercard: '532610', amex: '375500', bank: { visa: 'BANK LEUMI', mastercard: 'LEUMI', amex: 'AMERICAN EXPRESS' } },
-  ZA: { visa: '400344', mastercard: '522708', amex: '377633', bank: { visa: 'STANDARD BANK', mastercard: 'STANDARD BANK', amex: 'AMERICAN EXPRESS' } },
-  NG: { visa: '506099', mastercard: '539941', amex: '377634', bank: { visa: 'GTBANK', mastercard: 'GTBANK', amex: 'AMERICAN EXPRESS' } },
-  EG: { visa: '507803', mastercard: '539983', amex: '377635', bank: { visa: 'NBE', mastercard: 'NBE', amex: 'AMERICAN EXPRESS' } },
-  FI: { visa: '492010', mastercard: '541275', amex: '375000', bank: { visa: 'NORDEA', mastercard: 'NORDEA', amex: 'AMERICAN EXPRESS' } },
-  SE: { visa: '458109', mastercard: '541276', amex: '375000', bank: { visa: 'SWEDBANK', mastercard: 'SWEDBANK', amex: 'AMERICAN EXPRESS' } },
-  NO: { visa: '492012', mastercard: '541277', amex: '375000', bank: { visa: 'DNB', mastercard: 'DNB', amex: 'AMERICAN EXPRESS' } },
-  DK: { visa: '457188', mastercard: '541278', amex: '375000', bank: { visa: 'DANSKE BANK', mastercard: 'DANSKE BANK', amex: 'AMERICAN EXPRESS' } },
-  LU: { visa: '454010', mastercard: '540189', amex: '375000', bank: { visa: 'BGL BNP', mastercard: 'BGL', amex: 'AMERICAN EXPRESS' } },
-  MT: { visa: '450875', mastercard: '516793', amex: '375000', bank: { visa: 'BOV', mastercard: 'BOV', amex: 'AMERICAN EXPRESS' } },
-  CY: { visa: '418822', mastercard: '540707', amex: '375000', bank: { visa: 'BANK OF CYPRUS', mastercard: 'BOC', amex: 'AMERICAN EXPRESS' } },
-  UA: { visa: '414949', mastercard: '535148', amex: '375000', bank: { visa: 'PRIVATBANK', mastercard: 'PRIVATBANK', amex: 'AMERICAN EXPRESS' } },
-  MD: { visa: '444500', mastercard: '516793', amex: '375000', bank: { visa: 'MAIB', mastercard: 'MAIB', amex: 'AMERICAN EXPRESS' } },
+  FR: {
+    visa: '497401',
+    mastercard: '513167',
+    bank: { visa: 'BNP PARIBAS', mastercard: 'CREDIT AGRICOLE' },
+  },
+  IT: {
+    visa: '453997',
+    mastercard: '525500',
+    bank: { visa: 'NEXI PAYMENTS', mastercard: 'NEXI PAYMENTS' },
+  },
+  ES: {
+    visa: '454881',
+    bank: { visa: 'SERVIRED / CAIXABANK' },
+  },
+  GB: {
+    visa: '475129',
+    mastercard: '552213',
+    amex: '374245',
+    bank: { visa: 'NATWEST', mastercard: 'NATWEST', amex: 'AMERICAN EXPRESS' },
+  },
+  BE: {
+    mastercard: '520474',
+    bank: { mastercard: 'MASTERCARD EUROPE' },
+  },
+  PL: {
+    visa: '440573',
+    mastercard: '557523',
+    bank: { visa: 'BANK HANDLOWY', mastercard: 'BNP PARIBAS BANK POLSKA' },
+  },
+  CZ: {
+    mastercard: '516844',
+    bank: { mastercard: 'AIR BANK' },
+  },
+  TR: {
+    visa: '454360',
+    mastercard: '521807',
+    bank: { visa: 'ISBANK', mastercard: 'AKBANK' },
+  },
+  UA: {
+    visa: '414949',
+    mastercard: '535148',
+    bank: { visa: 'PRIVATBANK', mastercard: 'FUIB' },
+  },
+  US: {
+    visa: '414720',
+    mastercard: '542418',
+    amex: '378282',
+    bank: { visa: 'JPMORGAN CHASE', mastercard: 'CITIBANK', amex: 'AMERICAN EXPRESS' },
+  },
+  CA: {
+    visa: '450644',
+    mastercard: '519123',
+    bank: { visa: 'CIBC', mastercard: 'BANK OF MONTREAL' },
+  },
+  MX: {
+    mastercard: '547046',
+    amex: '376712',
+    bank: { mastercard: 'SANTANDER MEXICO', amex: 'AMERICAN EXPRESS' },
+  },
+  AR: {
+    mastercard: '546553',
+    amex: '376712',
+    bank: { mastercard: 'BANCO DE LA NACION', amex: 'AMERICAN EXPRESS' },
+  },
 });
 
 function normalizeIssueCountryCode(code) {
@@ -3172,15 +3196,36 @@ function issueProfileForCountry(countryCode, brand) {
   const code = normalizeIssueCountryCode(countryCode);
   const b = normalizeBrand(brand || 'visa');
   const row = COUNTRY_ISSUE_BINS[code] || null;
-  if (row) {
-    return {
-      country: code,
-      bin: String(row[b] || row.visa || '490414'),
-      bank: (row.bank && (row.bank[b] || row.bank.visa)) || 'G CARDS PARTNER BANK',
-    };
-  }
-  // No mapped BIN for this country yet — refuse silent wrong-country BINs (e.g. old ES 4532*).
-  return null;
+  if (!row) return null;
+  // Exact brand BIN only — never fall back to another network’s range.
+  const bin = String(row[b] || '').replace(/\D/g, '');
+  if (!bin) return null;
+  return {
+    country: code,
+    bin,
+    bank: (row.bank && row.bank[b]) || 'G CARDS PARTNER BANK',
+  };
+}
+
+function panMatchesIssueCountry(card) {
+  if (!card || card.endless) return true;
+  const country = normalizeIssueCountryCode(card.country || '');
+  if (!country) return true;
+  const profile = issueProfileForCountry(country, card.brand);
+  if (!profile) return false;
+  const pan = String(card.pan || '').replace(/\D/g, '');
+  return pan.startsWith(profile.bin);
+}
+
+function cardBinDigits(card) {
+  const fromField = String(card?.bin || '').replace(/\D/g, '');
+  if (fromField.length >= 6) return fromField.slice(0, 6);
+  return String(card?.pan || '').replace(/\D/g, '').slice(0, 6);
+}
+
+function binCheckPageUrl(bin) {
+  const b = String(bin || '').replace(/\D/g, '').slice(0, 8);
+  return b ? `https://bincheck.io/${encodeURIComponent(b)}` : '';
 }
 
 /** Issue Visa, Mastercard, or Amex (Luhn-valid). Private/Corporate product + daily limit. */
@@ -3495,6 +3540,16 @@ function syncRichguyDeskCatalog() {
     if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
       state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
       state.deskBalanceSeeded = true;
+    }
+  }
+  // Drop cards whose PAN BIN does not match the issuing country (old ES 4532* leftovers).
+  const beforeBinFilter = state.deskCards.length;
+  state.deskCards = (state.deskCards || []).filter((c) => panMatchesIssueCountry(c));
+  if (state.deskCards.length !== beforeBinFilter) {
+    try {
+      saveDeskLedger();
+    } catch {
+      /* ignore */
     }
   }
   // Drop spend/transfer rows tied to removed seed cards.
@@ -4252,7 +4307,18 @@ function richguyCardDetailHtml(card) {
         <div class="og-detail-row"><span>Holder</span><strong>${esc(card.holder || 'G Cards Member')}</strong></div>
         <div class="og-detail-row"><span>Country</span><strong>${esc(card.countryName || countryName(card.country) || '—')}${card.country ? ` (${esc(card.country)})` : ''}</strong></div>
         <div class="og-detail-row"><span>Issuer bank</span><strong>${esc(card.issuerBank || '—')}</strong></div>
-        <div class="og-detail-row"><span>BIN</span><strong class="og-mono">${esc(card.bin || String(card.pan || '').replace(/\D/g, '').slice(0, 6) || '—')}</strong></div>
+        <div class="og-detail-row"><span>BIN</span><strong class="og-mono">${esc(cardBinDigits(card) || '—')}</strong>
+          <button class="og-pill" type="button" data-action="desk-bin-check" data-bin="${esc(cardBinDigits(card))}">Check BIN</button>
+          ${binCheckPageUrl(cardBinDigits(card)) ? `<a class="og-pill" href="${esc(binCheckPageUrl(cardBinDigits(card)))}" target="_blank" rel="noopener noreferrer">Open checker</a>` : ''}
+        </div>
+        ${state.binLookup && state.binLookup.bin === cardBinDigits(card) ? `
+        <div class="og-detail-row"><span>BIN lookup</span><strong>${
+          state.binLookup.loading
+            ? 'Checking…'
+            : state.binLookup.error
+              ? esc(state.binLookup.error)
+              : esc(`${state.binLookup.country || '—'} · ${state.binLookup.bank || '—'} · ${state.binLookup.scheme || ''}`)
+        }</strong></div>` : ''}
         <div class="og-detail-row"><span>PAN</span><strong class="og-mono">${esc(panShown)}</strong>
           <button class="og-pill" type="button" data-action="desk-copy-field" data-value="${esc(String(card.pan || ''))}">Copy</button>
         </div>
@@ -4652,15 +4718,17 @@ function deskIssuePanelHtml(options = {}) {
   const meta = cardProductMeta(brand, kind);
   const limitTxt = money(meta.dailyLimitCents, meta.currency);
   const richguy = Boolean(options.richguy) || isRichguyDesk();
+  const draft = state.issueDraft || {};
+  const allowedBrands = draft.country ? brandsForIssueCountry(draft.country) : ['visa', 'mastercard', 'amex'];
   const brandBtns = [
     ['visa', 'Visa'],
     ['mastercard', 'Mastercard'],
     ['amex', 'Amex'],
   ]
-    .map(
-      ([id, label]) =>
-        `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}">${label}</button>`,
-    )
+    .map(([id, label]) => {
+      const allowed = !draft.country || allowedBrands.includes(id);
+      return `<button type="button" class="desk-seg ${brand === id ? 'on' : ''}" data-action="desk-issue-brand" data-brand="${id}" ${allowed ? '' : 'disabled title="No verified BIN for this network in the selected country"'}>${label}</button>`;
+    })
     .join('');
   const kindBtns = [
     ['private', 'Private'],
@@ -4672,7 +4740,9 @@ function deskIssuePanelHtml(options = {}) {
     )
     .join('');
   const issueBtnClass = richguy ? 'og-cta og-issue-btn' : 'primary';
-  const draft = state.issueDraft || {};
+  const profilePreview = draft.country
+    ? issueProfileForCountry(draft.country, brand)
+    : null;
   const identityBlock = richguy
     ? `<div class="og-issue-identity">
           <div class="og-issue-names">
@@ -4692,11 +4762,12 @@ function deskIssuePanelHtml(options = {}) {
             pickAction: 'rich-issue-country-pick',
             inputId: 'rich-issue-country-query',
             scope: 'issue',
+            issuableOnly: true,
           })}
         </div>`
     : '';
   const countryMeta = richguy && draft.country
-    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}</strong></div>`
+    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}${profilePreview ? ` · BIN ${esc(profilePreview.bin)}` : ''}</strong></div>`
     : '';
   return `
         <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
@@ -4706,7 +4777,7 @@ function deskIssuePanelHtml(options = {}) {
               <h2>New card</h2>
               <p class="muted desk-panel-help">${
                 richguy
-                  ? 'Enter name, surname and issuing country, then choose network and product. PAN uses that country’s issuer BIN (BIN lookup matches the country).'
+                  ? 'Enter name, surname and issuing country, then choose network and product. The card number’s BIN resolves to that country on BIN checkers.'
                   : 'Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.'
               }</p>
             </div>
@@ -6355,10 +6426,14 @@ document.body.addEventListener('click', (event) => {
         render();
         return;
       }
-      if (!issueProfileForCountry(country, brandHint)) {
+      const profile = issueProfileForCountry(country, brandHint);
+      if (!profile) {
+        const alts = brandsForIssueCountry(country);
         state.flash = {
           kind: 'error',
-          text: `No issuer BIN mapped for ${countryName(country) || country} yet — pick another country (e.g. Kosovo).`,
+          text: alts.length
+            ? `No ${brandLabel(brandHint)} BIN for ${countryName(country) || country} — use ${alts.map(brandLabel).join(' / ')}.`
+            : `No issuer BIN mapped for ${countryName(country) || country} yet — pick Kosovo, Germany, France, etc.`,
         };
         render();
         return;
@@ -6412,12 +6487,59 @@ document.body.addEventListener('click', (event) => {
       };
       if (!state.deskMoveFromId) state.deskMoveFromId = card.id;
       saveDeskLedger();
+      state.binLookup = null;
       state.flash = {
         kind: 'ok',
-        text: `Issued ${brandLabel(card.brand)} for ${card.holder} · ${card.countryName || country} · ····${String(card.pan).slice(-4)} · active now`,
+        text: `Issued ${brandLabel(card.brand)} · ${card.countryName || country} · BIN ${card.bin || cardBinDigits(card)} (${card.issuerBank || 'issuer'}) · ····${String(card.pan).slice(-4)} — BIN check matches this country`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return;
+  }
+  if (action === 'desk-bin-check') {
+    const bin = String(button.dataset.bin || cardBinDigits(
+      state.deskCards.find((c) => c.id === state.deskDetailCardId),
+    ) || '').replace(/\D/g, '').slice(0, 8);
+    if (!bin) {
+      state.flash = { kind: 'error', text: 'No BIN to check on this card.' };
+      render();
+      return;
+    }
+    state.binLookup = { bin, loading: true };
+    render();
+    run(async () => {
+      try {
+        const res = await fetch(`https://data.handyapi.com/bin/${encodeURIComponent(bin)}`, {
+          headers: { Accept: 'application/json' },
+        });
+        const data = await res.json();
+        if (String(data?.Status || '').toUpperCase() === 'SUCCESS') {
+          const a2 = String(data?.Country?.A2 || '').toUpperCase();
+          const name = String(data?.Country?.Name || a2 || 'Unknown');
+          state.binLookup = {
+            bin,
+            country: a2 ? `${name} (${a2})` : name,
+            bank: String(data?.Issuer || '—'),
+            scheme: String(data?.Scheme || ''),
+          };
+          state.flash = {
+            kind: 'ok',
+            text: `BIN ${bin} → ${state.binLookup.country} · ${state.binLookup.bank}`,
+          };
+        } else {
+          state.binLookup = {
+            bin,
+            error: String(data?.Status || 'Lookup failed — use Open checker'),
+          };
+        }
+      } catch {
+        state.binLookup = {
+          bin,
+          error: 'Live lookup blocked — use Open checker',
+        };
+      }
+      render();
     });
     return;
   }
@@ -6580,10 +6702,14 @@ document.body.addEventListener('click', (event) => {
         countryQuery: name,
       };
     } else {
+      const brands = brandsForIssueCountry(code);
+      const current = normalizeBrand(state.issueDraft?.brand || 'visa');
+      const nextBrand = brands.includes(current) ? current : (brands[0] || current);
       state.issueDraft = {
         ...(state.issueDraft || {}),
         country: code,
         countryQuery: name,
+        brand: nextBrand,
       };
     }
     render();
