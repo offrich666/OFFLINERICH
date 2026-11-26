@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126m';
+const DESK_BUILD = '20261126n';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -130,12 +130,12 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  *    richguy → same issuer notice immediately (no wait for offlinerich's API countdown)
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
-/** Issuing program + direct spend opens at this Berlin civil time (Saturday). */
+/** Issuing program + direct spend opens at this Berlin civil time (Friday). */
 const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
   year: 2026,
   month: 11,
-  day: 28,
-  hour: 16,
+  day: 27,
+  hour: 20,
   minute: 0,
   second: 0,
 });
@@ -2945,7 +2945,7 @@ function issuerProgramOpenLabel() {
   const mm = String(t.month).padStart(2, '0');
   const hh = String(t.hour).padStart(2, '0');
   const mi = String(t.minute).padStart(2, '0');
-  return `Saturday ${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+  return `Friday ${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
 }
 
 /** offlinerich: after API 48h countdown — issuer implementation until tomorrow 15:00. */
@@ -4635,34 +4635,35 @@ function deskIssuerImplNoticePageHtml() {
   const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
   return `
         <section class="desk-page-hero">
-          <p class="kicker launch-kicker">Issuer implementation</p>
-          <h1>Starting the issuing program</h1>
-          <p class="lede desk-home-lede">We are implementing the issuer so you can start issuing cards and using <strong>direct spend</strong> with your program limits.</p>
+          <p class="kicker launch-kicker">Network clearance</p>
+          <h1>Issuing resumes after security review</h1>
+          <p class="lede desk-home-lede">
+            Following earlier fraud reports from connected payment gateways, Visa and Mastercard Europe required a full issuer re-implementation for European zones — BIN ranges, card details, and platform controls — before issuing and spending can reopen.
+          </p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-impl" role="status" aria-labelledby="desk-issuer-impl-title">
           <div class="desk-issuer-notice-head">
-            <h2 id="desk-issuer-impl-title">Direct spend opens Saturday 28 Nov at 16:00</h2>
+            <h2 id="desk-issuer-impl-title">You can issue cards and start spending from ${esc(openLabel)}</h2>
           </div>
           <p class="desk-issuer-reason">
-            The issuer is being implemented.
-            You can <strong>issue new cards and use direct spend from ${esc(openLabel)}</strong>.
-            <strong>Apple Pay is not needed</strong> — nothing to add in Wallet. Spend is direct on the issued card only.
-            Until then, the desk stays on this status page while the issuing program is prepared.
+            The new Europe-zone issuer implementation is being finalised after those fraud reports.
+            From <strong>${esc(openLabel)}</strong> you may <strong>issue new cards and start direct spending</strong> under your program limits.
+            <strong>Apple Pay is not required</strong> — nothing to add in Wallet; authorisations run as direct card spend only.
           </p>
           <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
-            Time remaining until direct spend opens:<br />
+            Time remaining until issuing and spending open:<br />
             <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
           </p>
           <div class="desk-issuer-action">
-            <p><strong>Issuing program (ready at open)</strong></p>
+            <p><strong>Ready at open</strong></p>
             <ul class="desk-issuer-steps">
               <li><strong>Issue cards</strong> — Visa, Mastercard, American Express (Private &amp; Corporate)</li>
-              <li><strong>Direct spend only</strong> — no Apple Pay / Wallet setup required</li>
+              <li><strong>Direct spend</strong> — no Apple Pay / Wallet setup</li>
               <li><strong>Private daily limit</strong> — ${esc(privateLimit)}</li>
               <li><strong>Corporate daily limit</strong> — ${esc(corporateLimit)}</li>
             </ul>
             <p class="desk-issuer-refund">
-              After ${esc(openLabel)}, open the desk to issue cards and spend directly under those limits. Your funds remain safe during implementation.
+              Until ${esc(openLabel)}, this status page remains in place while BIN mapping and security checks complete across platforms. Your funds remain safe.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
