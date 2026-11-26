@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126r';
+const DESK_BUILD = '20261126s';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -2971,15 +2971,12 @@ function issuerProgramOpenLabel() {
   return berlinCivilLabel(ISSUER_PROGRAM_OPEN_FROM, 'Friday');
 }
 
-/** Post-countdown window (offlinerich) or immediate preview (richguy), until issuing opens. */
+/** offlinerich only: after API countdown, until issuing opens Friday 20:30. */
 function issuerPostCountdownWindow(nowMs = Date.now()) {
   if (nowMs >= issuerProgramOpenFromMs()) return false;
-  if (isOfflinerichDesk() && PLATFORM_DISABLED_NOTICE_LIVE) {
-    if (offlinerichFreezeActive(nowMs)) return false;
-    return nowMs >= offlinerichApiIssueUnlockMs();
-  }
-  if (isRichguyDesk()) return true;
-  return false;
+  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  return nowMs >= offlinerichApiIssueUnlockMs();
 }
 
 /** File-check page is not shown. After the API countdown the verified audit page is used. */
@@ -2987,7 +2984,7 @@ function issuerReadinessNoticeActive(_nowMs = Date.now()) {
   return false;
 }
 
-/** Integrated + verified; fraud-report audit holds live issuing until Friday 20:30. */
+/** Integrated + verified; fraud-report audit holds offlinerich issuing until Friday 20:30. */
 function issuerAuditNoticeActive(nowMs = Date.now()) {
   return issuerPostCountdownWindow(nowMs);
 }
@@ -2996,8 +2993,9 @@ function issuerImplNoticeActive(nowMs = Date.now()) {
   return issuerReadinessNoticeActive(nowMs) || issuerAuditNoticeActive(nowMs);
 }
 
-function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
-  return isRichguyDesk() && issuerImplNoticeActive(nowMs);
+/** richguy uses the live issuing desk now — no status hold. */
+function richguyIssuerImplNoticeActive(_nowMs = Date.now()) {
+  return false;
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -4029,20 +4027,7 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // richguy: same post-countdown stages offlinerich gets — readiness, then audit hold.
-  if (isRichguyDesk() && issuerImplNoticeActive()) {
-    startUnfreezeProcessWatch();
-    state.deskView = 'issuer';
-    state.richNav = 'home';
-    state.deskDetailCardId = '';
-    state.spendDetailId = '';
-    return deskShellHtml(
-      issuerReadinessNoticeActive()
-        ? deskIssuerReadinessPageHtml()
-        : deskIssuerImplNoticePageHtml(),
-    );
-  }
-  // Notice-only lock: contacting → accept → API wait → readiness → audit hold.
+  // offlinerich notice lock: contacting → accept → API wait → verified audit hold.
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -4054,16 +4039,14 @@ function capacityDeskHtml() {
         ? deskNetworkAcceptNoticePageHtml()
         : apiWaitNoticeActive()
           ? deskApiIntegratedWaitPageHtml()
-          : issuerReadinessNoticeActive()
-            ? deskIssuerReadinessPageHtml()
-            : issuerAuditNoticeActive()
-              ? deskIssuerImplNoticePageHtml()
-              : platformErrorNoticeActive()
-                ? deskPlatformDisabledNoticePageHtml()
-                : deskIssuerNoticePageHtml();
+          : issuerAuditNoticeActive()
+            ? deskIssuerImplNoticePageHtml()
+            : platformErrorNoticeActive()
+              ? deskPlatformDisabledNoticePageHtml()
+              : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
-  // richguy: Off Grid issuing desk only after issuer program opens (tomorrow 15:00).
+  // richguy: live Off Grid issuing desk (issue cards + direct spend).
   if (isRichguyDesk()) {
     return richguyOffgridDeskHtml();
   }
@@ -7530,17 +7513,10 @@ document.body.addEventListener('submit', (event) => {
           kind: 'ok',
           text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
         };
-      } else if (isOperator && richguyIssuerImplNoticeActive()) {
-        state.flash = {
-          kind: 'ok',
-          text: issuerReadinessNoticeActive()
-            ? 'Verifying issuer files · authorized devices 3 · security checking'
-            : `Integration verified · fraud-report audit · issuing opens ${issuerProgramOpenLabel()}`,
-        };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
         state.flash = {
           kind: 'ok',
-          text: `G Cards desk open · wallet ${money(state.deskBalanceCents)} · issue new cards · fund desk→card · card→card`,
+          text: `G Cards desk open · wallet ${money(state.deskBalanceCents)} · issue new cards · direct spend`,
         };
       } else {
         state.flash = {
