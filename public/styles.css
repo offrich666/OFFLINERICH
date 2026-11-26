@@ -2339,3 +2339,84 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .og-cards-live .og-plastic {
   margin-bottom: 12px;
 }
+
+.og-card-list {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.og-card-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #161616;
+  color: #f2f2f2;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.og-card-row.on {
+  border-color: rgba(200, 176, 122, 0.45);
+  background: #1c1c1c;
+}
+.og-card-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.og-card-row-main small { color: #9a9a9a; }
+.og-detail-panel {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #161616;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.og-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9a9a9a;
+  font-size: 0.9rem;
+}
+.og-detail-row:last-child { border-bottom: 0; }
+.og-detail-row span:first-child { min-width: 72px; }
+.og-detail-row strong {
+  color: #f4f4f4;
+  font-weight: 650;
+  flex: 1;
+  min-width: 0;
+}
+.og-mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.04em;
+  font-size: 0.92rem;
+}
+.og-detail-actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.og-issue-btn {
+  width: 100%;
+}
+.og-cards-live .active-actions {
+  margin-top: 12px;
+}
+.og-cards-live .active-actions .og-cta,
+.og-cards-live .active-actions .primary {
+  width: 100%;
+  justify-content: center;
+}
