@@ -86,7 +86,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126d';
+const DESK_BUILD = '20261126e';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3765,16 +3765,83 @@ function richguyOffgridActivityHtml() {
     </section>`;
 }
 
+function richguyIssuedCardsListHtml() {
+  const rows = (state.deskCards || []).filter(Boolean);
+  if (!rows.length) {
+    return `<p class="og-hero-sub">No cards yet — issue your first card below.</p>`;
+  }
+  return `<div class="og-card-list" aria-label="Issued cards">
+    ${rows
+      .map((c) => {
+        const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4) || '····';
+        const on = c.id === state.deskDetailCardId || c.id === state.deskSelectedCardId ? 'on' : '';
+        const title = c.endless
+          ? 'Primary ····1955'
+          : `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+        return `<button type="button" class="og-card-row ${on}" data-action="rich-open-card" data-id="${esc(c.id)}">
+          <span class="og-card-row-main">
+            <strong>${esc(title)}</strong>
+            <small>····${esc(last4)} · ${esc(cardMoney(c))}</small>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>`;
+      })
+      .join('')}
+  </div>`;
+}
+
+function richguyCardDetailHtml(card) {
+  if (!card) {
+    state.deskDetailCardId = '';
+    return `<section class="og-cards-live"><p class="og-hero-sub">Card not found.</p></section>`;
+  }
+  const brand = normalizeBrand(card.brand || 'mastercard');
+  const panShown = state.deskRevealSecrets
+    ? formatPan(card.pan)
+    : brand === 'amex'
+      ? `•••• •••••• ·${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`
+      : `•••• •••• •••• ${String(card.pan).replace(/\D/g, '').slice(-4) || '••••'}`;
+  const cvvShown = state.deskRevealSecrets ? String(card.cvv || '•••') : '•••';
+  return `
+    <section class="og-cards-live og-card-detail">
+      <div class="og-page-head og-page-head-left">
+        <button class="og-pill" type="button" data-action="rich-nav" data-nav="cards">← Cards</button>
+        <h1>Card details</h1>
+      </div>
+      ${richguyPlasticCardHtml()}
+      <div class="og-detail-panel">
+        <div class="og-detail-row"><span>Network</span><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
+        <div class="og-detail-row"><span>Holder</span><strong>${esc(card.holder || 'G Cards Member')}</strong></div>
+        <div class="og-detail-row"><span>PAN</span><strong class="og-mono">${esc(panShown)}</strong>
+          <button class="og-pill" type="button" data-action="desk-copy-field" data-value="${esc(String(card.pan || ''))}">Copy</button>
+        </div>
+        <div class="og-detail-row"><span>Expiry</span><strong>${esc(card.expiry || '—')}</strong></div>
+        <div class="og-detail-row"><span>CVV</span><strong>${esc(cvvShown)}</strong></div>
+        <div class="og-detail-row"><span>Balance</span><strong>${esc(cardMoney(card))}</strong></div>
+      </div>
+      <div class="og-detail-actions">
+        <button class="og-cta" type="button" data-action="desk-toggle-secrets">${
+          state.deskRevealSecrets ? 'Hide secrets' : 'Show secrets'
+        }</button>
+        <button class="og-pill" type="button" data-action="rich-nav" data-nav="cards">Issue another</button>
+      </div>
+    </section>`;
+}
+
 function richguyOffgridCardsHtml() {
+  if (state.deskDetailCardId) {
+    const card = state.deskCards.find((c) => c.id === state.deskDetailCardId);
+    if (card) return richguyCardDetailHtml(card);
+  }
   return `
     <section class="og-cards-live">
       <div class="og-page-head og-page-head-left">
         <h1>Issue cards</h1>
       </div>
       ${richguyApiStatusStripHtml()}
-      ${richguyPlasticCardHtml()}
       <p class="og-hero-sub og-issue-lede">Select Visa, Mastercard, or Amex · Private or Corporate · issued instantly on G Cards.</p>
-      ${deskIssuePanelHtml()}
+      ${richguyIssuedCardsListHtml()}
+      ${deskIssuePanelHtml({ richguy: true })}
     </section>`;
 }
 
@@ -3865,9 +3932,13 @@ function richguyOffgridSettingsHtml() {
 /** richguy-only Off Grid dashboard after login. */
 function richguyOffgridDeskHtml() {
   const nav = richguyNavKey();
+  // Card detail always renders from Cards nav.
+  if (state.deskDetailCardId && state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
+    state.richNav = 'cards';
+  }
   let page = richguyOffgridHomeHtml();
   if (nav === 'activity') page = richguyOffgridActivityHtml();
-  else if (nav === 'cards') page = richguyOffgridCardsHtml();
+  else if (nav === 'cards' || state.deskDetailCardId) page = richguyOffgridCardsHtml();
   else if (nav === 'settings') page = richguyOffgridSettingsHtml();
   return richguyOffgridShellHtml(page);
 }
@@ -4133,11 +4204,12 @@ function deskCardPickerHtml(selectedId) {
     .join('');
 }
 
-function deskIssuePanelHtml() {
+function deskIssuePanelHtml(options = {}) {
   const brand = normalizeBrand(state.issueDraft?.brand || 'visa');
   const kind = normalizeKind(state.issueDraft?.kind || 'private');
   const meta = cardProductMeta(brand, kind);
   const limitTxt = money(meta.dailyLimitCents, meta.currency);
+  const richguy = Boolean(options.richguy) || isRichguyDesk();
   const brandBtns = [
     ['visa', 'Visa'],
     ['mastercard', 'Mastercard'],
@@ -4157,6 +4229,7 @@ function deskIssuePanelHtml() {
         `<button type="button" class="desk-seg ${kind === id ? 'on' : ''}" data-action="desk-issue-kind" data-kind="${id}">${label}</button>`,
     )
     .join('');
+  const issueBtnClass = richguy ? 'og-cta og-issue-btn' : 'primary';
   return `
         <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
           <div class="panel-head-inline">
@@ -4182,7 +4255,7 @@ function deskIssuePanelHtml() {
             <div><small>Issuer</small><strong>G Cards</strong></div>
           </div>
           <div class="active-actions">
-            <button class="primary" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
+            <button class="${issueBtnClass}" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
               state.deskIssuing ? 'Issuing…' : `Issue ${brandLabel(brand)} ${kindLabel(kind)}`
             }</button>
           </div>
@@ -5801,6 +5874,9 @@ document.body.addEventListener('click', (event) => {
       state.deskRevealSecrets = true;
       state.spendDraft.cardId = card.id;
       state.issueDraft = { brand: brandHint, kind: kindHint };
+      if (isRichguyDesk()) {
+        state.richNav = 'cards';
+      }
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
@@ -5809,6 +5885,19 @@ document.body.addEventListener('click', (event) => {
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
+    return;
+  }
+  if (action === 'rich-open-card') {
+    if (!isRichguyDesk()) return;
+    const id = button.dataset.id || '';
+    const card = state.deskCards.find((c) => c.id === id);
+    if (!card) return;
+    state.richNav = 'cards';
+    state.deskDetailCardId = card.id;
+    state.deskSelectedCardId = card.id;
+    state.deskTopupCardId = card.id;
+    state.deskView = 'card';
+    render();
     return;
   }
   if (action === 'desk-ensure-endless') {
@@ -5938,7 +6027,9 @@ document.body.addEventListener('click', (event) => {
     if (!isRichguyDesk()) return;
     const nav = String(button.dataset.nav || 'home').toLowerCase();
     state.richNav = ['home', 'activity', 'cards', 'settings'].includes(nav) ? nav : 'home';
-    state.deskDetailCardId = '';
+    // Leaving card detail when switching tabs (except staying on Cards list).
+    if (state.richNav !== 'cards') state.deskDetailCardId = '';
+    else if (button.dataset.nav === 'cards') state.deskDetailCardId = '';
     state.spendDetailId = '';
     state.flash = null;
     render();
