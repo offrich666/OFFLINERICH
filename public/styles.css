@@ -2480,3 +2480,72 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
     align-items: start;
   }
 }
+
+.og-issue-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+.og-issue-names {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.og-country-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.og-country-input {
+  text-align: left !important;
+  letter-spacing: 0.02em !important;
+  font-size: 1rem !important;
+}
+.og-country-selected {
+  margin: 0;
+  font-size: 0.86rem;
+  color: #d8d8d8;
+}
+.og-country-selected.muted { color: #9a9a9a; }
+.og-country-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  background: #101010;
+  padding: 6px;
+}
+.og-country-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #eee;
+  text-align: left;
+  font: inherit;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.og-country-option small { color: #888; }
+.og-country-option:hover,
+.og-country-option.on {
+  background: #222;
+}
+.og-money-card-wide {
+  grid-column: 1 / -1;
+}
+.og-cards-live .og-issue-identity .og-3ds-input {
+  text-align: left;
+  letter-spacing: 0.02em;
+  font-size: 1rem;
+}
+@media (max-width: 720px) {
+  .og-issue-names { grid-template-columns: 1fr; }
+}
