@@ -86,7 +86,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126c';
+const DESK_BUILD = '20261126d';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -2376,9 +2376,9 @@ function richguyFreezeUntilLabel() {
   return `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
 }
 
-/** richguy preview freeze (mirrors offlinerich until unfreeze). */
-function richguyFreezeActive(nowMs = Date.now()) {
-  return Boolean(UNFREEZE_PROCESS_PREVIEW_RICHGUY) && isRichguyDesk() && nowMs < richguyFreezeUntilMs();
+/** richguy freeze cleared — professional issuing desk is open. */
+function richguyFreezeActive(_nowMs = Date.now()) {
+  return false;
 }
 
 function securityFreezeRemainingMs() {
@@ -2695,18 +2695,13 @@ function richguyNetworkAcceptUntilMs() {
   return richguyUnfreezeProcessUntilMs() + NETWORK_ACCEPT_WAIT_MS;
 }
 
-/** richguy preview after demo freeze: contacting page (same as offlinerich after 15:10). */
-function richguyUnfreezeProcessActive(nowMs = Date.now()) {
-  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
-  if (richguyFreezeActive(nowMs)) return false;
-  return nowMs < richguyUnfreezeProcessUntilMs();
+/** richguy: notice stages cleared — full professional issuing desk. */
+function richguyUnfreezeProcessActive(_nowMs = Date.now()) {
+  return false;
 }
 
-function richguyNetworkAcceptActive(nowMs = Date.now()) {
-  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
-  if (richguyFreezeActive(nowMs)) return false;
-  if (nowMs < richguyUnfreezeProcessUntilMs()) return false;
-  return nowMs < richguyNetworkAcceptUntilMs();
+function richguyNetworkAcceptActive(_nowMs = Date.now()) {
+  return false;
 }
 
 function richguyApiRestoreProgress() {
@@ -2771,13 +2766,9 @@ function richguyPlatformErrorActive(_nowMs = Date.now()) {
   return false;
 }
 
-/** richguy: API integrated wait (immediate preview) until +48h from ready-from. */
-function richguyApiWaitActive(nowMs = Date.now()) {
-  if (!UNFREEZE_PROCESS_PREVIEW_RICHGUY || !isRichguyDesk()) return false;
-  if (richguyFreezeActive(nowMs)) return false;
-  if (richguyUnfreezeProcessActive(nowMs) || richguyNetworkAcceptActive(nowMs)) return false;
-  // Past earlier stages: always show wait until unlock (even if clock is before ready-from label).
-  return nowMs < richguyApiIssueUnlockMs();
+/** richguy: countdown removed — issuing is open. */
+function richguyApiWaitActive(_nowMs = Date.now()) {
+  return false;
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -3725,33 +3716,18 @@ function richguyPlasticCardHtml() {
 }
 
 function richguyApiStatusStripHtml() {
-  if (!apiWaitNoticeActive()) return '';
-  const unlockMs = apiIssueUnlockMs();
-  const remainMs = Math.max(0, unlockMs - Date.now());
-  const countdown = formatApiCountdown(remainMs);
-  return `<div class="og-status-strip" id="desk-api-wait" role="status">
+  // richguy: no countdown — show live API health only.
+  return `<div class="og-status-strip og-status-live" role="status">
     <div class="og-status-row">
       <span class="desk-api-live-dot" aria-hidden="true"></span>
-      <span>API working perfect · uptime <strong>99.8%</strong></span>
-    </div>
-    <div class="og-countdown" aria-live="polite">
-      <small>Issuing opens in</small>
-      <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+      <span>Issuing API online · uptime <strong>99.8%</strong></span>
     </div>
   </div>`;
 }
 
 function richguyOffgridHomeHtml() {
-  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
-  const bal = waiting ? '$0.00' : money(state.deskBalanceCents);
-  const title = waiting ? 'Your card is waiting.' : 'Your cards are ready.';
-  const sub = waiting
-    ? 'No ID. No selfie. Private. Issuing unlocks after the safety window.'
-    : 'Issue new cards and spend worldwide.';
-  const cta = waiting
-    ? `<button class="og-cta" type="button" data-action="rich-choose-card" disabled>Choose your card</button>
-       <p class="og-cta-note">Available when the countdown ends.</p>`
-    : `<button class="og-cta" type="button" data-action="rich-choose-card">Choose your card</button>`;
+  const bal = money(state.deskBalanceCents);
+  const cardCount = Array.isArray(state.deskCards) ? state.deskCards.length : 0;
   return `
     <section class="og-home">
       <div class="og-wallet">
@@ -3759,20 +3735,18 @@ function richguyOffgridHomeHtml() {
           <p class="og-wallet-label">Wallet</p>
           <p class="og-wallet-bal">${esc(bal)}</p>
         </div>
-        <button class="og-pill" type="button" data-action="rich-add-money" ${waiting ? 'disabled' : ''}>Add money</button>
+        <button class="og-pill" type="button" data-action="rich-add-money">Add money</button>
       </div>
       ${richguyApiStatusStripHtml()}
       ${richguyPlasticCardHtml()}
-      <h1 class="og-hero-title">${esc(title)}</h1>
-      <p class="og-hero-sub">${esc(sub)}</p>
-      ${cta}
+      <h1 class="og-hero-title">Issue with G Cards</h1>
+      <p class="og-hero-sub">Professional Visa, Mastercard &amp; Amex issuing · ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} on this desk.</p>
+      <button class="og-cta" type="button" data-action="rich-choose-card">Issue new card</button>
+      <p class="og-cta-note">Choose network &amp; product on the Cards page.</p>
     </section>`;
 }
 
 function richguyOffgridActivityHtml() {
-  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
-  const requestMail = PLATFORM_DISABLED_SUPPORT_EMAILS[0] || 'anfragen.europa@visa.com';
-  const requestHref = `mailto:${requestMail}?subject=${encodeURIComponent('Request card history download')}&body=${encodeURIComponent('Please send history / statements for my previous cards. Account desk request.')}`;
   return `
     <section class="og-activity">
       <div class="og-page-head">
@@ -3786,44 +3760,20 @@ function richguyOffgridActivityHtml() {
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
         </div>
         <h2>No transactions yet</h2>
-        <p>${
-          waiting
-            ? 'History of last cards is available only by request. Cards and prior activity stay unavailable during the safety window.'
-            : 'Your transaction history will appear here once you start using your card for purchases.'
-        }</p>
-        ${
-          waiting
-            ? `<a class="og-pill og-pill-link" href="${esc(requestHref)}">Request history download</a>`
-            : ''
-        }
+        <p>Your transaction history will appear here once you start using your card for purchases.</p>
       </div>
     </section>`;
 }
 
 function richguyOffgridCardsHtml() {
-  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
-  if (waiting) {
-    return `
-      <section class="og-home og-cards-wait">
-        <div class="og-wallet">
-          <div>
-            <p class="og-wallet-label">Wallet</p>
-            <p class="og-wallet-bal">$0.00</p>
-          </div>
-          <button class="og-pill" type="button" disabled>Add money</button>
-        </div>
-        ${richguyApiStatusStripHtml()}
-        ${richguyPlasticCardHtml()}
-        <h1 class="og-hero-title">Your card is waiting.</h1>
-        <p class="og-hero-sub">Previous cards are not available. New issuing opens after the countdown.</p>
-        <button class="og-cta" type="button" disabled>Choose your card</button>
-      </section>`;
-  }
   return `
     <section class="og-cards-live">
       <div class="og-page-head og-page-head-left">
-        <h1>Cards</h1>
+        <h1>Issue cards</h1>
       </div>
+      ${richguyApiStatusStripHtml()}
+      ${richguyPlasticCardHtml()}
+      <p class="og-hero-sub og-issue-lede">Select Visa, Mastercard, or Amex · Private or Corporate · issued instantly on G Cards.</p>
       ${deskIssuePanelHtml()}
     </section>`;
 }
@@ -3849,7 +3799,6 @@ function richguyOffgridSettingsHtml() {
       <div class="og-page-head og-page-head-left">
         <h1>Settings</h1>
       </div>
-      ${richguyApiStatusStripHtml()}
       <div class="og-settings-group">
         <button type="button" class="og-settings-row" data-action="rich-help">
           <span class="og-settings-ico">${ogIcon('settings')}</span>
@@ -6045,24 +5994,15 @@ document.body.addEventListener('click', (event) => {
     if (!isRichguyDesk()) return;
     state.flash = {
       kind: 'ok',
-      text: apiWaitNoticeActive()
-        ? 'API working perfect · uptime 99.8% · issuing opens after the countdown'
-        : 'Need help? Contact partnership support from Settings.',
+      text: 'G Cards issuing is online · activate 3DS in Settings via Google Authenticator or Duo.',
     };
     render();
     return;
   }
   if (action === 'rich-choose-card') {
     if (!isRichguyDesk()) return;
-    if (apiWaitNoticeActive() || platformDisabledNoticeActive()) {
-      state.flash = {
-        kind: 'error',
-        text: 'Card issuing unlocks when the safety countdown ends.',
-      };
-      render();
-      return;
-    }
     state.richNav = 'cards';
+    state.flash = null;
     render();
     setTimeout(() => {
       document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -6071,13 +6011,8 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'rich-add-money') {
     if (!isRichguyDesk()) return;
-    if (apiWaitNoticeActive() || platformDisabledNoticeActive()) {
-      state.flash = { kind: 'error', text: 'Wallet top-up is paused until issuing opens.' };
-      render();
-      return;
-    }
-    state.richNav = 'home';
-    state.flash = { kind: 'ok', text: 'Open Cards to fund and issue.' };
+    state.richNav = 'cards';
+    state.flash = { kind: 'ok', text: 'Issue a card, then fund it from the Cards desk.' };
     render();
     return;
   }

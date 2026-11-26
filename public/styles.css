@@ -2328,3 +2328,14 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   opacity: 0.55;
   cursor: not-allowed;
 }
+
+.og-status-live {
+  background: rgba(36, 48, 36, 0.55);
+}
+.og-issue-lede {
+  margin: 0 0 16px;
+  max-width: 420px;
+}
+.og-cards-live .og-plastic {
+  margin-bottom: 12px;
+}
