@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126p';
+const DESK_BUILD = '20261126q';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -4664,12 +4664,23 @@ function deskNetworkAcceptNoticePageHtml() {
  * offlinerich: only after the API countdown. richguy: immediately.
  */
 function deskIssuerReadinessPageHtml() {
+  const remainMs = Math.max(0, issuerReadinessUntilMs() - Date.now());
+  const hoursLeft = Math.max(1, Math.ceil(remainMs / (60 * 60 * 1000)));
+  const filesLeft = Math.min(3, hoursLeft);
+  const hourLabel = hoursLeft === 1 ? 'About 1 hour remaining' : `About ${hoursLeft} hours remaining`;
+  const fileState = (slot) => {
+    if (filesLeft > slot) return 'Queued';
+    if (filesLeft === slot) return 'Checking';
+    return 'Verified';
+  };
   const rows = [
     ['Authorized devices', '3'],
     ['Security checking', 'In progress'],
-    ['Verifying files', 'BIN range · card parameters · scheme controls'],
-    ['Issuer API', 'Verifying connectivity'],
-    ['Session integrity', 'Checking'],
+    ['Files remaining to check', String(filesLeft)],
+    ['BIN range file', fileState(3)],
+    ['Card parameter file', fileState(2)],
+    ['Scheme control file', fileState(1)],
+    ['Issuer API', 'Verifying'],
   ]
     .map(
       ([name, detail]) =>
@@ -4679,21 +4690,26 @@ function deskIssuerReadinessPageHtml() {
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Platform readiness</p>
-          <h1>Verifying the issuing platform</h1>
-          <p class="lede desk-home-lede">Security controls are running. Files, the issuer API, and authorized devices are being checked before integration can be confirmed.</p>
+          <h1>Verifying issuer files</h1>
+          <p class="lede desk-home-lede">Security controls are active. File checks refresh once an hour. Issuing stays closed until verification is complete.</p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-ready" role="status" aria-labelledby="desk-issuer-ready-title">
           <div class="desk-issuer-notice-head">
             <h2 id="desk-issuer-ready-title">Security check in progress</h2>
           </div>
           <p class="desk-issuer-reason">
-            Keep this window open. No action is required while verification runs. Issuing stays closed until these checks complete and the following audit is cleared.
+            Authorized devices on this review: <strong>3</strong>.
+            No action is required while the remaining files are checked.
+          </p>
+          <p class="desk-issuer-callout" aria-live="polite">
+            Files remaining to check: <strong>${esc(String(filesLeft))}</strong><br />
+            <strong>${esc(hourLabel)}</strong>
           </p>
           <div class="desk-issuer-action">
-            <p><strong>Current controls</strong></p>
+            <p><strong>Review status</strong> — updates each hour</p>
             <ul class="desk-issuer-steps">${rows}</ul>
             <p class="desk-issuer-refund">
-              Your funds remain safe. This page updates when verification finishes.
+              Your funds remain safe. This page moves to the integration result when the file check finishes.
             </p>
           </div>
         </section>`;
@@ -7520,7 +7536,7 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: issuerReadinessNoticeActive()
-            ? 'Platform readiness · verifying files · authorized devices 3 · security checking'
+            ? 'Verifying issuer files · authorized devices 3 · security checking'
             : `Integration verified · fraud-report audit · issuing opens ${issuerProgramOpenLabel()}`,
         };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
