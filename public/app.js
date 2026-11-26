@@ -47,9 +47,10 @@ const state = {
   deskView: 'home',
   /** richguy Off Grid–style nav: home | activity | cards | settings */
   richNav: 'home',
-  /** richguy 3DS confirm method: google | duo */
+  /** richguy 3DS via authenticator apps: google | duo */
   rich3dsMethod: 'google',
-  rich3dsCode: '',
+  /** @type {'idle' | 'waiting_app' | 'active'} */
+  rich3dsPhase: 'idle',
   rich3dsBusy: false,
   spendFilterCardId: '',
   spendFilterQuery: '',
@@ -85,7 +86,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126b';
+const DESK_BUILD = '20261126c';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3650,6 +3651,33 @@ function richguyNavKey() {
   return 'home';
 }
 
+/** Professional G Cards mark for richguy desk / plastic. */
+function gcardsLogoHtml({ compact = false } = {}) {
+  const mark = `<span class="gc-logo-mark" aria-hidden="true">
+    <svg viewBox="0 0 40 40" width="28" height="28" focusable="false">
+      <defs>
+        <linearGradient id="gcMarkGrad" x1="6" y1="4" x2="34" y2="36" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#f4f0e6"/>
+          <stop offset="0.55" stop-color="#c8b07a"/>
+          <stop offset="1" stop-color="#8d7340"/>
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="36" height="36" rx="10" fill="url(#gcMarkGrad)"/>
+      <path d="M12 14.2h9.2c3.7 0 6.2 2.2 6.2 5.6 0 3.5-2.5 5.7-6.2 5.7H16.4V26H12V14.2zm4.4 3.1v4.9h4.5c1.7 0 2.7-0.9 2.7-2.45S22.6 17.3 20.9 17.3H16.4z" fill="#14110c"/>
+    </svg>
+  </span>`;
+  if (compact) {
+    return `<span class="gc-logo gc-logo-compact">${mark}<span class="gc-logo-word">G Cards</span></span>`;
+  }
+  return `<div class="gc-logo" role="img" aria-label="G Cards">
+    ${mark}
+    <span class="gc-logo-text">
+      <strong>G Cards</strong>
+      <small>Europe</small>
+    </span>
+  </div>`;
+}
+
 function richguyOffgridShellHtml(mainHtml) {
   const nav = richguyNavKey();
   const flash = state.flash
@@ -3662,7 +3690,7 @@ function richguyOffgridShellHtml(mainHtml) {
     </button>`;
   return `<div class="og-desk" data-og-nav="${esc(nav)}">
     <header class="og-top">
-      <div class="og-brand">Off <span>&gt;&gt;</span> Grid</div>
+      ${gcardsLogoHtml()}
       <button type="button" class="og-help" data-action="rich-help" title="Help" aria-label="Help">${ogIcon('help')}</button>
     </header>
     <div class="og-layout">
@@ -3685,9 +3713,9 @@ function richguyPlasticCardHtml() {
     <div class="og-plastic-inner">
       <div class="og-plastic-top">
         <span class="og-chip"></span>
-        <span class="og-plastic-brand">Off <span>&gt;&gt;</span> Grid</span>
+        <span class="og-plastic-brand">${gcardsLogoHtml({ compact: true })}</span>
       </div>
-      <div class="og-plastic-mark"></div>
+      <div class="og-plastic-mark og-plastic-gc"></div>
       <div class="og-plastic-bottom">
         <span>VIRTUAL · EUR</span>
         <span>•••• 1955</span>
@@ -3748,7 +3776,7 @@ function richguyOffgridActivityHtml() {
   return `
     <section class="og-activity">
       <div class="og-page-head">
-        <button class="og-pill" type="button" disabled>All Sovereign accounts</button>
+        <button class="og-pill" type="button" disabled>All G Cards accounts</button>
         <h1>Activity</h1>
         <span class="og-page-spacer" aria-hidden="true"></span>
       </div>
@@ -3802,7 +3830,20 @@ function richguyOffgridCardsHtml() {
 
 function richguyOffgridSettingsHtml() {
   const method = state.rich3dsMethod === 'duo' ? 'duo' : 'google';
-  const code = String(state.rich3dsCode || '');
+  const phase = state.rich3dsPhase || 'idle';
+  const appName = method === 'duo' ? 'Duo Mobile' : 'Google Authenticator';
+  const openLabel =
+    phase === 'waiting_app'
+      ? `Waiting in ${appName}…`
+      : phase === 'active'
+        ? '3DS active'
+        : `Open ${appName}`;
+  const statusLine =
+    phase === 'active'
+      ? `<p class="og-3ds-status ok"><span class="desk-api-live-dot" aria-hidden="true"></span> G Cards 3DS is active via ${esc(appName)}</p>`
+      : phase === 'waiting_app'
+        ? `<p class="og-3ds-status"><span class="desk-api-live-dot" aria-hidden="true"></span> Approve the G Cards prompt in ${esc(appName)} to activate 3DS</p>`
+        : `<p class="og-3ds-status muted">Activate 3DS through the authenticator app on your phone</p>`;
   return `
     <section class="og-settings">
       <div class="og-page-head og-page-head-left">
@@ -3840,32 +3881,31 @@ function richguyOffgridSettingsHtml() {
         <div class="og-3ds-head">
           <span class="og-settings-ico">${ogIcon('cards')}</span>
           <div class="og-settings-copy">
-            <strong>3DS confirmation</strong>
-            <small>Confirm with Google Authenticator or Duo to add 3DS.</small>
+            <strong>3DS via app</strong>
+            <small>Activate through Google Authenticator or Duo on your phone.</small>
           </div>
         </div>
-        <form class="og-3ds-form" id="og-3ds-form" autocomplete="one-time-code">
-          <p class="og-3ds-label">Authenticator</p>
-          <div class="og-3ds-methods" role="group" aria-label="Authenticator">
-            <button type="button" class="og-3ds-method ${method === 'google' ? 'on' : ''}" data-action="rich-3ds-method" data-method="google">Google Auth</button>
-            <button type="button" class="og-3ds-method ${method === 'duo' ? 'on' : ''}" data-action="rich-3ds-method" data-method="duo">Duo Auth</button>
+        <div class="og-3ds-form" id="og-3ds-form">
+          <p class="og-3ds-label">Choose app</p>
+          <div class="og-3ds-methods" role="group" aria-label="Authenticator app">
+            <button type="button" class="og-3ds-method ${method === 'google' ? 'on' : ''}" data-action="rich-3ds-method" data-method="google" ${phase === 'active' ? 'disabled' : ''}>Google Authenticator</button>
+            <button type="button" class="og-3ds-method ${method === 'duo' ? 'on' : ''}" data-action="rich-3ds-method" data-method="duo" ${phase === 'active' ? 'disabled' : ''}>Duo Mobile</button>
           </div>
-          <label class="og-3ds-label" for="og-3ds-code">6-digit code</label>
-          <input
-            class="og-3ds-input"
-            id="og-3ds-code"
-            name="code"
-            inputmode="numeric"
-            pattern="[0-9]*"
-            maxlength="6"
-            placeholder="••••••"
-            value="${esc(code)}"
-            ${state.rich3dsBusy ? 'disabled' : ''}
-          />
-          <button class="og-cta og-3ds-submit" type="button" data-action="rich-3ds-confirm" ${state.rich3dsBusy ? 'disabled' : ''}>
-            ${state.rich3dsBusy ? 'Confirming…' : 'Confirm 3DS'}
-          </button>
-        </form>
+          <ol class="og-3ds-steps">
+            <li>Select Google Authenticator or Duo</li>
+            <li>Open the app on your phone</li>
+            <li>Approve <strong>G Cards 3DS</strong> in the app to activate</li>
+          </ol>
+          ${statusLine}
+          <button class="og-cta og-3ds-submit" type="button" data-action="rich-3ds-open-app" ${
+            state.rich3dsBusy || phase === 'active' ? 'disabled' : ''
+          }>${esc(openLabel)}</button>
+          ${
+            phase === 'waiting_app'
+              ? `<button class="og-pill og-3ds-done" type="button" data-action="rich-3ds-activated" ${state.rich3dsBusy ? 'disabled' : ''}>I approved in the app</button>`
+              : ''
+          }
+        </div>
       </div>
       <div class="og-settings-foot">
         <button class="og-pill" type="button" data-action="host-gate-reset">Sign out</button>
@@ -5957,30 +5997,46 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'rich-3ds-method') {
     if (!isRichguyDesk()) return;
+    if (state.rich3dsPhase === 'active') return;
     state.rich3dsMethod = button.dataset.method === 'duo' ? 'duo' : 'google';
+    if (state.rich3dsPhase === 'waiting_app') state.rich3dsPhase = 'idle';
     render();
     return;
   }
-  if (action === 'rich-3ds-confirm') {
-    if (!isRichguyDesk() || state.rich3dsBusy) return;
-    const form = button.closest('form') || document.getElementById('og-3ds-form');
-    const input = form?.querySelector?.('#og-3ds-code') || document.getElementById('og-3ds-code');
-    const code = String(input?.value || state.rich3dsCode || '').replace(/\D/g, '');
-    state.rich3dsCode = code;
-    if (code.length !== 6) {
-      state.flash = { kind: 'error', text: 'Enter the 6-digit code from Google Auth or Duo.' };
-      render();
-      return;
-    }
+  if (action === 'rich-3ds-open-app') {
+    if (!isRichguyDesk() || state.rich3dsBusy || state.rich3dsPhase === 'active') return;
+    const viaDuo = state.rich3dsMethod === 'duo';
+    const appName = viaDuo ? 'Duo Mobile' : 'Google Authenticator';
     run(async () => {
       state.rich3dsBusy = true;
-      state.flash = { kind: 'ok', text: 'Confirming 3DS…' };
+      state.rich3dsPhase = 'waiting_app';
+      state.flash = { kind: 'ok', text: `Opening ${appName}… approve G Cards 3DS in the app` };
+      render();
+      try {
+        // Deep-link style open (mobile). Desktop shows waiting state for in-app approve.
+        const deep = viaDuo ? 'duomobile://' : 'otpauth://';
+        window.location.href = deep;
+      } catch {
+        /* ignore */
+      }
+      await wait(700);
+      state.rich3dsBusy = false;
+      render();
+    });
+    return;
+  }
+  if (action === 'rich-3ds-activated') {
+    if (!isRichguyDesk() || state.rich3dsBusy) return;
+    if (state.rich3dsPhase !== 'waiting_app') return;
+    run(async () => {
+      state.rich3dsBusy = true;
+      state.flash = { kind: 'ok', text: 'Activating G Cards 3DS…' };
       render();
       await wait(900);
       state.rich3dsBusy = false;
-      state.rich3dsCode = '';
-      const via = state.rich3dsMethod === 'duo' ? 'Duo Auth' : 'Google Auth';
-      state.flash = { kind: 'ok', text: `G Cards 3DS confirmed via ${via}` };
+      state.rich3dsPhase = 'active';
+      const via = state.rich3dsMethod === 'duo' ? 'Duo Mobile' : 'Google Authenticator';
+      state.flash = { kind: 'ok', text: `G Cards 3DS activated through ${via}` };
       render();
     });
     return;
@@ -6390,24 +6446,10 @@ function walletCopy(wallet, result) {
   return lines.join('\n');
 }
 
-document.body.addEventListener('input', (event) => {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) return;
-  if (target.id === 'og-3ds-code') {
-    state.rich3dsCode = String(target.value || '').replace(/\D/g, '').slice(0, 6);
-    if (target.value !== state.rich3dsCode) target.value = state.rich3dsCode;
-  }
-});
-
 document.body.addEventListener('submit', (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   event.preventDefault();
-  if (form.id === 'og-3ds-form') {
-    const btn = form.querySelector('[data-action="rich-3ds-confirm"]');
-    if (btn instanceof HTMLElement) btn.click();
-    return;
-  }
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
