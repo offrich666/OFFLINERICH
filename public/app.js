@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126o';
+const DESK_BUILD = '20261126p';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -4664,43 +4664,36 @@ function deskNetworkAcceptNoticePageHtml() {
  * offlinerich: only after the API countdown. richguy: immediately.
  */
 function deskIssuerReadinessPageHtml() {
-  const untilLabel = issuerReadinessUntilLabel();
-  const remainMs = Math.max(0, issuerReadinessUntilMs() - Date.now());
-  const countdown = formatApiCountdown(remainMs);
   const rows = [
-    ['BIN range file', 'European zone BIN map — scheme alignment in progress'],
-    ['Issuer API', 'Connectivity, credentials, and uptime check in progress'],
-    ['Card parameter file', 'Product, currency, and limit records being reconciled'],
-    ['Platform control pack', 'Visa / Mastercard Europe controls being applied'],
+    ['Authorized devices', '3'],
+    ['Security checking', 'In progress'],
+    ['Verifying files', 'BIN range · card parameters · scheme controls'],
+    ['Issuer API', 'Verifying connectivity'],
+    ['Session integrity', 'Checking'],
   ]
     .map(
       ([name, detail]) =>
-        `<li><strong>${esc(name)}</strong> — ${esc(detail)} <em>Verifying</em></li>`,
+        `<li><strong>${esc(name)}</strong> — ${esc(detail)}</li>`,
     )
     .join('');
   return `
         <section class="desk-page-hero">
           <p class="kicker launch-kicker">Platform readiness</p>
-          <h1>Preparing the issuing platform</h1>
-          <p class="lede desk-home-lede">The issuer stack is being brought online. BIN files, the issuing API, and card-parameter records are under verification before the integration can be marked complete.</p>
+          <h1>Verifying the issuing platform</h1>
+          <p class="lede desk-home-lede">Security controls are running. Files, the issuer API, and authorized devices are being checked before integration can be confirmed.</p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-ready" role="status" aria-labelledby="desk-issuer-ready-title">
           <div class="desk-issuer-notice-head">
-            <h2 id="desk-issuer-ready-title">Verification window until ${esc(untilLabel)}</h2>
+            <h2 id="desk-issuer-ready-title">Security check in progress</h2>
           </div>
           <p class="desk-issuer-reason">
-            Please keep this window open. No issuing action is required from you while these checks run.
-            Completion of this readiness pass is scheduled for <strong>${esc(untilLabel)}</strong>.
-          </p>
-          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
-            Time remaining in the verification window:<br />
-            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+            Keep this window open. No action is required while verification runs. Issuing stays closed until these checks complete and the following audit is cleared.
           </p>
           <div class="desk-issuer-action">
-            <p><strong>Files and controls under review</strong></p>
+            <p><strong>Current controls</strong></p>
             <ul class="desk-issuer-steps">${rows}</ul>
             <p class="desk-issuer-refund">
-              When this window closes, the desk will confirm integration status. Issuing stays closed until that confirmation and the following security review.
+              Your funds remain safe. This page updates when verification finishes.
             </p>
           </div>
         </section>`;
@@ -7527,7 +7520,7 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: issuerReadinessNoticeActive()
-            ? `Platform readiness · verifying BIN, API, and card files until ${issuerReadinessUntilLabel()}`
+            ? 'Platform readiness · verifying files · authorized devices 3 · security checking'
             : `Integration verified · fraud-report audit · issuing opens ${issuerProgramOpenLabel()}`,
         };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
