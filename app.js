@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126n';
+const DESK_BUILD = '20261126o';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -126,11 +126,21 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * 1) contacting Visa / Mastercard / Amex
  * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
  * 3) offlinerich → platform error → API integrated / 48h wait
- * 4) issuer implementation notice → issuing + direct spend opens at ISSUER_PROGRAM_OPEN_FROM
- *    richguy → same issuer notice immediately (no wait for offlinerich's API countdown)
+ * 4) after API countdown → readiness checks until ISSUER_READINESS_UNTIL (23:05 Berlin)
+ * 5) integration verified; fraud-report audit holds issuing until ISSUER_PROGRAM_OPEN_FROM
+ *    richguy → same stages immediately (skips the API countdown)
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
-/** Issuing program + direct spend opens at this Berlin civil time (Friday). */
+/** BIN / API / file verification window ends at this Berlin civil time. */
+const ISSUER_READINESS_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 26,
+  hour: 23,
+  minute: 5,
+  second: 0,
+});
+/** Issuing + direct spend opens at this Berlin civil time (Friday), after the audit hold. */
 const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
   year: 2026,
   month: 11,
@@ -2934,36 +2944,62 @@ function richguyApiWaitActive(_nowMs = Date.now()) {
   return false;
 }
 
+function berlinCivilLabel(t, weekday) {
+  const dd = String(t.day).padStart(2, '0');
+  const mm = String(t.month).padStart(2, '0');
+  const hh = String(t.hour).padStart(2, '0');
+  const mi = String(t.minute).padStart(2, '0');
+  const when = `${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+  return weekday ? `${weekday} ${when}` : when;
+}
+
+function issuerReadinessUntilMs() {
+  const t = ISSUER_READINESS_UNTIL;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function issuerReadinessUntilLabel() {
+  return berlinCivilLabel(ISSUER_READINESS_UNTIL);
+}
+
 function issuerProgramOpenFromMs() {
   const t = ISSUER_PROGRAM_OPEN_FROM;
   return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
 }
 
 function issuerProgramOpenLabel() {
-  const t = ISSUER_PROGRAM_OPEN_FROM;
-  const dd = String(t.day).padStart(2, '0');
-  const mm = String(t.month).padStart(2, '0');
-  const hh = String(t.hour).padStart(2, '0');
-  const mi = String(t.minute).padStart(2, '0');
-  return `Friday ${dd}.${mm}.${t.year} ${hh}:${mi} (Berlin)`;
+  return berlinCivilLabel(ISSUER_PROGRAM_OPEN_FROM, 'Friday');
 }
 
-/** offlinerich: after API 48h countdown — issuer implementation until tomorrow 15:00. */
-function offlinerichIssuerImplNoticeActive(nowMs = Date.now()) {
-  if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
-  if (offlinerichFreezeActive(nowMs)) return false;
-  if (nowMs < offlinerichApiIssueUnlockMs()) return false;
-  return nowMs < issuerProgramOpenFromMs();
+/** Post-countdown window (offlinerich) or immediate preview (richguy), until issuing opens. */
+function issuerPostCountdownWindow(nowMs = Date.now()) {
+  if (nowMs >= issuerProgramOpenFromMs()) return false;
+  if (isOfflinerichDesk() && PLATFORM_DISABLED_NOTICE_LIVE) {
+    if (offlinerichFreezeActive(nowMs)) return false;
+    return nowMs >= offlinerichApiIssueUnlockMs();
+  }
+  if (isRichguyDesk()) return true;
+  return false;
 }
 
-/** richguy: show the issuer implementation message immediately (preview). */
-function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
-  if (!isRichguyDesk()) return false;
-  return nowMs < issuerProgramOpenFromMs();
+/** Getting the platform ready: BIN, API, and file verification until 23:05 Berlin. */
+function issuerReadinessNoticeActive(nowMs = Date.now()) {
+  if (!issuerPostCountdownWindow(nowMs)) return false;
+  return nowMs < issuerReadinessUntilMs();
+}
+
+/** Integrated + verified; fraud-report audit holds live issuing until Friday 20:00. */
+function issuerAuditNoticeActive(nowMs = Date.now()) {
+  if (!issuerPostCountdownWindow(nowMs)) return false;
+  return nowMs >= issuerReadinessUntilMs();
 }
 
 function issuerImplNoticeActive(nowMs = Date.now()) {
-  return offlinerichIssuerImplNoticeActive(nowMs) || richguyIssuerImplNoticeActive(nowMs);
+  return issuerReadinessNoticeActive(nowMs) || issuerAuditNoticeActive(nowMs);
+}
+
+function richguyIssuerImplNoticeActive(nowMs = Date.now()) {
+  return isRichguyDesk() && issuerImplNoticeActive(nowMs);
 }
 
 /** Contacting Visa / Mastercard / Amex (first stage). */
@@ -3995,16 +4031,20 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // richguy: show EXACTLY the issuer message offlinerich gets after the API countdown — no Off Grid yet.
-  if (isRichguyDesk() && richguyIssuerImplNoticeActive()) {
+  // richguy: same post-countdown stages offlinerich gets — readiness, then audit hold.
+  if (isRichguyDesk() && issuerImplNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
     state.richNav = 'home';
     state.deskDetailCardId = '';
     state.spendDetailId = '';
-    return deskShellHtml(deskIssuerImplNoticePageHtml());
+    return deskShellHtml(
+      issuerReadinessNoticeActive()
+        ? deskIssuerReadinessPageHtml()
+        : deskIssuerImplNoticePageHtml(),
+    );
   }
-  // Notice-only lock: contacting → accept → API wait → issuer implementation (offlinerich).
+  // Notice-only lock: contacting → accept → API wait → readiness → audit hold.
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
@@ -4016,11 +4056,13 @@ function capacityDeskHtml() {
         ? deskNetworkAcceptNoticePageHtml()
         : apiWaitNoticeActive()
           ? deskApiIntegratedWaitPageHtml()
-          : issuerImplNoticeActive()
-            ? deskIssuerImplNoticePageHtml()
-            : platformErrorNoticeActive()
-              ? deskPlatformDisabledNoticePageHtml()
-              : deskIssuerNoticePageHtml();
+          : issuerReadinessNoticeActive()
+            ? deskIssuerReadinessPageHtml()
+            : issuerAuditNoticeActive()
+              ? deskIssuerImplNoticePageHtml()
+              : platformErrorNoticeActive()
+                ? deskPlatformDisabledNoticePageHtml()
+                : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
   // richguy: Off Grid issuing desk only after issuer program opens (tomorrow 15:00).
@@ -4618,9 +4660,55 @@ function deskNetworkAcceptNoticePageHtml() {
 }
 
 /**
- * Same page for both users:
- * - offlinerich: after API countdown ends
- * - richguy: right now (preview of that offlinerich post-countdown message)
+ * Until 23:05 Berlin — platform readiness (BIN, API, parameter files).
+ * offlinerich: only after the API countdown. richguy: immediately.
+ */
+function deskIssuerReadinessPageHtml() {
+  const untilLabel = issuerReadinessUntilLabel();
+  const remainMs = Math.max(0, issuerReadinessUntilMs() - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const rows = [
+    ['BIN range file', 'European zone BIN map — scheme alignment in progress'],
+    ['Issuer API', 'Connectivity, credentials, and uptime check in progress'],
+    ['Card parameter file', 'Product, currency, and limit records being reconciled'],
+    ['Platform control pack', 'Visa / Mastercard Europe controls being applied'],
+  ]
+    .map(
+      ([name, detail]) =>
+        `<li><strong>${esc(name)}</strong> — ${esc(detail)} <em>Verifying</em></li>`,
+    )
+    .join('');
+  return `
+        <section class="desk-page-hero">
+          <p class="kicker launch-kicker">Platform readiness</p>
+          <h1>Preparing the issuing platform</h1>
+          <p class="lede desk-home-lede">The issuer stack is being brought online. BIN files, the issuing API, and card-parameter records are under verification before the integration can be marked complete.</p>
+        </section>
+        <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-ready" role="status" aria-labelledby="desk-issuer-ready-title">
+          <div class="desk-issuer-notice-head">
+            <h2 id="desk-issuer-ready-title">Verification window until ${esc(untilLabel)}</h2>
+          </div>
+          <p class="desk-issuer-reason">
+            Please keep this window open. No issuing action is required from you while these checks run.
+            Completion of this readiness pass is scheduled for <strong>${esc(untilLabel)}</strong>.
+          </p>
+          <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
+            Time remaining in the verification window:<br />
+            <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+          </p>
+          <div class="desk-issuer-action">
+            <p><strong>Files and controls under review</strong></p>
+            <ul class="desk-issuer-steps">${rows}</ul>
+            <p class="desk-issuer-refund">
+              When this window closes, the desk will confirm integration status. Issuing stays closed until that confirmation and the following security review.
+            </p>
+          </div>
+        </section>`;
+}
+
+/**
+ * After 23:05 Berlin — integration verified; fraud-report audit holds issuing until Friday 20:00.
+ * offlinerich: after countdown (and after the readiness window). richguy: after 23:05.
  */
 function deskIssuerImplNoticePageHtml() {
   const emails = PLATFORM_DISABLED_SUPPORT_EMAILS.map(
@@ -4635,27 +4723,34 @@ function deskIssuerImplNoticePageHtml() {
   const corporateLimit = money(CORPORATE_DAILY_LIMIT_CENTS, 'EUR');
   return `
         <section class="desk-page-hero">
-          <p class="kicker launch-kicker">Network clearance</p>
-          <h1>Issuing resumes after security review</h1>
+          <p class="kicker launch-kicker">Integration complete</p>
+          <h1>Issuer files verified</h1>
           <p class="lede desk-home-lede">
-            Following earlier fraud reports from connected payment gateways, Visa and Mastercard Europe required a full issuer re-implementation for European zones — BIN ranges, card details, and platform controls — before issuing and spending can reopen.
+            The issuing platform, BIN range file, issuer API, and card-parameter records have been successfully integrated and verified for European zones.
           </p>
         </section>
         <section class="desk-issuer-notice desk-issuer-notice-page desk-platform-notice desk-issuer-impl" id="desk-issuer-impl" role="status" aria-labelledby="desk-issuer-impl-title">
           <div class="desk-issuer-notice-head">
-            <h2 id="desk-issuer-impl-title">You can issue cards and start spending from ${esc(openLabel)}</h2>
+            <h2 id="desk-issuer-impl-title">Security audit in progress — issuing opens ${esc(openLabel)}</h2>
           </div>
           <p class="desk-issuer-reason">
-            The new Europe-zone issuer implementation is being finalised after those fraud reports.
-            From <strong>${esc(openLabel)}</strong> you may <strong>issue new cards and start direct spending</strong> under your program limits.
-            <strong>Apple Pay is not required</strong> — nothing to add in Wallet; authorisations run as direct card spend only.
+            Integration is complete. Because of earlier fraud reports from connected payment gateways, Visa and Mastercard require a remaining <strong>audit and security check</strong> before live issuing.
+            You can <strong>start creating and issuing cards, and begin direct spending, at ${esc(openLabel)}</strong>.
+            <strong>Apple Pay is not required</strong> — spend is direct on the issued card.
           </p>
           <p class="desk-issuer-callout desk-api-countdown" aria-live="polite">
-            Time remaining until issuing and spending open:<br />
+            Time remaining until issuing opens:<br />
             <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
           </p>
           <div class="desk-issuer-action">
-            <p><strong>Ready at open</strong></p>
+            <p><strong>Verified</strong></p>
+            <ul class="desk-issuer-steps">
+              <li><strong>BIN range file</strong> — verified</li>
+              <li><strong>Issuer API</strong> — integrated and verified</li>
+              <li><strong>Card parameter file</strong> — verified</li>
+              <li><strong>Fraud-report audit</strong> — security check still open until ${esc(openLabel)}</li>
+            </ul>
+            <p><strong>At open</strong></p>
             <ul class="desk-issuer-steps">
               <li><strong>Issue cards</strong> — Visa, Mastercard, American Express (Private &amp; Corporate)</li>
               <li><strong>Direct spend</strong> — no Apple Pay / Wallet setup</li>
@@ -4663,7 +4758,7 @@ function deskIssuerImplNoticePageHtml() {
               <li><strong>Corporate daily limit</strong> — ${esc(corporateLimit)}</li>
             </ul>
             <p class="desk-issuer-refund">
-              Until ${esc(openLabel)}, this status page remains in place while BIN mapping and security checks complete across platforms. Your funds remain safe.
+              Your funds remain safe during the audit. The desk stays on this status page until ${esc(openLabel)}.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
@@ -7431,7 +7526,9 @@ document.body.addEventListener('submit', (event) => {
       } else if (isOperator && richguyIssuerImplNoticeActive()) {
         state.flash = {
           kind: 'ok',
-          text: `Issuer implementation · same status offlinerich gets after API countdown · issuing opens ${issuerProgramOpenLabel()}`,
+          text: issuerReadinessNoticeActive()
+            ? `Platform readiness · verifying BIN, API, and card files until ${issuerReadinessUntilLabel()}`
+            : `Integration verified · fraud-report audit · issuing opens ${issuerProgramOpenLabel()}`,
         };
       } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
         state.flash = {
