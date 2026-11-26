@@ -2420,3 +2420,63 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   width: 100%;
   justify-content: center;
 }
+
+.og-home-pro {
+  align-items: stretch;
+}
+.og-home-pro .og-plastic,
+.og-home-pro .og-hero-title,
+.og-home-pro .og-hero-sub,
+.og-home-pro > .og-cta,
+.og-home-pro > .og-cta-note {
+  align-self: center;
+  text-align: center;
+}
+.og-money-grid {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+}
+.og-money-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #141414;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.og-money-title {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #f3f3f3;
+}
+.og-money-help {
+  margin: 0 0 4px;
+  color: #9a9a9a;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+.og-select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #111;
+  color: #fff;
+  border-radius: 12px;
+  padding: 11px 12px;
+  font: inherit;
+}
+.og-money-card .og-3ds-input {
+  letter-spacing: 0.02em;
+  text-align: left;
+  font-size: 1rem;
+}
+@media (min-width: 900px) {
+  .og-money-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+}
