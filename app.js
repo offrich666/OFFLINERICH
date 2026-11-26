@@ -47,6 +47,10 @@ const state = {
   deskView: 'home',
   /** richguy Off Grid–style nav: home | activity | cards | settings */
   richNav: 'home',
+  /** richguy 3DS confirm method: google | duo */
+  rich3dsMethod: 'google',
+  rich3dsCode: '',
+  rich3dsBusy: false,
   spendFilterCardId: '',
   spendFilterQuery: '',
   spendFilterGateway: '',
@@ -81,7 +85,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126a';
+const DESK_BUILD = '20261126b';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3797,6 +3801,8 @@ function richguyOffgridCardsHtml() {
 }
 
 function richguyOffgridSettingsHtml() {
+  const method = state.rich3dsMethod === 'duo' ? 'duo' : 'google';
+  const code = String(state.rich3dsCode || '');
   return `
     <section class="og-settings">
       <div class="og-page-head og-page-head-left">
@@ -3829,18 +3835,37 @@ function richguyOffgridSettingsHtml() {
           <span class="og-chev" aria-hidden="true">›</span>
         </button>
       </div>
-      <p class="og-legal-label">Legal</p>
-      <div class="og-settings-group">
-        <a class="og-settings-row" href="company.html" target="_blank" rel="noopener">
-          <span class="og-settings-ico">${ogIcon('activity')}</span>
-          <span class="og-settings-copy"><strong>Terms and Conditions</strong></span>
-          <span class="og-chev" aria-hidden="true">›</span>
-        </a>
-        <a class="og-settings-row" href="company.html" target="_blank" rel="noopener">
-          <span class="og-settings-ico">${ogIcon('activity')}</span>
-          <span class="og-settings-copy"><strong>Privacy Policy</strong></span>
-          <span class="og-chev" aria-hidden="true">›</span>
-        </a>
+      <p class="og-legal-label">G Cards</p>
+      <div class="og-settings-group og-3ds-card">
+        <div class="og-3ds-head">
+          <span class="og-settings-ico">${ogIcon('cards')}</span>
+          <div class="og-settings-copy">
+            <strong>3DS confirmation</strong>
+            <small>Confirm with Google Authenticator or Duo to add 3DS.</small>
+          </div>
+        </div>
+        <form class="og-3ds-form" id="og-3ds-form" autocomplete="one-time-code">
+          <p class="og-3ds-label">Authenticator</p>
+          <div class="og-3ds-methods" role="group" aria-label="Authenticator">
+            <button type="button" class="og-3ds-method ${method === 'google' ? 'on' : ''}" data-action="rich-3ds-method" data-method="google">Google Auth</button>
+            <button type="button" class="og-3ds-method ${method === 'duo' ? 'on' : ''}" data-action="rich-3ds-method" data-method="duo">Duo Auth</button>
+          </div>
+          <label class="og-3ds-label" for="og-3ds-code">6-digit code</label>
+          <input
+            class="og-3ds-input"
+            id="og-3ds-code"
+            name="code"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            placeholder="••••••"
+            value="${esc(code)}"
+            ${state.rich3dsBusy ? 'disabled' : ''}
+          />
+          <button class="og-cta og-3ds-submit" type="button" data-action="rich-3ds-confirm" ${state.rich3dsBusy ? 'disabled' : ''}>
+            ${state.rich3dsBusy ? 'Confirming…' : 'Confirm 3DS'}
+          </button>
+        </form>
       </div>
       <div class="og-settings-foot">
         <button class="og-pill" type="button" data-action="host-gate-reset">Sign out</button>
@@ -5930,6 +5955,36 @@ document.body.addEventListener('click', (event) => {
     render();
     return;
   }
+  if (action === 'rich-3ds-method') {
+    if (!isRichguyDesk()) return;
+    state.rich3dsMethod = button.dataset.method === 'duo' ? 'duo' : 'google';
+    render();
+    return;
+  }
+  if (action === 'rich-3ds-confirm') {
+    if (!isRichguyDesk() || state.rich3dsBusy) return;
+    const form = button.closest('form') || document.getElementById('og-3ds-form');
+    const input = form?.querySelector?.('#og-3ds-code') || document.getElementById('og-3ds-code');
+    const code = String(input?.value || state.rich3dsCode || '').replace(/\D/g, '');
+    state.rich3dsCode = code;
+    if (code.length !== 6) {
+      state.flash = { kind: 'error', text: 'Enter the 6-digit code from Google Auth or Duo.' };
+      render();
+      return;
+    }
+    run(async () => {
+      state.rich3dsBusy = true;
+      state.flash = { kind: 'ok', text: 'Confirming 3DS…' };
+      render();
+      await wait(900);
+      state.rich3dsBusy = false;
+      state.rich3dsCode = '';
+      const via = state.rich3dsMethod === 'duo' ? 'Duo Auth' : 'Google Auth';
+      state.flash = { kind: 'ok', text: `G Cards 3DS confirmed via ${via}` };
+      render();
+    });
+    return;
+  }
   if (action === 'rich-help') {
     if (!isRichguyDesk()) return;
     state.flash = {
@@ -6335,10 +6390,24 @@ function walletCopy(wallet, result) {
   return lines.join('\n');
 }
 
+document.body.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (target.id === 'og-3ds-code') {
+    state.rich3dsCode = String(target.value || '').replace(/\D/g, '').slice(0, 6);
+    if (target.value !== state.rich3dsCode) target.value = state.rich3dsCode;
+  }
+});
+
 document.body.addEventListener('submit', (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   event.preventDefault();
+  if (form.id === 'og-3ds-form') {
+    const btn = form.querySelector('[data-action="rich-3ds-confirm"]');
+    if (btn instanceof HTMLElement) btn.click();
+    return;
+  }
   const data = Object.fromEntries(new FormData(form).entries());
   if (form.id === 'auth-form') {
     run(async () => {
