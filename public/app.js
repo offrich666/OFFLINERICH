@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126q';
+const DESK_BUILD = '20261126r';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -146,7 +146,7 @@ const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
   month: 11,
   day: 27,
   hour: 20,
-  minute: 0,
+  minute: 30,
   second: 0,
 });
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
@@ -2982,16 +2982,14 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
   return false;
 }
 
-/** Getting the platform ready: BIN, API, and file verification until 23:05 Berlin. */
-function issuerReadinessNoticeActive(nowMs = Date.now()) {
-  if (!issuerPostCountdownWindow(nowMs)) return false;
-  return nowMs < issuerReadinessUntilMs();
+/** File-check page is not shown. After the API countdown the verified audit page is used. */
+function issuerReadinessNoticeActive(_nowMs = Date.now()) {
+  return false;
 }
 
-/** Integrated + verified; fraud-report audit holds live issuing until Friday 20:00. */
+/** Integrated + verified; fraud-report audit holds live issuing until Friday 20:30. */
 function issuerAuditNoticeActive(nowMs = Date.now()) {
-  if (!issuerPostCountdownWindow(nowMs)) return false;
-  return nowMs >= issuerReadinessUntilMs();
+  return issuerPostCountdownWindow(nowMs);
 }
 
 function issuerImplNoticeActive(nowMs = Date.now()) {
