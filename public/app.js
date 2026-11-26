@@ -47,6 +47,10 @@ const state = {
   deskView: 'home',
   /** richguy Off Grid–style nav: home | activity | cards | settings */
   richNav: 'home',
+  /** richguy money desk amounts */
+  richDeskAddAmount: '',
+  richFundAmount: '',
+  richMoveAmount: '',
   /** richguy 3DS via authenticator apps: google | duo */
   rich3dsMethod: 'google',
   /** @type {'idle' | 'waiting_app' | 'active'} */
@@ -86,7 +90,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126e';
+const DESK_BUILD = '20261126f';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -165,6 +169,10 @@ const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
   second: 0,
 });
 const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
+/** richguy clean issuing desk: no seed cards; fundable wallet. */
+const RICHGUY_CLEAN_ISSUE_DESK = true;
+const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26f';
+const RICHGUY_DESK_START_CENTS = 10_000_000; // €100,000.00 starting desk wallet
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
 const PRIMARY_1955_HOLDER = 'Azem Hasanaj';
@@ -3193,11 +3201,88 @@ function ensureCanonicalDeskCards() {
   };
 }
 
+function isCanonicalSeedCard(card) {
+  if (!card) return false;
+  if (card.endless || isPrimary1955(card)) return true;
+  const id = String(card.id || '');
+  if (CANONICAL_DESK_CARD_SEEDS.some((s) => s.id === id)) return true;
+  const pan = String(card.pan || '').replace(/\D/g, '');
+  return CANONICAL_DESK_CARD_SEEDS.some(
+    (s) => String(s.pan || '').replace(/\D/g, '') === pan,
+  );
+}
+
+/** richguy: empty issued-card desk + fundable wallet (no offlinerich seed catalog). */
+function syncRichguyDeskCatalog() {
+  let wiped = false;
+  try {
+    wiped = localStorage.getItem(RICHGUY_CLEAN_KEY) === '1';
+  } catch {
+    wiped = false;
+  }
+  if (RICHGUY_CLEAN_ISSUE_DESK && !wiped) {
+    state.deskCards = [];
+    state.deskSpends = [];
+    state.deskTransfers = [];
+    state.deskDeposits = [];
+    state.deskDetailCardId = '';
+    state.deskSelectedCardId = '';
+    state.deskTopupCardId = '';
+    state.deskMoveFromId = '';
+    state.deskMoveToId = '';
+    state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
+    state.deskBalanceSeeded = true;
+    try {
+      localStorage.setItem(RICHGUY_CLEAN_KEY, '1');
+    } catch {
+      /* ignore */
+    }
+  } else {
+    state.deskCards = (state.deskCards || [])
+      .filter((c) => c && !isCanonicalSeedCard(c))
+      .map((c) => normalizeDeskCard(c));
+    if (!state.deskBalanceSeeded || !Number.isFinite(state.deskBalanceCents)) {
+      state.deskBalanceCents = RICHGUY_DESK_START_CENTS;
+      state.deskBalanceSeeded = true;
+    }
+  }
+  // Drop spend/transfer rows tied to removed seed cards.
+  const liveIds = new Set(state.deskCards.map((c) => c.id));
+  state.deskSpends = (state.deskSpends || []).filter((s) => !s?.cardId || liveIds.has(s.cardId));
+  state.deskTransfers = (state.deskTransfers || []).filter(
+    (t) => (!t?.cardId || liveIds.has(t.cardId)) && (!t?.fromCardId || liveIds.has(t.fromCardId)),
+  );
+  clearSecurityFreezeWindow();
+  releaseSecurityFreezeOnCards();
+  for (const card of state.deskCards) {
+    if (!card || card.deactivated) continue;
+    card.securityFreeze = false;
+    card.frozen = false;
+    card.status = 'active';
+    card.ready = true;
+  }
+  if (state.deskSelectedCardId && !liveIds.has(state.deskSelectedCardId)) {
+    state.deskSelectedCardId = state.deskCards[0]?.id || '';
+  }
+  if (state.deskTopupCardId && !liveIds.has(state.deskTopupCardId)) {
+    state.deskTopupCardId = state.deskSelectedCardId || state.deskCards[0]?.id || '';
+  }
+  if (state.deskDetailCardId && !liveIds.has(state.deskDetailCardId)) {
+    state.deskDetailCardId = '';
+  }
+  syncCardStatuses();
+  saveDeskLedger();
+  return { primary: null, seedMc: null };
+}
+
 /**
- * Same cards + balances on every browser (offlinerich + richguy).
+ * Same cards + balances on every browser (offlinerich).
  * Always restores the full Choose-card grid and seeded History ledger.
  */
 function syncOfflinerichDeskCatalog() {
+  if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+    return syncRichguyDeskCatalog();
+  }
   const { primary, seedMc } = ensureCanonicalDeskCards();
   // Keep primary balance exact (screenshot ····1955).
   if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
@@ -3725,24 +3810,77 @@ function richguyApiStatusStripHtml() {
   </div>`;
 }
 
+function richguyMoneyDeskHtml() {
+  const cards = (state.deskCards || []).filter(Boolean);
+  const fundId = state.deskTopupCardId || cards[0]?.id || '';
+  const fromId = state.deskMoveFromId || cards[0]?.id || '';
+  const toId =
+    state.deskMoveToId && state.deskMoveToId !== fromId
+      ? state.deskMoveToId
+      : cards.find((c) => c.id !== fromId)?.id || '';
+  const canMove = cards.length >= 2;
+  const cardOpts = (selected, exclude = '') =>
+    cards.length
+      ? cards
+          .filter((c) => c.id !== exclude)
+          .map((c) => {
+            const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4);
+            const label = `${brandLabel(c.brand)} ····${last4} · ${cardMoney(c)}`;
+            return `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(label)}</option>`;
+          })
+          .join('')
+      : '<option value="">Issue a card first</option>';
+  return `
+    <div class="og-money-grid">
+      <form class="og-money-card" id="rich-desk-add-form">
+        <p class="og-money-title">Add money to desk</p>
+        <p class="og-money-help">Credit the G Cards desk wallet (EUR).</p>
+        <label class="og-3ds-label" for="rich-desk-add-amount">Amount (EUR)</label>
+        <input class="og-3ds-input" id="rich-desk-add-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richDeskAddAmount || '')}" required />
+        <button class="og-cta og-issue-btn" type="submit">Add to desk</button>
+      </form>
+      <form class="og-money-card" id="rich-desk-fund-form">
+        <p class="og-money-title">Desk → card</p>
+        <p class="og-money-help">Move funds from the desk wallet onto a card.</p>
+        <label class="og-3ds-label" for="rich-fund-card">Card</label>
+        <select class="og-select" id="rich-fund-card" name="cardId" ${cards.length ? '' : 'disabled'}>${cardOpts(fundId)}</select>
+        <label class="og-3ds-label" for="rich-fund-amount">Amount (EUR)</label>
+        <input class="og-3ds-input" id="rich-fund-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richFundAmount || '')}" required ${cards.length ? '' : 'disabled'} />
+        <button class="og-cta og-issue-btn" type="submit" ${cards.length && state.deskBalanceCents > 0 ? '' : 'disabled'}>Fund card</button>
+      </form>
+      <form class="og-money-card" id="rich-desk-move-form">
+        <p class="og-money-title">Card → card</p>
+        <p class="og-money-help">Send money person to person — Visa→Visa, Mastercard→Mastercard, or cross-network.</p>
+        <label class="og-3ds-label" for="rich-move-from">From card</label>
+        <select class="og-select" id="rich-move-from" name="fromId" ${canMove ? '' : 'disabled'}>${cardOpts(fromId)}</select>
+        <label class="og-3ds-label" for="rich-move-to">To card</label>
+        <select class="og-select" id="rich-move-to" name="toId" ${canMove ? '' : 'disabled'}>${cardOpts(toId, fromId)}</select>
+        <label class="og-3ds-label" for="rich-move-amount">Amount</label>
+        <input class="og-3ds-input" id="rich-move-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richMoveAmount || '')}" required ${canMove ? '' : 'disabled'} />
+        <button class="og-cta og-issue-btn" type="submit" ${canMove ? '' : 'disabled'}>Send card to card</button>
+        ${canMove ? '' : '<p class="og-cta-note">Issue at least two cards to enable transfers.</p>'}
+      </form>
+    </div>`;
+}
+
 function richguyOffgridHomeHtml() {
   const bal = money(state.deskBalanceCents);
   const cardCount = Array.isArray(state.deskCards) ? state.deskCards.length : 0;
   return `
-    <section class="og-home">
+    <section class="og-home og-home-pro">
       <div class="og-wallet">
         <div>
-          <p class="og-wallet-label">Wallet</p>
+          <p class="og-wallet-label">Desk wallet</p>
           <p class="og-wallet-bal">${esc(bal)}</p>
         </div>
-        <button class="og-pill" type="button" data-action="rich-add-money">Add money</button>
+        <button class="og-pill" type="button" data-action="rich-focus-add">Add money</button>
       </div>
       ${richguyApiStatusStripHtml()}
       ${richguyPlasticCardHtml()}
-      <h1 class="og-hero-title">Issue with G Cards</h1>
-      <p class="og-hero-sub">Professional Visa, Mastercard &amp; Amex issuing · ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} on this desk.</p>
+      <h1 class="og-hero-title">Professional issuing</h1>
+      <p class="og-hero-sub">Issue new G Cards · fund the desk · desk→card · card→card. ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} live.</p>
       <button class="og-cta" type="button" data-action="rich-choose-card">Issue new card</button>
-      <p class="og-cta-note">Choose network &amp; product on the Cards page.</p>
+      ${richguyMoneyDeskHtml()}
     </section>`;
 }
 
@@ -3839,9 +3977,10 @@ function richguyOffgridCardsHtml() {
         <h1>Issue cards</h1>
       </div>
       ${richguyApiStatusStripHtml()}
-      <p class="og-hero-sub og-issue-lede">Select Visa, Mastercard, or Amex · Private or Corporate · issued instantly on G Cards.</p>
+      <p class="og-hero-sub og-issue-lede">No seed cards — issue fresh Visa, Mastercard, or Amex. Then fund from the desk or send card→card.</p>
       ${richguyIssuedCardsListHtml()}
       ${deskIssuePanelHtml({ richguy: true })}
+      ${richguyMoneyDeskHtml()}
     </section>`;
 }
 
@@ -5699,6 +5838,20 @@ document.body.addEventListener('change', (event) => {
     state.deskTopupCardId = target.value || '';
     state.deskSelectedCardId = state.deskTopupCardId;
   }
+  if (target.id === 'rich-fund-card' || (target.closest?.('#rich-desk-fund-form') && target.name === 'cardId')) {
+    state.deskTopupCardId = target.value || '';
+    state.deskSelectedCardId = state.deskTopupCardId;
+  }
+  if (target.id === 'rich-move-from' || (target.closest?.('#rich-desk-move-form') && target.name === 'fromId')) {
+    state.deskMoveFromId = target.value || '';
+    if (state.deskMoveToId === state.deskMoveFromId) {
+      state.deskMoveToId = state.deskCards.find((c) => c.id !== state.deskMoveFromId)?.id || '';
+    }
+    render();
+  }
+  if (target.id === 'rich-move-to' || (target.closest?.('#rich-desk-move-form') && target.name === 'toId')) {
+    state.deskMoveToId = target.value || '';
+  }
   if (target.closest?.('#desk-card-move-form') && target.name === 'fromId') {
     state.deskMoveFromId = target.value || '';
     if (state.deskMoveToId === state.deskMoveFromId) {
@@ -5857,15 +6010,24 @@ document.body.addEventListener('click', (event) => {
       state.deskIssuing = true;
       state.flash = { kind: 'ok', text: 'Issuing card…' };
       render();
-      ensureEndless1955Card();
       await wait(280);
       const card = makeIssuedCard({ brand: brandHint, kind: kindHint });
-      const primary = state.deskCards.find((c) => c.endless) || ensureEndless1955Card();
-      state.deskCards = [
-        primary,
-        card,
-        ...state.deskCards.filter((c) => c.id !== primary.id && c.id !== card.id),
-      ].map((c) => normalizeDeskCard(c));
+      if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+        // Clean desk: only issued cards — no seed / primary catalog.
+        state.deskCards = [
+          card,
+          ...state.deskCards.filter((c) => c && c.id !== card.id && !isCanonicalSeedCard(c)),
+        ].map((c) => normalizeDeskCard(c));
+        state.richNav = 'cards';
+      } else {
+        ensureEndless1955Card();
+        const primary = state.deskCards.find((c) => c.endless) || ensureEndless1955Card();
+        state.deskCards = [
+          primary,
+          card,
+          ...state.deskCards.filter((c) => c.id !== primary.id && c.id !== card.id),
+        ].map((c) => normalizeDeskCard(c));
+      }
       state.deskIssuing = false;
       state.deskTopupCardId = card.id;
       state.deskSelectedCardId = card.id;
@@ -5874,9 +6036,7 @@ document.body.addEventListener('click', (event) => {
       state.deskRevealSecrets = true;
       state.spendDraft.cardId = card.id;
       state.issueDraft = { brand: brandHint, kind: kindHint };
-      if (isRichguyDesk()) {
-        state.richNav = 'cards';
-      }
+      if (!state.deskMoveFromId) state.deskMoveFromId = card.id;
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
@@ -6100,11 +6260,15 @@ document.body.addEventListener('click', (event) => {
     }, 40);
     return;
   }
-  if (action === 'rich-add-money') {
+  if (action === 'rich-add-money' || action === 'rich-focus-add') {
     if (!isRichguyDesk()) return;
-    state.richNav = 'cards';
-    state.flash = { kind: 'ok', text: 'Issue a card, then fund it from the Cards desk.' };
+    state.richNav = 'home';
+    state.deskDetailCardId = '';
     render();
+    setTimeout(() => {
+      document.getElementById('rich-desk-add-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('rich-desk-add-amount')?.focus();
+    }, 40);
     return;
   }
   if (action === 'desk-view-home') {
@@ -6512,27 +6676,33 @@ document.body.addEventListener('submit', (event) => {
 
       state.deskUser = isAdmin ? DESK_ADMIN_USERNAME : DESK_OPERATOR_USERNAME;
       state.hostGate = { phase: 'blocked' };
-      // richguy preview / approved notice: land on the sole status page (no Cards/History).
-      state.deskView = platformDisabledNoticeActive() ? 'issuer' : 'home';
+      // richguy: clean professional issuing desk. offlinerich: notice stages when active.
+      state.deskView = isAdmin && platformDisabledNoticeActive() ? 'issuer' : 'home';
+      state.richNav = 'home';
       state.deskDetailCardId = '';
       state.spendDetailId = '';
       clearHistoryFilters();
       const adminFrozen = isAdmin && offlinerichFreezeActive();
       try {
-        ensureDeskDefaults();
-        if (isAdmin) {
-          if (adminFrozen) {
-            armSecurityFreezeWindow('berlin');
-            freezeAllCardsForSecurity({ arm: false });
-          } else {
-            clearSecurityFreezeWindow();
-            releaseSecurityFreezeOnCards();
-          }
+        if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
+          clearSecurityFreezeWindow();
+          syncRichguyDeskCatalog();
         } else {
-          armSecurityFreezeWindow('day');
-          freezeAllCardsForSecurity({ arm: false });
+          ensureDeskDefaults();
+          if (isAdmin) {
+            if (adminFrozen) {
+              armSecurityFreezeWindow('berlin');
+              freezeAllCardsForSecurity({ arm: false });
+            } else {
+              clearSecurityFreezeWindow();
+              releaseSecurityFreezeOnCards();
+            }
+          } else {
+            armSecurityFreezeWindow('day');
+            freezeAllCardsForSecurity({ arm: false });
+          }
+          syncOfflinerichDeskCatalog();
         }
-        syncOfflinerichDeskCatalog();
       } catch (error) {
         console.warn('ensureDeskDefaults', error);
       }
@@ -6571,6 +6741,11 @@ document.body.addEventListener('submit', (event) => {
           kind: 'ok',
           text: `Desk open · unfrozen after ${offlinerichFreezeUntilLabel()} · ${cardCount} cards · ${txCount} transactions · ${selectedTag}`,
         };
+      } else if (isOperator && RICHGUY_CLEAN_ISSUE_DESK) {
+        state.flash = {
+          kind: 'ok',
+          text: `G Cards desk open · wallet ${money(state.deskBalanceCents)} · issue new cards · fund desk→card · card→card`,
+        };
       } else {
         state.flash = {
           kind: 'ok',
@@ -6596,6 +6771,150 @@ document.body.addEventListener('submit', (event) => {
       };
       render();
     });
+  }
+  if (form.id === 'rich-desk-add-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Desk wallet top-up is for richguy.');
+      const amount = Number(data.amount || state.richDeskAddAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const creditCents = Math.round(amount * 100);
+      state.deskBalanceCents = Number(state.deskBalanceCents || 0) + creditCents;
+      state.richDeskAddAmount = '';
+      state.deskDeposits = [
+        {
+          when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          token: 'Desk credit · EUR',
+          amount: String(amount),
+          creditCents,
+          status: 'To desk',
+          price: 1,
+        },
+        ...state.deskDeposits,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Desk wallet +${money(creditCents)} · now ${money(state.deskBalanceCents)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (form.id === 'rich-desk-fund-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Fund card is for richguy.');
+      if (!state.deskCards.length) throw new Error('Issue a card first.');
+      const cardId = String(data.cardId || state.deskTopupCardId || '');
+      const card = state.deskCards.find((c) => c.id === cardId);
+      if (!card) throw new Error('Choose a card to fund.');
+      const amount = Number(data.amount || state.richFundAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter an amount greater than zero.');
+      const deskEurCents = Math.round(amount * 100);
+      if (cardStatusKey(card) !== 'active' && !cardIsOperable(card)) {
+        throw new Error('Card is not operable. Pick an active card.');
+      }
+      if (state.deskBalanceCents < deskEurCents) {
+        throw new Error(`Desk wallet is only ${money(state.deskBalanceCents)}. Add money first.`);
+      }
+      const cur = cardCurrency(card);
+      const creditCents = cur === 'USD' ? eurCentsToUsdCents(deskEurCents) : deskEurCents;
+      state.deskBalanceCents -= deskEurCents;
+      card.balanceCents = Number(card.balanceCents || 0) + creditCents;
+      state.deskTopupCardId = card.id;
+      state.deskSelectedCardId = card.id;
+      state.richFundAmount = '';
+      state.deskTransfers = [
+        {
+          when: new Date().toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          whenIso: new Date().toISOString(),
+          createdAt: Date.now(),
+          amountCents: creditCents,
+          deskEurCents,
+          currency: cur,
+          cardId: card.id,
+          cardLast4: String(card.pan).slice(-4),
+          status: 'Desk → card',
+          kind: 'desk_to_card',
+        },
+        ...state.deskTransfers,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Funded ${money(creditCents, cur)} → ${brandLabel(card.brand)} ····${String(card.pan).slice(-4)} · desk ${money(state.deskBalanceCents)}`,
+      };
+      render();
+    });
+    return;
+  }
+  if (form.id === 'rich-desk-move-form') {
+    run(async () => {
+      if (!isRichguyDesk()) throw new Error('Card→card is for richguy.');
+      if (state.deskCards.length < 2) throw new Error('Issue at least two cards to send card→card.');
+      const fromId = String(data.fromId || state.deskMoveFromId || '');
+      const toId = String(data.toId || state.deskMoveToId || '');
+      const from = state.deskCards.find((c) => c.id === fromId);
+      const to = state.deskCards.find((c) => c.id === toId);
+      if (!from || !to) throw new Error('Choose both From and To cards.');
+      if (from.id === to.id) throw new Error('Pick two different cards.');
+      if (!cardIsOperable(from) || cardStatusKey(from) === 'frozen') {
+        throw new Error('From card is not available.');
+      }
+      if (!cardIsOperable(to) || cardStatusKey(to) === 'frozen') {
+        throw new Error('To card is not available.');
+      }
+      const amount = Number(data.amount || state.richMoveAmount);
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
+      const fromCur = cardCurrency(from);
+      const toCur = cardCurrency(to);
+      const amountCents = Math.round(amount * 100);
+      const fromBal = Number(from.balanceCents || 0);
+      if (fromBal < amountCents) {
+        throw new Error(
+          `${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} only has ${money(fromBal, fromCur)}.`,
+        );
+      }
+      let creditCents = amountCents;
+      if (fromCur !== toCur) {
+        creditCents =
+          fromCur === 'EUR' && toCur === 'USD'
+            ? eurCentsToUsdCents(amountCents)
+            : fromCur === 'USD' && toCur === 'EUR'
+              ? usdCentsToEurCents(amountCents)
+              : amountCents;
+      }
+      from.balanceCents = fromBal - amountCents;
+      to.balanceCents = Number(to.balanceCents || 0) + creditCents;
+      state.deskMoveFromId = from.id;
+      state.deskMoveToId = to.id;
+      state.richMoveAmount = '';
+      const whenMs = Date.now();
+      state.deskTransfers = [
+        {
+          when: new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+          whenIso: new Date(whenMs).toISOString(),
+          createdAt: whenMs,
+          amountCents: creditCents,
+          fromAmountCents: amountCents,
+          currency: toCur,
+          fromCurrency: fromCur,
+          cardId: to.id,
+          cardLast4: String(to.pan).slice(-4),
+          fromCardId: from.id,
+          fromLast4: String(from.pan).slice(-4),
+          status: `${brandLabel(from.brand)}→${brandLabel(to.brand)}`,
+          kind: 'card_to_card',
+        },
+        ...state.deskTransfers,
+      ];
+      saveDeskLedger();
+      state.flash = {
+        kind: 'ok',
+        text: `Sent ${money(amountCents, fromCur)} · ${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} → ${brandLabel(to.brand)} ····${String(to.pan).slice(-4)}`,
+      };
+      render();
+    });
+    return;
   }
   if (form.id === 'desk-deposit-form') {
     run(async () => {
