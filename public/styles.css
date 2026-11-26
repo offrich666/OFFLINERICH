@@ -2188,3 +2188,68 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   }
   .og-main { padding: 4px 14px 24px; }
 }
+
+.og-3ds-card {
+  padding: 0;
+}
+.og-3ds-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 10px;
+}
+.og-3ds-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 16px;
+}
+.og-3ds-label {
+  margin: 4px 0 0;
+  color: var(--og-muted, #9a9a9a);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.og-3ds-methods {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.og-3ds-method {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1c1c1c;
+  color: #d8d8d8;
+  border-radius: 12px;
+  padding: 11px 10px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.og-3ds-method.on {
+  background: #2f2f2f;
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.28);
+}
+.og-3ds-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #111;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font: inherit;
+  font-size: 1.15rem;
+  letter-spacing: 0.28em;
+  text-align: center;
+}
+.og-3ds-input:focus {
+  outline: 2px solid rgba(255, 255, 255, 0.22);
+  outline-offset: 1px;
+}
+.og-3ds-submit {
+  margin-top: 6px;
+  width: 100%;
+}
