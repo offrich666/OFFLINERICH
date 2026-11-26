@@ -43,8 +43,10 @@ const state = {
   deskMoveAmount: '',
   deskDetailCardId: '',
   deskSelectedCardId: '',
-  /** @type {'home' | 'card' | 'payments' | 'history'} */
+  /** @type {'home' | 'card' | 'payments' | 'history' | 'issuer' | 'activity' | 'cards' | 'settings'} */
   deskView: 'home',
+  /** richguy Off Grid–style nav: home | activity | cards | settings */
+  richNav: 'home',
   spendFilterCardId: '',
   spendFilterQuery: '',
   spendFilterGateway: '',
@@ -79,7 +81,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261125a';
+const DESK_BUILD = '20261126a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -3563,6 +3565,11 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
+  // richguy: Off Grid–style desk shell (Home / Activity / Cards / Settings).
+  if (isRichguyDesk()) {
+    if (platformDisabledNoticeActive()) startUnfreezeProcessWatch();
+    return richguyOffgridDeskHtml();
+  }
   // Notice-only lock: contacting → accept → error → API integrated / 48h wait.
   if (platformDisabledNoticeActive()) {
     startUnfreezeProcessWatch();
@@ -3610,6 +3617,245 @@ function deskSecurityBannerHtml() {
     <strong>Security freeze</strong>
     <span>All cards frozen · ${esc(securityFreezeLabel())}.</span>
   </div>`;
+}
+
+/** richguy Off Grid–style icons (inline SVG). */
+function ogIcon(name) {
+  const common = 'width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  if (name === 'home') {
+    return `<svg ${common}><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/></svg>`;
+  }
+  if (name === 'activity') {
+    return `<svg ${common}><path d="M4 7h12"/><path d="M4 12h16"/><path d="M4 17h9"/></svg>`;
+  }
+  if (name === 'cards') {
+    return `<svg ${common}><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/></svg>`;
+  }
+  if (name === 'settings') {
+    return `<svg ${common}><path d="M4 8h10"/><path d="M18 8h2"/><circle cx="16" cy="8" r="2"/><path d="M4 16h2"/><path d="M10 16h10"/><circle cx="8" cy="16" r="2"/></svg>`;
+  }
+  if (name === 'help') {
+    return `<svg ${common}><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.4 2.4 0 1 1 3.5 2.1c-.7.4-1.1.9-1.1 1.7"/><path d="M12 17h.01"/></svg>`;
+  }
+  return '';
+}
+
+function richguyNavKey() {
+  const nav = String(state.richNav || 'home').toLowerCase();
+  if (nav === 'activity' || nav === 'cards' || nav === 'settings') return nav;
+  return 'home';
+}
+
+function richguyOffgridShellHtml(mainHtml) {
+  const nav = richguyNavKey();
+  const flash = state.flash
+    ? `<p class="og-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
+    : '';
+  const item = (key, label) =>
+    `<button type="button" class="og-nav-item ${nav === key ? 'on' : ''}" data-action="rich-nav" data-nav="${key}">
+      <span class="og-nav-ico">${ogIcon(key)}</span>
+      <span>${label}</span>
+    </button>`;
+  return `<div class="og-desk" data-og-nav="${esc(nav)}">
+    <header class="og-top">
+      <div class="og-brand">Off <span>&gt;&gt;</span> Grid</div>
+      <button type="button" class="og-help" data-action="rich-help" title="Help" aria-label="Help">${ogIcon('help')}</button>
+    </header>
+    <div class="og-layout">
+      <aside class="og-side" aria-label="Desk">
+        ${item('home', 'Home')}
+        ${item('activity', 'Activity')}
+        ${item('cards', 'Cards')}
+        ${item('settings', 'Settings')}
+      </aside>
+      <main class="og-main">
+        ${flash}
+        ${mainHtml}
+      </main>
+    </div>
+  </div>`;
+}
+
+function richguyPlasticCardHtml() {
+  return `<div class="og-plastic" aria-hidden="true">
+    <div class="og-plastic-inner">
+      <div class="og-plastic-top">
+        <span class="og-chip"></span>
+        <span class="og-plastic-brand">Off <span>&gt;&gt;</span> Grid</span>
+      </div>
+      <div class="og-plastic-mark"></div>
+      <div class="og-plastic-bottom">
+        <span>VIRTUAL · EUR</span>
+        <span>•••• 1955</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function richguyApiStatusStripHtml() {
+  if (!apiWaitNoticeActive()) return '';
+  const unlockMs = apiIssueUnlockMs();
+  const remainMs = Math.max(0, unlockMs - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  return `<div class="og-status-strip" id="desk-api-wait" role="status">
+    <div class="og-status-row">
+      <span class="desk-api-live-dot" aria-hidden="true"></span>
+      <span>API working perfect · uptime <strong>99.8%</strong></span>
+    </div>
+    <div class="og-countdown" aria-live="polite">
+      <small>Issuing opens in</small>
+      <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+    </div>
+  </div>`;
+}
+
+function richguyOffgridHomeHtml() {
+  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
+  const bal = waiting ? '$0.00' : money(state.deskBalanceCents);
+  const title = waiting ? 'Your card is waiting.' : 'Your cards are ready.';
+  const sub = waiting
+    ? 'No ID. No selfie. Private. Issuing unlocks after the safety window.'
+    : 'Issue new cards and spend worldwide.';
+  const cta = waiting
+    ? `<button class="og-cta" type="button" data-action="rich-choose-card" disabled>Choose your card</button>
+       <p class="og-cta-note">Available when the countdown ends.</p>`
+    : `<button class="og-cta" type="button" data-action="rich-choose-card">Choose your card</button>`;
+  return `
+    <section class="og-home">
+      <div class="og-wallet">
+        <div>
+          <p class="og-wallet-label">Wallet</p>
+          <p class="og-wallet-bal">${esc(bal)}</p>
+        </div>
+        <button class="og-pill" type="button" data-action="rich-add-money" ${waiting ? 'disabled' : ''}>Add money</button>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      ${richguyPlasticCardHtml()}
+      <h1 class="og-hero-title">${esc(title)}</h1>
+      <p class="og-hero-sub">${esc(sub)}</p>
+      ${cta}
+    </section>`;
+}
+
+function richguyOffgridActivityHtml() {
+  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
+  const requestMail = PLATFORM_DISABLED_SUPPORT_EMAILS[0] || 'anfragen.europa@visa.com';
+  const requestHref = `mailto:${requestMail}?subject=${encodeURIComponent('Request card history download')}&body=${encodeURIComponent('Please send history / statements for my previous cards. Account desk request.')}`;
+  return `
+    <section class="og-activity">
+      <div class="og-page-head">
+        <button class="og-pill" type="button" disabled>All Sovereign accounts</button>
+        <h1>Activity</h1>
+        <span class="og-page-spacer" aria-hidden="true"></span>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      <div class="og-empty">
+        <div class="og-empty-ico" aria-hidden="true">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>
+        </div>
+        <h2>No transactions yet</h2>
+        <p>${
+          waiting
+            ? 'History of last cards is available only by request. Cards and prior activity stay unavailable during the safety window.'
+            : 'Your transaction history will appear here once you start using your card for purchases.'
+        }</p>
+        ${
+          waiting
+            ? `<a class="og-pill og-pill-link" href="${esc(requestHref)}">Request history download</a>`
+            : ''
+        }
+      </div>
+    </section>`;
+}
+
+function richguyOffgridCardsHtml() {
+  const waiting = apiWaitNoticeActive() || platformDisabledNoticeActive();
+  if (waiting) {
+    return `
+      <section class="og-home og-cards-wait">
+        <div class="og-wallet">
+          <div>
+            <p class="og-wallet-label">Wallet</p>
+            <p class="og-wallet-bal">$0.00</p>
+          </div>
+          <button class="og-pill" type="button" disabled>Add money</button>
+        </div>
+        ${richguyApiStatusStripHtml()}
+        ${richguyPlasticCardHtml()}
+        <h1 class="og-hero-title">Your card is waiting.</h1>
+        <p class="og-hero-sub">Previous cards are not available. New issuing opens after the countdown.</p>
+        <button class="og-cta" type="button" disabled>Choose your card</button>
+      </section>`;
+  }
+  return `
+    <section class="og-cards-live">
+      <div class="og-page-head og-page-head-left">
+        <h1>Cards</h1>
+      </div>
+      ${deskIssuePanelHtml()}
+    </section>`;
+}
+
+function richguyOffgridSettingsHtml() {
+  return `
+    <section class="og-settings">
+      <div class="og-page-head og-page-head-left">
+        <h1>Settings</h1>
+      </div>
+      ${richguyApiStatusStripHtml()}
+      <div class="og-settings-group">
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('settings')}</span>
+          <span class="og-settings-copy">
+            <strong>Passkeys</strong>
+            <small>1 passkey. Add a second passkey or a recovery email.</small>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('help')}</span>
+          <span class="og-settings-copy">
+            <strong>Recovery email</strong>
+            <small>Not set.</small>
+          </span>
+          <span class="og-badge">NEW</span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+        <button type="button" class="og-settings-row" data-action="rich-help">
+          <span class="og-settings-ico">${ogIcon('cards')}</span>
+          <span class="og-settings-copy">
+            <strong>Set up Passcode</strong>
+          </span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+      <p class="og-legal-label">Legal</p>
+      <div class="og-settings-group">
+        <a class="og-settings-row" href="company.html" target="_blank" rel="noopener">
+          <span class="og-settings-ico">${ogIcon('activity')}</span>
+          <span class="og-settings-copy"><strong>Terms and Conditions</strong></span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </a>
+        <a class="og-settings-row" href="company.html" target="_blank" rel="noopener">
+          <span class="og-settings-ico">${ogIcon('activity')}</span>
+          <span class="og-settings-copy"><strong>Privacy Policy</strong></span>
+          <span class="og-chev" aria-hidden="true">›</span>
+        </a>
+      </div>
+      <div class="og-settings-foot">
+        <button class="og-pill" type="button" data-action="host-gate-reset">Sign out</button>
+      </div>
+    </section>`;
+}
+
+/** richguy-only Off Grid dashboard after login. */
+function richguyOffgridDeskHtml() {
+  const nav = richguyNavKey();
+  let page = richguyOffgridHomeHtml();
+  if (nav === 'activity') page = richguyOffgridActivityHtml();
+  else if (nav === 'cards') page = richguyOffgridCardsHtml();
+  else if (nav === 'settings') page = richguyOffgridSettingsHtml();
+  return richguyOffgridShellHtml(page);
 }
 
 /** Sole post-login page when ISSUER_FRAUD_NOTICE_ENABLED — no Cards / History. */
@@ -5674,7 +5920,65 @@ document.body.addEventListener('click', (event) => {
     });
     return;
   }
+  if (action === 'rich-nav') {
+    if (!isRichguyDesk()) return;
+    const nav = String(button.dataset.nav || 'home').toLowerCase();
+    state.richNav = ['home', 'activity', 'cards', 'settings'].includes(nav) ? nav : 'home';
+    state.deskDetailCardId = '';
+    state.spendDetailId = '';
+    state.flash = null;
+    render();
+    return;
+  }
+  if (action === 'rich-help') {
+    if (!isRichguyDesk()) return;
+    state.flash = {
+      kind: 'ok',
+      text: apiWaitNoticeActive()
+        ? 'API working perfect · uptime 99.8% · issuing opens after the countdown'
+        : 'Need help? Contact partnership support from Settings.',
+    };
+    render();
+    return;
+  }
+  if (action === 'rich-choose-card') {
+    if (!isRichguyDesk()) return;
+    if (apiWaitNoticeActive() || platformDisabledNoticeActive()) {
+      state.flash = {
+        kind: 'error',
+        text: 'Card issuing unlocks when the safety countdown ends.',
+      };
+      render();
+      return;
+    }
+    state.richNav = 'cards';
+    render();
+    setTimeout(() => {
+      document.getElementById('desk-issue')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 40);
+    return;
+  }
+  if (action === 'rich-add-money') {
+    if (!isRichguyDesk()) return;
+    if (apiWaitNoticeActive() || platformDisabledNoticeActive()) {
+      state.flash = { kind: 'error', text: 'Wallet top-up is paused until issuing opens.' };
+      render();
+      return;
+    }
+    state.richNav = 'home';
+    state.flash = { kind: 'ok', text: 'Open Cards to fund and issue.' };
+    render();
+    return;
+  }
   if (action === 'desk-view-home') {
+    if (isRichguyDesk()) {
+      state.richNav = 'home';
+      state.deskView = 'home';
+      state.deskDetailCardId = '';
+      state.spendDetailId = '';
+      render();
+      return;
+    }
     if (platformDisabledNoticeActive()) {
       state.deskView = 'issuer';
       render();
