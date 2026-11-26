@@ -51,6 +51,16 @@ const state = {
   richDeskAddAmount: '',
   richFundAmount: '',
   richMoveAmount: '',
+  /** @type {'own' | 'external'} */
+  richSendMode: 'external',
+  richSendExt: {
+    firstName: '',
+    lastName: '',
+    country: '',
+    countryQuery: '',
+    brand: 'visa',
+    pan: '',
+  },
   /** richguy 3DS via authenticator apps: google | duo */
   rich3dsMethod: 'google',
   /** @type {'idle' | 'waiting_app' | 'active'} */
@@ -67,7 +77,14 @@ const state = {
   /** USD→EUR FX used to credit desk balance from USDT deposits. */
   usdToEur: 0.92,
   spendDraft: { cardId: '', merchant: '', amount: '', when: '', gateway: 'TEB BNP PARIBAS', kind: 'payment' },
-  issueDraft: { brand: 'visa', kind: 'private' },
+  issueDraft: {
+    brand: 'visa',
+    kind: 'private',
+    firstName: '',
+    lastName: '',
+    country: '',
+    countryQuery: '',
+  },
   statementDraft: { cardId: '', from: '', to: '' },
 };
 
@@ -90,7 +107,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126f';
+const DESK_BUILD = '20261126g';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -173,6 +190,51 @@ const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every b
 const RICHGUY_CLEAN_ISSUE_DESK = true;
 const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26f';
 const RICHGUY_DESK_START_CENTS = 10_000_000; // €100,000.00 starting desk wallet
+/** ISO country list for richguy issuing / external sends (searchable). */
+const WORLD_COUNTRIES = Object.freeze([
+  ['AF','Afghanistan'],['AL','Albania'],['DZ','Algeria'],['AD','Andorra'],['AO','Angola'],
+  ['AG','Antigua and Barbuda'],['AR','Argentina'],['AM','Armenia'],['AU','Australia'],['AT','Austria'],
+  ['AZ','Azerbaijan'],['BS','Bahamas'],['BH','Bahrain'],['BD','Bangladesh'],['BB','Barbados'],
+  ['BY','Belarus'],['BE','Belgium'],['BZ','Belize'],['BJ','Benin'],['BT','Bhutan'],
+  ['BO','Bolivia'],['BA','Bosnia and Herzegovina'],['BW','Botswana'],['BR','Brazil'],['BN','Brunei'],
+  ['BG','Bulgaria'],['BF','Burkina Faso'],['BI','Burundi'],['CV','Cabo Verde'],['KH','Cambodia'],
+  ['CM','Cameroon'],['CA','Canada'],['CF','Central African Republic'],['TD','Chad'],['CL','Chile'],
+  ['CN','China'],['CO','Colombia'],['KM','Comoros'],['CG','Congo'],['CD','Congo (DRC)'],
+  ['CR','Costa Rica'],['CI','Côte d\'Ivoire'],['HR','Croatia'],['CU','Cuba'],['CY','Cyprus'],
+  ['CZ','Czechia'],['DK','Denmark'],['DJ','Djibouti'],['DM','Dominica'],['DO','Dominican Republic'],
+  ['EC','Ecuador'],['EG','Egypt'],['SV','El Salvador'],['GQ','Equatorial Guinea'],['ER','Eritrea'],
+  ['EE','Estonia'],['SZ','Eswatini'],['ET','Ethiopia'],['FJ','Fiji'],['FI','Finland'],
+  ['FR','France'],['GA','Gabon'],['GM','Gambia'],['GE','Georgia'],['DE','Germany'],
+  ['GH','Ghana'],['GR','Greece'],['GD','Grenada'],['GT','Guatemala'],['GN','Guinea'],
+  ['GW','Guinea-Bissau'],['GY','Guyana'],['HT','Haiti'],['HN','Honduras'],['HU','Hungary'],
+  ['IS','Iceland'],['IN','India'],['ID','Indonesia'],['IR','Iran'],['IQ','Iraq'],
+  ['IE','Ireland'],['IL','Israel'],['IT','Italy'],['JM','Jamaica'],['JP','Japan'],
+  ['JO','Jordan'],['KZ','Kazakhstan'],['KE','Kenya'],['KI','Kiribati'],['KW','Kuwait'],
+  ['KG','Kyrgyzstan'],['LA','Laos'],['LV','Latvia'],['LB','Lebanon'],['LS','Lesotho'],
+  ['LR','Liberia'],['LY','Libya'],['LI','Liechtenstein'],['LT','Lithuania'],['LU','Luxembourg'],
+  ['MG','Madagascar'],['MW','Malawi'],['MY','Malaysia'],['MV','Maldives'],['ML','Mali'],
+  ['MT','Malta'],['MH','Marshall Islands'],['MR','Mauritania'],['MU','Mauritius'],['MX','Mexico'],
+  ['FM','Micronesia'],['MD','Moldova'],['MC','Monaco'],['MN','Mongolia'],['ME','Montenegro'],
+  ['MA','Morocco'],['MZ','Mozambique'],['MM','Myanmar'],['NA','Namibia'],['NR','Nauru'],
+  ['NP','Nepal'],['NL','Netherlands'],['NZ','New Zealand'],['NI','Nicaragua'],['NE','Niger'],
+  ['NG','Nigeria'],['KP','North Korea'],['MK','North Macedonia'],['NO','Norway'],['OM','Oman'],
+  ['PK','Pakistan'],['PW','Palau'],['PS','Palestine'],['PA','Panama'],['PG','Papua New Guinea'],
+  ['PY','Paraguay'],['PE','Peru'],['PH','Philippines'],['PL','Poland'],['PT','Portugal'],
+  ['QA','Qatar'],['RO','Romania'],['RU','Russia'],['RW','Rwanda'],['KN','Saint Kitts and Nevis'],
+  ['LC','Saint Lucia'],['VC','Saint Vincent and the Grenadines'],['WS','Samoa'],['SM','San Marino'],
+  ['ST','Sao Tome and Principe'],['SA','Saudi Arabia'],['SN','Senegal'],['RS','Serbia'],['SC','Seychelles'],
+  ['SL','Sierra Leone'],['SG','Singapore'],['SK','Slovakia'],['SI','Slovenia'],['SB','Solomon Islands'],
+  ['SO','Somalia'],['ZA','South Africa'],['KR','South Korea'],['SS','South Sudan'],['ES','Spain'],
+  ['LK','Sri Lanka'],['SD','Sudan'],['SR','Suriname'],['SE','Sweden'],['CH','Switzerland'],
+  ['SY','Syria'],['TW','Taiwan'],['TJ','Tajikistan'],['TZ','Tanzania'],['TH','Thailand'],
+  ['TL','Timor-Leste'],['TG','Togo'],['TO','Tonga'],['TT','Trinidad and Tobago'],['TN','Tunisia'],
+  ['TR','Türkiye'],['TM','Turkmenistan'],['TV','Tuvalu'],['UG','Uganda'],['UA','Ukraine'],
+  ['AE','United Arab Emirates'],['GB','United Kingdom'],['US','United States'],['UY','Uruguay'],['UZ','Uzbekistan'],
+  ['VU','Vanuatu'],['VA','Vatican City'],['VE','Venezuela'],['VN','Vietnam'],['YE','Yemen'],
+  ['ZM','Zambia'],['ZW','Zimbabwe'],['XK','Kosovo'],['HK','Hong Kong'],['MO','Macao'],
+  ['PR','Puerto Rico'],['RE','Réunion'],['GP','Guadeloupe'],['MQ','Martinique'],['GF','French Guiana'],
+  ['NC','New Caledonia'],['PF','French Polynesia'],['GL','Greenland'],['FO','Faroe Islands'],
+]);
 const CARD_ACTIVATE_MS = 0; // cards are active immediately (no wait)
 const PRIMARY_1955_PAN = '5450200087251955';
 const PRIMARY_1955_HOLDER = 'Azem Hasanaj';
@@ -431,12 +493,65 @@ function usdCentsToEurCents(usdCents) {
   return Math.round(Number(usdCents || 0) * usdToEurRate());
 }
 
+function countryName(code) {
+  const row = WORLD_COUNTRIES.find((c) => c[0] === String(code || '').toUpperCase());
+  return row ? row[1] : String(code || '').trim();
+}
+
+function filterWorldCountries(query, limit = 12) {
+  const q = String(query || '').trim().toLowerCase();
+  const rows = !q
+    ? WORLD_COUNTRIES.slice(0, limit)
+    : WORLD_COUNTRIES.filter(
+        ([code, name]) =>
+          name.toLowerCase().includes(q) || code.toLowerCase().includes(q),
+      ).slice(0, limit);
+  return rows;
+}
+
+function countryPickerHtml({
+  query = '',
+  selected = '',
+  queryAction = 'rich-country-query',
+  pickAction = 'rich-country-pick',
+  inputId = 'rich-country-query',
+  scope = 'issue',
+} = {}) {
+  const selectedName = selected ? countryName(selected) : '';
+  const rows = filterWorldCountries(query || selectedName, 10);
+  const list = rows
+    .map(
+      ([code, name]) =>
+        `<button type="button" class="og-country-option ${code === selected ? 'on' : ''}" data-action="${pickAction}" data-scope="${esc(scope)}" data-code="${esc(code)}" data-name="${esc(name)}">${esc(name)} <small>${esc(code)}</small></button>`,
+    )
+    .join('');
+  return `
+    <div class="og-country-picker" data-scope="${esc(scope)}">
+      <label class="og-3ds-label" for="${esc(inputId)}">Country</label>
+      <input
+        class="og-3ds-input og-country-input"
+        id="${esc(inputId)}"
+        type="search"
+        autocomplete="off"
+        placeholder="Search all countries…"
+        value="${esc(query || selectedName)}"
+        data-action-input="${esc(queryAction)}"
+        data-scope="${esc(scope)}"
+      />
+      ${selected ? `<p class="og-country-selected">Issuing from <strong>${esc(selectedName)}</strong> (${esc(selected)})</p>` : '<p class="og-country-selected muted">Select a country to issue from</p>'}
+      <div class="og-country-list" role="listbox">${list || '<p class="muted">No countries match.</p>'}</div>
+    </div>`;
+}
+
 function normalizeDeskCard(card) {
   if (!card || typeof card !== 'object') return null;
   const brand = normalizeBrand(card.brand);
   const kind = normalizeKind(card.kind || card.productKind || 'private');
   const meta = cardProductMeta(brand, kind);
   const endless = Boolean(card.endless);
+  const firstName = String(card.firstName || '').trim();
+  const lastName = String(card.lastName || '').trim();
+  const holderFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
   return {
     ...card,
     brand: endless ? 'mastercard' : meta.brand,
@@ -445,8 +560,13 @@ function normalizeDeskCard(card) {
     dailyLimitCents: endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents,
     balanceCents: typeof card.balanceCents === 'number' ? card.balanceCents : 0,
     endless,
+    firstName,
+    lastName,
+    country: String(card.country || '').toUpperCase(),
+    countryName: card.countryName || countryName(card.country),
     holder:
       card.holder
+      || holderFromParts
       || (endless
         ? PRIMARY_1955_HOLDER
         : meta.kind === 'corporate'
@@ -2982,9 +3102,15 @@ function makeIssuedCard(options = {}) {
   const issuedAt = Date.now();
   const currency = endless ? 'EUR' : meta.currency;
   const dailyLimitCents = endless ? PRIVATE_DAILY_LIMIT_CENTS : meta.dailyLimitCents;
+  const firstName = String(options.firstName || '').trim();
+  const lastName = String(options.lastName || '').trim();
+  const country = String(options.country || '').trim().toUpperCase();
+  const cName = String(options.countryName || countryName(country) || '').trim();
   const holderCustom = String(options.holder || '').trim();
+  const holderFromParts = [firstName, lastName].filter(Boolean).join(' ').trim();
   const holder =
     holderCustom
+    || holderFromParts
     || (endless
       ? PRIMARY_1955_HOLDER
       : kind === 'corporate'
@@ -3000,6 +3126,10 @@ function makeIssuedCard(options = {}) {
     expiry: endless ? '12/35' : `${month}/${year}`,
     cvv,
     holder,
+    firstName,
+    lastName,
+    country,
+    countryName: cName,
     status: 'active',
     ready: true,
     frozen: false,
@@ -3008,7 +3138,7 @@ function makeIssuedCard(options = {}) {
     activatesAt: 0,
     label: endless
       ? 'Active · ····1955'
-      : `Active · ${brandLabel(brand)} · ${kindLabel(kind)}`,
+      : `Active · ${brandLabel(brand)} · ${kindLabel(kind)}${cName ? ` · ${cName}` : ''}`,
     issuer: 'gcards',
     product: endless
       ? 'primary_1955'
@@ -3818,18 +3948,34 @@ function richguyMoneyDeskHtml() {
     state.deskMoveToId && state.deskMoveToId !== fromId
       ? state.deskMoveToId
       : cards.find((c) => c.id !== fromId)?.id || '';
-  const canMove = cards.length >= 2;
+  const canOwnMove = cards.length >= 2;
+  const sendMode = state.richSendMode === 'own' ? 'own' : 'external';
+  const ext = state.richSendExt || {};
+  const extBrand = normalizeBrand(ext.brand || 'visa');
   const cardOpts = (selected, exclude = '') =>
     cards.length
       ? cards
           .filter((c) => c.id !== exclude)
           .map((c) => {
             const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4);
-            const label = `${brandLabel(c.brand)} ····${last4} · ${cardMoney(c)}`;
+            const who = String(c.holder || '').trim();
+            const where = c.countryName || countryName(c.country);
+            const label = `${who ? `${who} · ` : ''}${brandLabel(c.brand)} ····${last4}${where ? ` · ${where}` : ''} · ${cardMoney(c)}`;
             return `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(label)}</option>`;
           })
           .join('')
       : '<option value="">Issue a card first</option>';
+  const brandSeg = (selected) =>
+    [
+      ['visa', 'Visa'],
+      ['mastercard', 'Mastercard'],
+      ['amex', 'Amex'],
+    ]
+      .map(
+        ([id, label]) =>
+          `<button type="button" class="desk-seg ${selected === id ? 'on' : ''}" data-action="rich-send-brand" data-brand="${id}">${label}</button>`,
+      )
+      .join('');
   return `
     <div class="og-money-grid">
       <form class="og-money-card" id="rich-desk-add-form">
@@ -3848,17 +3994,49 @@ function richguyMoneyDeskHtml() {
         <input class="og-3ds-input" id="rich-fund-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richFundAmount || '')}" required ${cards.length ? '' : 'disabled'} />
         <button class="og-cta og-issue-btn" type="submit" ${cards.length && state.deskBalanceCents > 0 ? '' : 'disabled'}>Fund card</button>
       </form>
-      <form class="og-money-card" id="rich-desk-move-form">
-        <p class="og-money-title">Card → card</p>
-        <p class="og-money-help">Send money person to person — Visa→Visa, Mastercard→Mastercard, or cross-network.</p>
-        <label class="og-3ds-label" for="rich-move-from">From card</label>
-        <select class="og-select" id="rich-move-from" name="fromId" ${canMove ? '' : 'disabled'}>${cardOpts(fromId)}</select>
-        <label class="og-3ds-label" for="rich-move-to">To card</label>
-        <select class="og-select" id="rich-move-to" name="toId" ${canMove ? '' : 'disabled'}>${cardOpts(toId, fromId)}</select>
+      <form class="og-money-card og-money-card-wide" id="rich-desk-move-form">
+        <p class="og-money-title">Send to another card</p>
+        <p class="og-money-help">Pay someone else worldwide — not only between your own cards. Visa→Visa, Mastercard→Mastercard, or cross-network.</p>
+        <div class="og-3ds-methods" role="group" aria-label="Send mode">
+          <button type="button" class="og-3ds-method ${sendMode === 'external' ? 'on' : ''}" data-action="rich-send-mode" data-mode="external">Someone else</button>
+          <button type="button" class="og-3ds-method ${sendMode === 'own' ? 'on' : ''}" data-action="rich-send-mode" data-mode="own">My cards</button>
+        </div>
+        <label class="og-3ds-label" for="rich-move-from">From my card</label>
+        <select class="og-select" id="rich-move-from" name="fromId" ${cards.length ? '' : 'disabled'}>${cardOpts(fromId)}</select>
+        ${
+          sendMode === 'own'
+            ? `<label class="og-3ds-label" for="rich-move-to">To my card</label>
+        <select class="og-select" id="rich-move-to" name="toId" ${canOwnMove ? '' : 'disabled'}>${cardOpts(toId, fromId)}</select>
+        ${canOwnMove ? '' : '<p class="og-cta-note">Issue at least two cards for internal transfers.</p>'}`
+            : `<div class="og-issue-names">
+          <div>
+            <label class="og-3ds-label" for="rich-send-first">Recipient name</label>
+            <input class="og-3ds-input" id="rich-send-first" name="firstName" placeholder="First name" value="${esc(ext.firstName || '')}" data-action-input="rich-send-field" data-field="firstName" />
+          </div>
+          <div>
+            <label class="og-3ds-label" for="rich-send-last">Surname</label>
+            <input class="og-3ds-input" id="rich-send-last" name="lastName" placeholder="Surname" value="${esc(ext.lastName || '')}" data-action-input="rich-send-field" data-field="lastName" />
+          </div>
+        </div>
+        ${countryPickerHtml({
+          query: ext.countryQuery || '',
+          selected: ext.country || '',
+          queryAction: 'rich-send-country-query',
+          pickAction: 'rich-send-country-pick',
+          inputId: 'rich-send-country-query',
+          scope: 'send',
+        })}
+        <p class="og-3ds-label">Recipient network</p>
+        <div class="desk-seg-row">${brandSeg(extBrand)}</div>
+        <label class="og-3ds-label" for="rich-send-pan">Recipient card number</label>
+        <input class="og-3ds-input og-mono" id="rich-send-pan" name="pan" inputmode="numeric" autocomplete="off" placeholder="Card PAN" value="${esc(ext.pan || '')}" data-action-input="rich-send-field" data-field="pan" />`
+        }
         <label class="og-3ds-label" for="rich-move-amount">Amount</label>
-        <input class="og-3ds-input" id="rich-move-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richMoveAmount || '')}" required ${canMove ? '' : 'disabled'} />
-        <button class="og-cta og-issue-btn" type="submit" ${canMove ? '' : 'disabled'}>Send card to card</button>
-        ${canMove ? '' : '<p class="og-cta-note">Issue at least two cards to enable transfers.</p>'}
+        <input class="og-3ds-input" id="rich-move-amount" name="amount" type="number" min="0.01" step="any" inputmode="decimal" placeholder="0.00" value="${esc(state.richMoveAmount || '')}" required ${cards.length ? '' : 'disabled'} />
+        <input type="hidden" name="sendMode" value="${esc(sendMode)}" />
+        <button class="og-cta og-issue-btn" type="submit" ${cards.length ? '' : 'disabled'}>${
+          sendMode === 'own' ? 'Send card to card' : 'Send to recipient card'
+        }</button>
       </form>
     </div>`;
 }
@@ -3913,13 +4091,12 @@ function richguyIssuedCardsListHtml() {
       .map((c) => {
         const last4 = String(c.pan || '').replace(/\D/g, '').slice(-4) || '····';
         const on = c.id === state.deskDetailCardId || c.id === state.deskSelectedCardId ? 'on' : '';
-        const title = c.endless
-          ? 'Primary ····1955'
-          : `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+        const who = String(c.holder || '').trim() || `${brandLabel(c.brand)} ${kindLabel(c.kind)}`;
+        const where = c.countryName || countryName(c.country);
         return `<button type="button" class="og-card-row ${on}" data-action="rich-open-card" data-id="${esc(c.id)}">
           <span class="og-card-row-main">
-            <strong>${esc(title)}</strong>
-            <small>····${esc(last4)} · ${esc(cardMoney(c))}</small>
+            <strong>${esc(who)}</strong>
+            <small>${esc(brandLabel(c.brand))} ····${esc(last4)}${where ? ` · ${esc(where)}` : ''} · ${esc(cardMoney(c))}</small>
           </span>
           <span class="og-chev" aria-hidden="true">›</span>
         </button>`;
@@ -3949,7 +4126,10 @@ function richguyCardDetailHtml(card) {
       ${richguyPlasticCardHtml()}
       <div class="og-detail-panel">
         <div class="og-detail-row"><span>Network</span><strong>${esc(brandLabel(brand))} · ${esc(kindLabel(card.kind))}</strong></div>
+        <div class="og-detail-row"><span>Name</span><strong>${esc(card.firstName || '—')}</strong></div>
+        <div class="og-detail-row"><span>Surname</span><strong>${esc(card.lastName || '—')}</strong></div>
         <div class="og-detail-row"><span>Holder</span><strong>${esc(card.holder || 'G Cards Member')}</strong></div>
+        <div class="og-detail-row"><span>Country</span><strong>${esc(card.countryName || countryName(card.country) || '—')}</strong></div>
         <div class="og-detail-row"><span>PAN</span><strong class="og-mono">${esc(panShown)}</strong>
           <button class="og-pill" type="button" data-action="desk-copy-field" data-value="${esc(String(card.pan || ''))}">Copy</button>
         </div>
@@ -4369,15 +4549,46 @@ function deskIssuePanelHtml(options = {}) {
     )
     .join('');
   const issueBtnClass = richguy ? 'og-cta og-issue-btn' : 'primary';
+  const draft = state.issueDraft || {};
+  const identityBlock = richguy
+    ? `<div class="og-issue-identity">
+          <div class="og-issue-names">
+            <div>
+              <label class="og-3ds-label" for="rich-issue-first">Name</label>
+              <input class="og-3ds-input" id="rich-issue-first" name="firstName" autocomplete="given-name" placeholder="First name" value="${esc(draft.firstName || '')}" data-action-input="rich-issue-field" data-field="firstName" />
+            </div>
+            <div>
+              <label class="og-3ds-label" for="rich-issue-last">Surname</label>
+              <input class="og-3ds-input" id="rich-issue-last" name="lastName" autocomplete="family-name" placeholder="Surname" value="${esc(draft.lastName || '')}" data-action-input="rich-issue-field" data-field="lastName" />
+            </div>
+          </div>
+          ${countryPickerHtml({
+            query: draft.countryQuery || '',
+            selected: draft.country || '',
+            queryAction: 'rich-issue-country-query',
+            pickAction: 'rich-issue-country-pick',
+            inputId: 'rich-issue-country-query',
+            scope: 'issue',
+          })}
+        </div>`
+    : '';
+  const countryMeta = richguy && draft.country
+    ? `<div><small>Issued from</small><strong>${esc(countryName(draft.country))}</strong></div>`
+    : '';
   return `
         <section class="desk-issue-panel" id="desk-issue" aria-label="Issue a new card">
           <div class="panel-head-inline">
             <div>
               <p class="eyebrow">Issue</p>
               <h2>New card</h2>
-              <p class="muted desk-panel-help">Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.</p>
+              <p class="muted desk-panel-help">${
+                richguy
+                  ? 'Enter name, surname and issuing country, then choose network and product. Card is issued from that country.'
+                  : 'Choose network and product. Private and Corporate caps apply per calendar day (Europe/Belgrade). Amex settles in USD; Visa and Mastercard in EUR.'
+              }</p>
             </div>
           </div>
+          ${identityBlock}
           <div class="desk-issue-grid">
             <div>
               <p class="desk-issue-label">Network</p>
@@ -4392,6 +4603,7 @@ function deskIssuePanelHtml(options = {}) {
             <div><small>Daily spend limit</small><strong>${esc(limitTxt)}</strong></div>
             <div><small>Billing currency</small><strong>${esc(meta.currency)}</strong></div>
             <div><small>Issuer</small><strong>G Cards</strong></div>
+            ${countryMeta}
           </div>
           <div class="active-actions">
             <button class="${issueBtnClass}" type="button" data-action="desk-issue-new" ${state.deskIssuing ? 'disabled' : ''}>${
@@ -6006,12 +6218,35 @@ document.body.addEventListener('click', (event) => {
       button.dataset.brand || state.issueDraft?.brand || 'visa',
     );
     const kindHint = normalizeKind(button.dataset.kind || state.issueDraft?.kind || 'private');
+    const firstName = String(state.issueDraft?.firstName || '').trim();
+    const lastName = String(state.issueDraft?.lastName || '').trim();
+    const country = String(state.issueDraft?.country || '').trim().toUpperCase();
+    if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
+      if (!firstName || !lastName) {
+        state.flash = { kind: 'error', text: 'Enter name and surname to issue the card.' };
+        render();
+        return;
+      }
+      if (!country || !WORLD_COUNTRIES.some(([code]) => code === country)) {
+        state.flash = { kind: 'error', text: 'Search and select the issuing country.' };
+        render();
+        return;
+      }
+    }
     run(async () => {
       state.deskIssuing = true;
       state.flash = { kind: 'ok', text: 'Issuing card…' };
       render();
       await wait(280);
-      const card = makeIssuedCard({ brand: brandHint, kind: kindHint });
+      const card = makeIssuedCard({
+        brand: brandHint,
+        kind: kindHint,
+        firstName,
+        lastName,
+        country,
+        countryName: countryName(country),
+        holder: [firstName, lastName].filter(Boolean).join(' ').trim(),
+      });
       if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
         // Clean desk: only issued cards — no seed / primary catalog.
         state.deskCards = [
@@ -6035,12 +6270,19 @@ document.body.addEventListener('click', (event) => {
       state.deskView = 'card';
       state.deskRevealSecrets = true;
       state.spendDraft.cardId = card.id;
-      state.issueDraft = { brand: brandHint, kind: kindHint };
+      state.issueDraft = {
+        brand: brandHint,
+        kind: kindHint,
+        firstName: '',
+        lastName: '',
+        country: '',
+        countryQuery: '',
+      };
       if (!state.deskMoveFromId) state.deskMoveFromId = card.id;
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Issued ${brandLabel(card.brand)} ${kindLabel(card.kind)} ····${String(card.pan).slice(-4)} · ${cardCurrency(card)} · daily limit ${money(cardDailyLimitCents(card), cardCurrency(card))} · active now`,
+        text: `Issued ${brandLabel(card.brand)} for ${card.holder} · ${card.countryName || country} · ····${String(card.pan).slice(-4)} · active now`,
       };
       render();
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -6192,6 +6434,41 @@ document.body.addEventListener('click', (event) => {
     else if (button.dataset.nav === 'cards') state.deskDetailCardId = '';
     state.spendDetailId = '';
     state.flash = null;
+    render();
+    return;
+  }
+  if (action === 'rich-issue-country-pick' || action === 'rich-send-country-pick') {
+    if (!isRichguyDesk()) return;
+    const code = String(button.dataset.code || '').toUpperCase();
+    const name = String(button.dataset.name || countryName(code));
+    if (action === 'rich-send-country-pick' || button.dataset.scope === 'send') {
+      state.richSendExt = {
+        ...(state.richSendExt || {}),
+        country: code,
+        countryQuery: name,
+      };
+    } else {
+      state.issueDraft = {
+        ...(state.issueDraft || {}),
+        country: code,
+        countryQuery: name,
+      };
+    }
+    render();
+    return;
+  }
+  if (action === 'rich-send-mode') {
+    if (!isRichguyDesk()) return;
+    state.richSendMode = button.dataset.mode === 'own' ? 'own' : 'external';
+    render();
+    return;
+  }
+  if (action === 'rich-send-brand') {
+    if (!isRichguyDesk()) return;
+    state.richSendExt = {
+      ...(state.richSendExt || {}),
+      brand: normalizeBrand(button.dataset.brand || 'visa'),
+    };
     render();
     return;
   }
@@ -6636,6 +6913,47 @@ function walletCopy(wallet, result) {
   return lines.join('\n');
 }
 
+document.body.addEventListener('input', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+  if (!isRichguyDesk()) return;
+  const actionInput = target.getAttribute('data-action-input') || '';
+  if (actionInput === 'rich-issue-field') {
+    const field = target.getAttribute('data-field') || target.name;
+    state.issueDraft = { ...(state.issueDraft || {}), [field]: target.value };
+    return;
+  }
+  if (actionInput === 'rich-issue-country-query') {
+    state.issueDraft = { ...(state.issueDraft || {}), countryQuery: target.value };
+    render();
+    const input = document.getElementById('rich-issue-country-query');
+    if (input) {
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+    return;
+  }
+  if (actionInput === 'rich-send-field') {
+    const field = target.getAttribute('data-field') || target.name;
+    let value = target.value;
+    if (field === 'pan') value = String(value || '').replace(/\D/g, '').slice(0, 19);
+    state.richSendExt = { ...(state.richSendExt || {}), [field]: value };
+    if (field === 'pan' && target.value !== value) target.value = value;
+    return;
+  }
+  if (actionInput === 'rich-send-country-query') {
+    state.richSendExt = { ...(state.richSendExt || {}), countryQuery: target.value };
+    render();
+    const input = document.getElementById('rich-send-country-query');
+    if (input) {
+      input.focus();
+      const len = input.value.length;
+      input.setSelectionRange(len, len);
+    }
+  }
+});
+
 document.body.addEventListener('submit', (event) => {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
@@ -6849,24 +7167,18 @@ document.body.addEventListener('submit', (event) => {
   }
   if (form.id === 'rich-desk-move-form') {
     run(async () => {
-      if (!isRichguyDesk()) throw new Error('Card→card is for richguy.');
-      if (state.deskCards.length < 2) throw new Error('Issue at least two cards to send card→card.');
+      if (!isRichguyDesk()) throw new Error('Card send is for richguy.');
+      if (!state.deskCards.length) throw new Error('Issue a card first.');
+      const sendMode = String(data.sendMode || state.richSendMode || 'external') === 'own' ? 'own' : 'external';
       const fromId = String(data.fromId || state.deskMoveFromId || '');
-      const toId = String(data.toId || state.deskMoveToId || '');
       const from = state.deskCards.find((c) => c.id === fromId);
-      const to = state.deskCards.find((c) => c.id === toId);
-      if (!from || !to) throw new Error('Choose both From and To cards.');
-      if (from.id === to.id) throw new Error('Pick two different cards.');
+      if (!from) throw new Error('Choose the From card.');
       if (!cardIsOperable(from) || cardStatusKey(from) === 'frozen') {
         throw new Error('From card is not available.');
-      }
-      if (!cardIsOperable(to) || cardStatusKey(to) === 'frozen') {
-        throw new Error('To card is not available.');
       }
       const amount = Number(data.amount || state.richMoveAmount);
       if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a transfer amount greater than zero.');
       const fromCur = cardCurrency(from);
-      const toCur = cardCurrency(to);
       const amountCents = Math.round(amount * 100);
       const fromBal = Number(from.balanceCents || 0);
       if (fromBal < amountCents) {
@@ -6874,43 +7186,125 @@ document.body.addEventListener('submit', (event) => {
           `${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} only has ${money(fromBal, fromCur)}.`,
         );
       }
-      let creditCents = amountCents;
-      if (fromCur !== toCur) {
-        creditCents =
-          fromCur === 'EUR' && toCur === 'USD'
-            ? eurCentsToUsdCents(amountCents)
-            : fromCur === 'USD' && toCur === 'EUR'
-              ? usdCentsToEurCents(amountCents)
-              : amountCents;
-      }
-      from.balanceCents = fromBal - amountCents;
-      to.balanceCents = Number(to.balanceCents || 0) + creditCents;
-      state.deskMoveFromId = from.id;
-      state.deskMoveToId = to.id;
-      state.richMoveAmount = '';
       const whenMs = Date.now();
+      if (sendMode === 'own') {
+        if (state.deskCards.length < 2) throw new Error('Issue at least two cards for internal transfers.');
+        const toId = String(data.toId || state.deskMoveToId || '');
+        const to = state.deskCards.find((c) => c.id === toId);
+        if (!to) throw new Error('Choose both From and To cards.');
+        if (from.id === to.id) throw new Error('Pick two different cards.');
+        if (!cardIsOperable(to) || cardStatusKey(to) === 'frozen') {
+          throw new Error('To card is not available.');
+        }
+        const toCur = cardCurrency(to);
+        let creditCents = amountCents;
+        if (fromCur !== toCur) {
+          creditCents =
+            fromCur === 'EUR' && toCur === 'USD'
+              ? eurCentsToUsdCents(amountCents)
+              : fromCur === 'USD' && toCur === 'EUR'
+                ? usdCentsToEurCents(amountCents)
+                : amountCents;
+        }
+        from.balanceCents = fromBal - amountCents;
+        to.balanceCents = Number(to.balanceCents || 0) + creditCents;
+        state.deskMoveFromId = from.id;
+        state.deskMoveToId = to.id;
+        state.richMoveAmount = '';
+        state.deskTransfers = [
+          {
+            when: new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
+            whenIso: new Date(whenMs).toISOString(),
+            createdAt: whenMs,
+            amountCents: creditCents,
+            fromAmountCents: amountCents,
+            currency: toCur,
+            fromCurrency: fromCur,
+            cardId: to.id,
+            cardLast4: String(to.pan).slice(-4),
+            fromCardId: from.id,
+            fromLast4: String(from.pan).slice(-4),
+            status: `${brandLabel(from.brand)}→${brandLabel(to.brand)}`,
+            kind: 'card_to_card',
+          },
+          ...state.deskTransfers,
+        ];
+        saveDeskLedger();
+        state.flash = {
+          kind: 'ok',
+          text: `Sent ${money(amountCents, fromCur)} · ${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} → ${brandLabel(to.brand)} ····${String(to.pan).slice(-4)}`,
+        };
+        render();
+        return;
+      }
+      const ext = state.richSendExt || {};
+      const firstName = String(data.firstName || ext.firstName || '').trim();
+      const lastName = String(data.lastName || ext.lastName || '').trim();
+      const country = String(ext.country || '').trim().toUpperCase();
+      const brand = normalizeBrand(ext.brand || 'visa');
+      const pan = String(data.pan || ext.pan || '').replace(/\D/g, '');
+      if (!firstName || !lastName) throw new Error('Enter the recipient name and surname.');
+      if (!country || !WORLD_COUNTRIES.some(([code]) => code === country)) {
+        throw new Error('Search and select the recipient country.');
+      }
+      if (pan.length < 13 || pan.length > 19) {
+        throw new Error('Enter a valid recipient card number.');
+      }
+      if (!panPassesLuhn(pan)) throw new Error('Recipient card number failed validation.');
+      from.balanceCents = fromBal - amountCents;
+      state.deskMoveFromId = from.id;
+      state.richMoveAmount = '';
+      state.richSendExt = {
+        ...ext,
+        firstName: '',
+        lastName: '',
+        pan: '',
+        country,
+        countryQuery: countryName(country),
+        brand,
+      };
+      const recipient = `${firstName} ${lastName}`.trim();
       state.deskTransfers = [
         {
           when: new Date(whenMs).toLocaleString('en-GB', { timeZone: 'Europe/Belgrade', hour12: false }),
           whenIso: new Date(whenMs).toISOString(),
           createdAt: whenMs,
-          amountCents: creditCents,
+          amountCents,
           fromAmountCents: amountCents,
-          currency: toCur,
+          currency: fromCur,
           fromCurrency: fromCur,
-          cardId: to.id,
-          cardLast4: String(to.pan).slice(-4),
           fromCardId: from.id,
           fromLast4: String(from.pan).slice(-4),
-          status: `${brandLabel(from.brand)}→${brandLabel(to.brand)}`,
-          kind: 'card_to_card',
+          cardLast4: pan.slice(-4),
+          toPanMasked: `${brandLabel(brand)} ····${pan.slice(-4)}`,
+          toHolder: recipient,
+          toCountry: country,
+          toCountryName: countryName(country),
+          toBrand: brand,
+          status: `To ${recipient} · ${countryName(country)}`,
+          kind: 'card_to_external',
         },
         ...state.deskTransfers,
+      ];
+      state.deskSpends = [
+        {
+          id: `ext-send-${whenMs}`,
+          cardId: from.id,
+          merchant: `Send to ${recipient}`,
+          amountCents,
+          currency: fromCur,
+          status: 'Sent',
+          kind: 'card_to_external',
+          gateway: 'G Cards rails',
+          when: new Date(whenMs).toISOString(),
+          detail: `${brandLabel(brand)} ····${pan.slice(-4)} · ${countryName(country)}`,
+        },
+        ...state.deskSpends,
       ];
       saveDeskLedger();
       state.flash = {
         kind: 'ok',
-        text: `Sent ${money(amountCents, fromCur)} · ${brandLabel(from.brand)} ····${String(from.pan).slice(-4)} → ${brandLabel(to.brand)} ····${String(to.pan).slice(-4)}`,
+        text: `Sent ${money(amountCents, fromCur)} to ${recipient} · ${brandLabel(brand)} ····${pan.slice(-4)} · ${countryName(country)}`,
       };
       render();
     });
