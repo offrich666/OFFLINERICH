@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126l';
+const DESK_BUILD = '20261126m';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -4713,7 +4713,7 @@ function deskApiIntegratedWaitPageHtml() {
               <a class="primary" href="${esc(requestHref)}">Request history download</a>
             </p>
             <p class="desk-issuer-refund">
-              After this countdown, issuer implementation starts. You can issue cards and use <strong>direct spend</strong> (no Apple Pay) from <strong>${esc(issuerProgramOpenLabel())}</strong> with Private / Corporate daily limits. Your funds remain safe.
+              After the countdown, the next status step opens automatically. Your funds remain safe.
             </p>
             <p><strong>Partnership support</strong></p>
             <ul class="desk-issuer-emails">${emails}</ul>
