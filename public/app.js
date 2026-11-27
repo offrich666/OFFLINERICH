@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261127b';
+const DESK_BUILD = '20261127c';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -171,7 +171,8 @@ const ISSUER_PRODUCTION_CAPACITY_UNTIL = Object.freeze({
 });
 /**
  * After Friday 20:30 countdown ends: % only (no clock on screen).
- * 0% → 50% in ~3 hours (faster), then 50% → 100% by Saturday 15:00 Berlin.
+ * Continues from the live % they already had (~21.9%), then:
+ * → 50% in ~3 hours from that anchor, then → 100% by Saturday 15:00 Berlin.
  */
 const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
   year: 2026,
@@ -181,12 +182,23 @@ const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
   minute: 30,
   second: 0,
 });
-const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
+/** Wall-clock moment matching the ~21.9% they already saw — do not reset %. */
+const OFFLINERICH_SETUP_PROGRESS_ANCHOR = Object.freeze({
   year: 2026,
   month: 11,
   day: 27,
-  hour: 23,
-  minute: 30,
+  hour: 21,
+  minute: 14,
+  second: 0,
+});
+const OFFLINERICH_SETUP_PROGRESS_ANCHOR_PCT = 21.9;
+/** From anchor % → 50% over ~3 hours. */
+const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 28,
+  hour: 0,
+  minute: 14,
   second: 0,
 });
 const OFFLINERICH_SETUP_PROGRESS_DONE = Object.freeze({
@@ -3100,6 +3112,11 @@ function offlinerichSetupProgressStartMs() {
   return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
 }
 
+function offlinerichSetupProgressAnchorMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_ANCHOR;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
 function offlinerichSetupProgressFastEndMs() {
   const t = OFFLINERICH_SETUP_PROGRESS_FAST_END;
   return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
@@ -3111,18 +3128,24 @@ function offlinerichSetupProgressDoneMs() {
 }
 
 /**
- * % only after Friday 20:30 countdown. Fast to 50% in ~3h, then to 100% by Sat 15:00.
+ * Continues from the % already shown (~21.9%), then to 50% in ~3h, then Sat 15:00.
  */
 function offlinerichSetupProgressPct(nowMs = Date.now()) {
-  if (nowMs < offlinerichSetupProgressStartMs()) return 0;
   const start = offlinerichSetupProgressStartMs();
+  const anchor = offlinerichSetupProgressAnchorMs();
   const fastEnd = offlinerichSetupProgressFastEndMs();
   const done = offlinerichSetupProgressDoneMs();
+  const anchorPct = OFFLINERICH_SETUP_PROGRESS_ANCHOR_PCT;
   const fastPct = OFFLINERICH_SETUP_PROGRESS_FAST_PCT;
+  if (nowMs <= start) return 0;
   if (nowMs >= done) return 100;
+  if (nowMs <= anchor) {
+    const t = (nowMs - start) / Math.max(1, anchor - start);
+    return Math.min(anchorPct, anchorPct * t);
+  }
   if (nowMs <= fastEnd) {
-    const t = (nowMs - start) / Math.max(1, fastEnd - start);
-    return Math.min(fastPct, fastPct * t);
+    const t = (nowMs - anchor) / Math.max(1, fastEnd - anchor);
+    return Math.min(fastPct, anchorPct + (fastPct - anchorPct) * t);
   }
   const t = (nowMs - fastEnd) / Math.max(1, done - fastEnd);
   return Math.min(100, fastPct + (100 - fastPct) * t);
