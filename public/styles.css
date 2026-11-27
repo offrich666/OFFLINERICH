@@ -1970,6 +1970,20 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   font-size: 0.92rem;
   line-height: 1.45;
 }
+.og-setup-callout-next {
+  background: rgba(120, 140, 128, 0.08);
+  border-color: rgba(160, 180, 168, 0.28);
+}
+.og-setup-next-copy {
+  display: inline-block;
+  margin-top: 6px;
+  color: #b9c2b8;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+.og-capacity-panel {
+  border-color: rgba(150, 175, 160, 0.32);
+}
 .og-setup-steps {
   margin: 0 0 12px;
   padding: 0 0 0 1.1rem;
