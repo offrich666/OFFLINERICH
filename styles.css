@@ -1984,6 +1984,29 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .og-capacity-panel {
   border-color: rgba(150, 175, 160, 0.32);
 }
+.og-desk-hold .og-layout {
+  display: block;
+}
+.og-desk-hold .og-main {
+  max-width: 640px;
+  margin: 0 auto;
+}
+.og-home-hold .og-wallet {
+  margin-bottom: 18px;
+}
+.og-hold-countdown {
+  text-align: center;
+}
+.og-hold-until {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #b9c2b8;
+  font-size: 0.92rem;
+}
+.og-hold-countdown .desk-api-countdown-value {
+  font-size: 1.55rem;
+  letter-spacing: 0.02em;
+}
 .og-setup-steps {
   margin: 0 0 12px;
   padding: 0 0 0 1.1rem;
