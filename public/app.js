@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126s';
+const DESK_BUILD = '20261126t';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -126,9 +126,9 @@ const ISSUER_SUPPORT_EMAILS = Object.freeze([
  * 1) contacting Visa / Mastercard / Amex
  * 2) Visa + Mastercard accepted; Amex still pending (~3h, check every 20 min)
  * 3) offlinerich → platform error → API integrated / 48h wait
- * 4) after API countdown → readiness checks until ISSUER_READINESS_UNTIL (23:05 Berlin)
- * 5) integration verified; fraud-report audit holds issuing until ISSUER_PROGRAM_OPEN_FROM
- *    richguy → same stages immediately (skips the API countdown)
+ * 4) after API countdown → same Off Grid dashboard as richguy
+ * 5) until ISSUER_PROGRAM_OPEN_FROM → professional “setting up issuing platform” on that dashboard
+ *    richguy → same dashboard + setup status immediately
  */
 const UNFREEZE_PROCESS_PREVIEW_RICHGUY = true;
 /** BIN / API / file verification window ends at this Berlin civil time. */
@@ -2971,7 +2971,7 @@ function issuerProgramOpenLabel() {
   return berlinCivilLabel(ISSUER_PROGRAM_OPEN_FROM, 'Friday');
 }
 
-/** offlinerich only: after API countdown, until issuing opens Friday 20:30. */
+/** offlinerich: after API countdown, until issuing opens Friday 20:30. */
 function issuerPostCountdownWindow(nowMs = Date.now()) {
   if (nowMs >= issuerProgramOpenFromMs()) return false;
   if (!isOfflinerichDesk() || !PLATFORM_DISABLED_NOTICE_LIVE) return false;
@@ -2979,21 +2979,37 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
   return nowMs >= offlinerichApiIssueUnlockMs();
 }
 
-/** File-check page is not shown. After the API countdown the verified audit page is used. */
+/** Dashboard setup stage: richguy now, offlinerich after countdown, until Friday 20:30. */
+function issuerPlatformSetupActive(nowMs = Date.now()) {
+  if (nowMs >= issuerProgramOpenFromMs()) return false;
+  if (isRichguyDesk()) return true;
+  return issuerPostCountdownWindow(nowMs);
+}
+
+/** Use the Off Grid professional desk (richguy always; offlinerich after API countdown). */
+function professionalIssuerDeskActive(nowMs = Date.now()) {
+  if (isRichguyDesk()) return true;
+  if (!isOfflinerichDesk()) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  // Still on timed notice stages before the API wait ends.
+  if (nowMs < offlinerichApiIssueUnlockMs()) return false;
+  return true;
+}
+
+/** File-check page retired. */
 function issuerReadinessNoticeActive(_nowMs = Date.now()) {
   return false;
 }
 
-/** Integrated + verified; fraud-report audit holds offlinerich issuing until Friday 20:30. */
-function issuerAuditNoticeActive(nowMs = Date.now()) {
-  return issuerPostCountdownWindow(nowMs);
+/** Full-page audit hold retired — setup lives inside the dashboard instead. */
+function issuerAuditNoticeActive(_nowMs = Date.now()) {
+  return false;
 }
 
 function issuerImplNoticeActive(nowMs = Date.now()) {
   return issuerReadinessNoticeActive(nowMs) || issuerAuditNoticeActive(nowMs);
 }
 
-/** richguy uses the live issuing desk now — no status hold. */
 function richguyIssuerImplNoticeActive(_nowMs = Date.now()) {
   return false;
 }
@@ -4027,8 +4043,8 @@ function capacityDeskHtml() {
   if (offlinerichLockdownActive()) {
     state.deskRevealSecrets = false;
   }
-  // offlinerich notice lock: contacting → accept → API wait → verified audit hold.
-  if (platformDisabledNoticeActive()) {
+  // Timed notice lock only while stages still apply (API wait, etc.). Setup is inside the dashboard.
+  if (platformDisabledNoticeActive() && !professionalIssuerDeskActive()) {
     startUnfreezeProcessWatch();
     state.deskView = 'issuer';
     state.deskDetailCardId = '';
@@ -4039,15 +4055,14 @@ function capacityDeskHtml() {
         ? deskNetworkAcceptNoticePageHtml()
         : apiWaitNoticeActive()
           ? deskApiIntegratedWaitPageHtml()
-          : issuerAuditNoticeActive()
-            ? deskIssuerImplNoticePageHtml()
-            : platformErrorNoticeActive()
-              ? deskPlatformDisabledNoticePageHtml()
-              : deskIssuerNoticePageHtml();
+          : platformErrorNoticeActive()
+            ? deskPlatformDisabledNoticePageHtml()
+            : deskIssuerNoticePageHtml();
     return deskShellHtml(page);
   }
-  // richguy: live Off Grid issuing desk (issue cards + direct spend).
-  if (isRichguyDesk()) {
+  // richguy now + offlinerich after countdown: same Off Grid professional desk.
+  if (professionalIssuerDeskActive()) {
+    if (issuerPlatformSetupActive()) startUnfreezeProcessWatch();
     return richguyOffgridDeskHtml();
   }
   // Pay tab removed — Cards + History only.
@@ -4183,13 +4198,53 @@ function richguyPlasticCardHtml() {
 }
 
 function richguyApiStatusStripHtml() {
-  // richguy: no countdown — show live API health only.
+  if (issuerPlatformSetupActive()) {
+    const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
+    const countdown = formatApiCountdown(remainMs);
+    return `<div class="og-status-strip og-status-live" role="status">
+    <div class="og-status-row">
+      <span class="desk-api-live-dot" aria-hidden="true"></span>
+      <span>Issuing platform setup in progress · live issue opens <strong>${esc(issuerProgramOpenLabel())}</strong> · ${esc(countdown)}</span>
+    </div>
+  </div>`;
+  }
   return `<div class="og-status-strip og-status-live" role="status">
     <div class="og-status-row">
       <span class="desk-api-live-dot" aria-hidden="true"></span>
       <span>Issuing API online · uptime <strong>99.8%</strong></span>
     </div>
   </div>`;
+}
+
+/** Professional setup copy while the Europe issuing stack is brought online. */
+function issuerPlatformSetupPanelHtml() {
+  if (!issuerPlatformSetupActive()) return '';
+  const openLabel = issuerProgramOpenLabel();
+  const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  return `
+    <section class="og-setup-panel" id="issuer-platform-setup" role="status" aria-labelledby="issuer-platform-setup-title">
+      <p class="og-setup-kicker">Issuing platform</p>
+      <h2 id="issuer-platform-setup-title">Setting up the issuing servers</h2>
+      <p class="og-setup-lede">
+        The Europe-zone issuing platform is being commissioned after the earlier gateway fraud reports.
+        This step takes time on purpose: Visa and Mastercard require the issuer stack, BIN routing, and security controls to finish before new cards can be created.
+      </p>
+      <p class="og-setup-callout" aria-live="polite">
+        Live issuing opens <strong>${esc(openLabel)}</strong><br />
+        <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+      </p>
+      <ul class="og-setup-steps">
+        <li><strong>Issuer application servers</strong> — provisioning the card-create and authorization nodes for European zones</li>
+        <li><strong>BIN routing tables</strong> — loading scheme-approved ranges so each issued PAN resolves to the correct country and bank</li>
+        <li><strong>HSM / personalization</strong> — preparing secure key material used when a new card number and CVV are generated</li>
+        <li><strong>Fraud-report controls</strong> — applying the post-incident audit rules required by the networks before spend is allowed</li>
+        <li><strong>Direct spend path</strong> — wiring authorizations for card-present and e-commerce without Apple Pay / Wallet enrollment</li>
+      </ul>
+      <p class="og-setup-note">
+        You can explore the desk now. <strong>Issue new card</strong> stays in preview until the platform setup completes at ${esc(openLabel)}. Your funds remain safe.
+      </p>
+    </section>`;
 }
 
 function richguyMoneyDeskHtml() {
@@ -4296,6 +4351,7 @@ function richguyMoneyDeskHtml() {
 function richguyOffgridHomeHtml() {
   const bal = money(state.deskBalanceCents);
   const cardCount = Array.isArray(state.deskCards) ? state.deskCards.length : 0;
+  const setup = issuerPlatformSetupActive();
   return `
     <section class="og-home og-home-pro">
       <div class="og-wallet">
@@ -4306,10 +4362,17 @@ function richguyOffgridHomeHtml() {
         <button class="og-pill" type="button" data-action="rich-focus-add">Add money</button>
       </div>
       ${richguyApiStatusStripHtml()}
+      ${issuerPlatformSetupPanelHtml()}
       ${richguyPlasticCardHtml()}
       <h1 class="og-hero-title">Professional issuing</h1>
-      <p class="og-hero-sub">Issue new G Cards · fund the desk · desk→card · card→card. ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} live.</p>
-      <button class="og-cta" type="button" data-action="rich-choose-card">Issue new card</button>
+      <p class="og-hero-sub">${
+        setup
+          ? `Issuing platform setup in progress · desk preview available · ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} on file.`
+          : `Issue new G Cards · fund the desk · desk→card · card→card. ${esc(String(cardCount))} card${cardCount === 1 ? '' : 's'} live.`
+      }</p>
+      <button class="og-cta" type="button" data-action="rich-choose-card">${
+        setup ? 'View issue workspace' : 'Issue new card'
+      }</button>
       ${richguyMoneyDeskHtml()}
     </section>`;
 }
@@ -4416,15 +4479,29 @@ function richguyOffgridCardsHtml() {
     const card = state.deskCards.find((c) => c.id === state.deskDetailCardId);
     if (card) return richguyCardDetailHtml(card);
   }
+  const setup = issuerPlatformSetupActive();
   return `
     <section class="og-cards-live">
       <div class="og-page-head og-page-head-left">
         <h1>Issue cards</h1>
       </div>
       ${richguyApiStatusStripHtml()}
-      <p class="og-hero-sub og-issue-lede">No seed cards — issue fresh Visa, Mastercard, or Amex. Then fund from the desk or send card→card.</p>
+      ${issuerPlatformSetupPanelHtml()}
+      <p class="og-hero-sub og-issue-lede">${
+        setup
+          ? `Professional issue workspace is ready to review. Live card creation unlocks at ${esc(issuerProgramOpenLabel())}, after the issuing servers finish setup.`
+          : 'No seed cards — issue fresh Visa, Mastercard, or Amex. Then fund from the desk or send card→card.'
+      }</p>
       ${richguyIssuedCardsListHtml()}
-      ${deskIssuePanelHtml({ richguy: true })}
+      ${
+        setup
+          ? `<div class="og-issue-preview" aria-label="Issue preview">
+              <p class="og-3ds-label">Issue new card</p>
+              <p class="og-hero-sub">Name, surname, country, network and product will be collected here. Creation stays locked while the issuing platform is being set up.</p>
+              <button class="og-cta og-issue-btn" type="button" disabled>Issue unavailable during platform setup</button>
+            </div>`
+          : deskIssuePanelHtml({ richguy: true })
+      }
       ${richguyMoneyDeskHtml()}
     </section>`;
 }
@@ -6600,6 +6677,14 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
+    if (issuerPlatformSetupActive()) {
+      state.flash = {
+        kind: 'error',
+        text: `Issuing platform still setting up · live issue opens ${issuerProgramOpenLabel()}`,
+      };
+      render();
+      return;
+    }
     const brandHint = normalizeBrand(
       button.dataset.brand || state.issueDraft?.brand || 'visa',
     );
@@ -7507,6 +7592,11 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: `Desk open · ${cardCount} cards frozen · History hidden · not usable until ${offlinerichFreezeUntilLabel()} · ${selectedTag}`,
+        };
+      } else if ((isAdmin || isOperator) && issuerPlatformSetupActive()) {
+        state.flash = {
+          kind: 'ok',
+          text: `Professional desk open · issuing platform setup in progress · live issue ${issuerProgramOpenLabel()}`,
         };
       } else if (isAdmin) {
         state.flash = {
