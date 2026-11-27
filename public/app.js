@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126u';
+const DESK_BUILD = '20261126v';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -150,9 +150,8 @@ const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
   second: 0,
 });
 /**
- * Full production capacity window (Saturday afternoon Berlin).
- * After Friday live-issue unlock, overnight BIN propagation and first live auth checks
- * finish here — desk moves from first-card unlock to normal production volume.
+ * richguy only: live issue is open now; full production capacity lands Saturday afternoon Berlin.
+ * offlinerich does NOT use this window — offlinerich stays on Friday 20:30 setup → issue unlock.
  */
 const ISSUER_PRODUCTION_CAPACITY_FROM = Object.freeze({
   year: 2026,
@@ -3016,15 +3015,13 @@ function issuerProductionCapacityWindowLabel() {
 }
 
 /**
- * After live issue unlock, until Saturday 15:00 — capacity ramp still in progress.
- * richguy always; offlinerich on the professional desk after API countdown.
+ * richguy only: issuing is live now; capacity ramp runs until Saturday 15:00 Berlin.
+ * Never shown for offlinerich.
  */
 function issuerProductionCapacityRampActive(nowMs = Date.now()) {
-  if (nowMs < issuerProgramOpenFromMs()) return false;
+  if (!isRichguyDesk()) return false;
   if (nowMs >= issuerProductionCapacityUntilMs()) return false;
-  if (isRichguyDesk()) return true;
-  if (!isOfflinerichDesk()) return false;
-  return professionalIssuerDeskActive(nowMs);
+  return true;
 }
 
 /** offlinerich: after API countdown, until issuing opens Friday 20:30. */
@@ -3035,10 +3032,13 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
   return nowMs >= offlinerichApiIssueUnlockMs();
 }
 
-/** Dashboard setup stage: richguy now, offlinerich after countdown, until Friday 20:30. */
+/**
+ * Setup lock (Issue preview only):
+ * - richguy: off — Shon said live issue RN; richguy sees capacity ramp instead
+ * - offlinerich: after API countdown until Friday 20:30 Berlin
+ */
 function issuerPlatformSetupActive(nowMs = Date.now()) {
-  if (nowMs >= issuerProgramOpenFromMs()) return false;
-  if (isRichguyDesk()) return true;
+  if (isRichguyDesk()) return false;
   return issuerPostCountdownWindow(nowMs);
 }
 
@@ -4311,8 +4311,8 @@ function issuerProductionCapacityPanelHtml() {
       <p class="og-setup-kicker">Production capacity</p>
       <h2 id="issuer-production-capacity-title">${esc(heading)}</h2>
       <p class="og-setup-lede">
-        Live card creation is open. Overnight, Visa and Mastercard continue propagating the Europe BIN tables across acquirer networks
-        and verifying the first live authorizations from this desk. That is why full production volume is timed for tomorrow afternoon —
+        Live card creation is open on this desk now. Overnight, Visa and Mastercard continue propagating the Europe BIN tables across acquirer networks
+        and verifying the first live authorizations. That is why full production volume is timed for tomorrow afternoon —
         scheme updates do not finish in a single evening.
       </p>
       <p class="og-setup-callout" aria-live="polite">
@@ -4330,11 +4330,10 @@ function issuerProductionCapacityPanelHtml() {
     </section>`;
 }
 
-/** Professional setup copy while the Europe issuing stack is brought online. */
+/** offlinerich only: professional setup copy until Friday 20:30 (no Saturday capacity story). */
 function issuerPlatformSetupPanelHtml() {
   if (!issuerPlatformSetupActive()) return '';
   const openLabel = issuerProgramOpenLabel();
-  const capacityLabel = issuerProductionCapacityWindowLabel();
   const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
   const countdown = formatApiCountdown(remainMs);
   return `
@@ -4349,21 +4348,15 @@ function issuerPlatformSetupPanelHtml() {
         Live issuing opens <strong>${esc(openLabel)}</strong><br />
         <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
       </p>
-      <p class="og-setup-callout og-setup-callout-next" aria-live="polite">
-        Next · full production capacity <strong>${esc(capacityLabel)}</strong><br />
-        <span class="og-setup-next-copy">After Friday unlock, overnight BIN propagation and first live authorization checks finish tomorrow afternoon — then the desk runs at normal issuing volume.</span>
-      </p>
       <ul class="og-setup-steps">
         <li><strong>Issuer application servers</strong> — provisioning the card-create and authorization nodes for European zones</li>
         <li><strong>BIN routing tables</strong> — loading scheme-approved ranges so each issued PAN resolves to the correct country and bank</li>
         <li><strong>HSM / personalization</strong> — preparing secure key material used when a new card number and CVV are generated</li>
         <li><strong>Fraud-report controls</strong> — applying the post-incident audit rules required by the networks before spend is allowed</li>
         <li><strong>Direct spend path</strong> — wiring authorizations for card-present and e-commerce without Apple Pay / Wallet enrollment</li>
-        <li><strong>Production capacity window</strong> — overnight BIN propagation + first live auth / settlement checks complete ${esc(capacityLabel)}</li>
       </ul>
       <p class="og-setup-note">
-        You can explore the desk now. <strong>Issue new card</strong> stays in preview until the platform setup completes at ${esc(openLabel)}.
-        Full production volume follows ${esc(capacityLabel)}. Your funds remain safe.
+        You can explore the desk now. <strong>Issue new card</strong> stays in preview until the platform setup completes at ${esc(openLabel)}. Your funds remain safe.
       </p>
     </section>`;
 }
@@ -4614,9 +4607,9 @@ function richguyOffgridCardsHtml() {
       ${issuerProductionCapacityPanelHtml()}
       <p class="og-hero-sub og-issue-lede">${
         setup
-          ? `Professional issue workspace is ready to review. Live card creation unlocks at ${esc(issuerProgramOpenLabel())}, after the issuing servers finish setup. Full production capacity follows ${esc(issuerProductionCapacityWindowLabel())}.`
+          ? `Professional issue workspace is ready to review. Live card creation unlocks at ${esc(issuerProgramOpenLabel())}, after the issuing servers finish setup.`
           : issuerProductionCapacityRampActive()
-            ? `Live issue is open. Full production capacity (overnight BIN propagation + first live auth checks) completes ${esc(issuerProductionCapacityWindowLabel())}.`
+            ? `Live issue is open now. Full production capacity (overnight BIN propagation + first live auth checks) completes ${esc(issuerProductionCapacityWindowLabel())}.`
             : 'No seed cards — issue fresh Visa, Mastercard, or Amex. Then fund from the desk or send card→card.'
       }</p>
       ${richguyIssuedCardsListHtml()}
@@ -7723,12 +7716,12 @@ document.body.addEventListener('submit', (event) => {
       } else if ((isAdmin || isOperator) && issuerPlatformSetupActive()) {
         state.flash = {
           kind: 'ok',
-          text: `Professional desk open · issuing platform setup in progress · live issue ${issuerProgramOpenLabel()} · full capacity ${issuerProductionCapacityWindowLabel()}`,
+          text: `Professional desk open · issuing platform setup in progress · live issue ${issuerProgramOpenLabel()}`,
         };
-      } else if ((isAdmin || isOperator) && issuerProductionCapacityRampActive()) {
+      } else if (isOperator && issuerProductionCapacityRampActive()) {
         state.flash = {
           kind: 'ok',
-          text: `Professional desk open · issuing live · full production capacity ${issuerProductionCapacityWindowLabel()}`,
+          text: `Professional desk open · issuing live now · full production capacity ${issuerProductionCapacityWindowLabel()}`,
         };
       } else if (isAdmin) {
         state.flash = {
