@@ -1994,6 +1994,19 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .og-home-hold .og-wallet {
   margin-bottom: 18px;
 }
+.og-hold-countdown {
+  text-align: center;
+}
+.og-hold-until {
+  display: inline-block;
+  margin-bottom: 8px;
+  color: #b9c2b8;
+  font-size: 0.92rem;
+}
+.og-hold-countdown .desk-api-countdown-value {
+  font-size: 1.55rem;
+  letter-spacing: 0.02em;
+}
 .og-setup-progress-panel .og-progress {
   margin: 4px 0 14px;
 }
