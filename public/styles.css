@@ -1994,18 +1994,40 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
 .og-home-hold .og-wallet {
   margin-bottom: 18px;
 }
-.og-hold-countdown {
-  text-align: center;
+.og-setup-progress-panel .og-progress {
+  margin: 4px 0 14px;
 }
-.og-hold-until {
-  display: inline-block;
-  margin-bottom: 8px;
-  color: #b9c2b8;
-  font-size: 0.92rem;
+.og-progress-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
-.og-hold-countdown .desk-api-countdown-value {
-  font-size: 1.55rem;
+.og-progress-stage {
+  color: #d5ddd4;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.og-progress-pct {
+  color: #f0ebe1;
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
+}
+.og-progress-track {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(196, 168, 110, 0.22);
+  overflow: hidden;
+}
+.og-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8d7340, #c8b07a, #e8d7a8);
+  box-shadow: 0 0 12px rgba(200, 176, 122, 0.25);
+  transition: width 0.9s linear;
 }
 .og-setup-steps {
   margin: 0 0 12px;
