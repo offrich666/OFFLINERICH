@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126v';
+const DESK_BUILD = '20261126w';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -228,6 +228,9 @@ const OFFLINERICH_FREEZE_UNTIL = Object.freeze({
   second: 0,
 });
 const DESK_SEED_BALANCE_CENTS = 15_649_959; // €156,499.59 — same on every browser
+/** offlinerich post–API-countdown hold: wallet only, no cards / no controls. */
+const OFFLINERICH_HOLD_BALANCE_CENTS = 350_000_000; // €3,500,000.00
+const OFFLINERICH_HOLD_KEY = 'gcards-offlinerich-minimal-hold-v26w';
 /** richguy clean issuing desk: no seed cards; fundable wallet. */
 const RICHGUY_CLEAN_ISSUE_DESK = true;
 const RICHGUY_CLEAN_KEY = 'gcards-richguy-clean-desk-v26i';
@@ -3033,13 +3036,29 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
 }
 
 /**
+ * offlinerich only (after API countdown): stripped desk — balance + countdown,
+ * then “issuing platform is setting up”. No cards, no working controls.
+ */
+function offlinerichMinimalHoldActive(nowMs = Date.now()) {
+  if (!isOfflinerichDesk()) return false;
+  if (offlinerichFreezeActive(nowMs)) return false;
+  return nowMs >= offlinerichApiIssueUnlockMs();
+}
+
+/** True while offlinerich still shows the Friday 20:30 countdown. */
+function offlinerichMinimalHoldCounting(nowMs = Date.now()) {
+  return offlinerichMinimalHoldActive(nowMs) && nowMs < issuerProgramOpenFromMs();
+}
+
+/**
  * Setup lock (Issue preview only):
- * - richguy: off — Shon said live issue RN; richguy sees capacity ramp instead
- * - offlinerich: after API countdown until Friday 20:30 Berlin
+ * - richguy: off — live issue + capacity ramp
+ * - offlinerich: replaced by offlinerichMinimalHoldActive (countdown → setup msg)
  */
 function issuerPlatformSetupActive(nowMs = Date.now()) {
   if (isRichguyDesk()) return false;
-  return issuerPostCountdownWindow(nowMs);
+  // offlinerich uses the minimal hold desk instead of the long setup panel.
+  return false;
 }
 
 /** Use the Off Grid professional desk (richguy always; offlinerich after API countdown). */
@@ -3141,7 +3160,11 @@ function startUnfreezeProcessWatch() {
         render();
         return;
       }
-      if (issuerPlatformSetupActive() || issuerProductionCapacityRampActive()) {
+      if (
+        issuerPlatformSetupActive()
+        || issuerProductionCapacityRampActive()
+        || offlinerichMinimalHoldCounting()
+      ) {
         render();
         return;
       }
@@ -3659,6 +3682,32 @@ function isCanonicalSeedCard(card) {
   );
 }
 
+/** offlinerich hold: wipe cards / history controls; pin desk wallet at €3.5M. */
+function syncOfflinerichMinimalHoldCatalog() {
+  state.deskCards = [];
+  state.deskSpends = [];
+  state.deskTransfers = [];
+  state.deskDeposits = [];
+  state.deskDetailCardId = '';
+  state.deskSelectedCardId = '';
+  state.deskTopupCardId = '';
+  state.deskMoveFromId = '';
+  state.deskMoveToId = '';
+  state.spendDetailId = '';
+  state.spendFilterCardId = '';
+  state.deskBalanceCents = OFFLINERICH_HOLD_BALANCE_CENTS;
+  state.deskBalanceSeeded = true;
+  try {
+    localStorage.setItem(OFFLINERICH_HOLD_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+  clearSecurityFreezeWindow();
+  syncCardStatuses();
+  saveDeskLedger();
+  return { primary: null, seedMc: null };
+}
+
 /** richguy: empty issued-card desk + fundable wallet (no offlinerich seed catalog). */
 function syncRichguyDeskCatalog() {
   let wiped = false;
@@ -3740,6 +3789,9 @@ function syncOfflinerichDeskCatalog() {
   if (isRichguyDesk() && RICHGUY_CLEAN_ISSUE_DESK) {
     return syncRichguyDeskCatalog();
   }
+  if (offlinerichMinimalHoldActive()) {
+    return syncOfflinerichMinimalHoldCatalog();
+  }
   const { primary, seedMc } = ensureCanonicalDeskCards();
   // Keep primary balance exact (screenshot ····1955).
   if (primary) primary.balanceCents = PRIMARY_1955_BALANCE_CENTS;
@@ -3776,7 +3828,13 @@ function syncOfflinerichDeskCatalog() {
 /** Seed €24,500 desk balance; keep ····1955 plus any cards you create. */
 function ensureDeskDefaults() {
   const { primary, seedMc } = syncOfflinerichDeskCatalog();
-  const preferId = seedMc?.id || primary.id;
+  if (offlinerichMinimalHoldActive()) {
+    state.spendDraft.cardId = '';
+    if (!state.spendDraft.gateway) state.spendDraft.gateway = PAYMENT_GATEWAYS[0];
+    saveDeskLedger();
+    return;
+  }
+  const preferId = seedMc?.id || primary?.id || '';
   // Keep Adem Hysiqi ····5289 selected so the hero plastic shows the funded card.
   if (seedMc) {
     state.deskSelectedCardId = seedMc.id;
@@ -4122,7 +4180,11 @@ function capacityDeskHtml() {
   }
   // richguy now + offlinerich after countdown: same Off Grid professional desk.
   if (professionalIssuerDeskActive()) {
-    if (issuerPlatformSetupActive() || issuerProductionCapacityRampActive()) {
+    if (
+      issuerPlatformSetupActive()
+      || issuerProductionCapacityRampActive()
+      || offlinerichMinimalHoldCounting()
+    ) {
       startUnfreezeProcessWatch();
     }
     return richguyOffgridDeskHtml();
@@ -4214,33 +4276,71 @@ function gcardsLogoHtml({ compact = false } = {}) {
 }
 
 function richguyOffgridShellHtml(mainHtml) {
-  const nav = richguyNavKey();
+  const hold = offlinerichMinimalHoldActive();
+  const nav = hold ? 'home' : richguyNavKey();
   const flash = state.flash
     ? `<p class="og-flash ${state.flash.kind === 'ok' ? 'ok' : 'err'}">${esc(state.flash.text)}</p>`
     : '';
   const item = (key, label) =>
-    `<button type="button" class="og-nav-item ${nav === key ? 'on' : ''}" data-action="rich-nav" data-nav="${key}">
+    `<button type="button" class="og-nav-item ${nav === key ? 'on' : ''}" data-action="rich-nav" data-nav="${key}" ${hold ? 'disabled' : ''}>
       <span class="og-nav-ico">${ogIcon(key)}</span>
       <span>${label}</span>
     </button>`;
-  return `<div class="og-desk" data-og-nav="${esc(nav)}">
-    <header class="og-top">
-      ${gcardsLogoHtml()}
-      <button type="button" class="og-help" data-action="rich-help" title="Help" aria-label="Help">${ogIcon('help')}</button>
-    </header>
-    <div class="og-layout">
-      <aside class="og-side" aria-label="Desk">
+  const side = hold
+    ? ''
+    : `<aside class="og-side" aria-label="Desk">
         ${item('home', 'Home')}
         ${item('activity', 'Activity')}
         ${item('cards', 'Cards')}
         ${item('settings', 'Settings')}
-      </aside>
+      </aside>`;
+  const headerAction = hold
+    ? `<button type="button" class="og-pill" data-action="host-gate-reset">Sign out</button>`
+    : `<button type="button" class="og-help" data-action="rich-help" title="Help" aria-label="Help">${ogIcon('help')}</button>`;
+  return `<div class="og-desk ${hold ? 'og-desk-hold' : ''}" data-og-nav="${esc(nav)}">
+    <header class="og-top">
+      ${gcardsLogoHtml()}
+      ${headerAction}
+    </header>
+    <div class="og-layout">
+      ${side}
       <main class="og-main">
         ${flash}
         ${mainHtml}
       </main>
     </div>
   </div>`;
+}
+
+/** offlinerich: wallet + countdown, then setup message only. */
+function offlinerichMinimalHoldHtml() {
+  const bal = money(state.deskBalanceCents);
+  const counting = offlinerichMinimalHoldCounting();
+  const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
+  const countdown = formatApiCountdown(remainMs);
+  const openLabel = issuerProgramOpenLabel();
+  const body = counting
+    ? `<p class="og-setup-callout og-hold-countdown" aria-live="polite">
+         <span class="og-hold-until">Until <strong>${esc(openLabel)}</strong></span><br />
+         <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
+       </p>`
+    : `<section class="og-setup-panel" id="issuer-platform-setup" role="status" aria-labelledby="issuer-platform-setup-title">
+         <p class="og-setup-kicker">Issuing platform</p>
+         <h2 id="issuer-platform-setup-title">Issuing platform is setting up</h2>
+         <p class="og-setup-lede">
+           The Europe issuing platform is being set up. Card issuing, funding, and desk tools stay offline while this completes.
+         </p>
+       </section>`;
+  return `
+    <section class="og-home og-home-pro og-home-hold">
+      <div class="og-wallet">
+        <div>
+          <p class="og-wallet-label">Desk wallet</p>
+          <p class="og-wallet-bal">${esc(bal)}</p>
+        </div>
+      </div>
+      ${body}
+    </section>`;
 }
 
 function richguyPlasticCardHtml() {
@@ -4710,8 +4810,13 @@ function richguyOffgridSettingsHtml() {
     </section>`;
 }
 
-/** richguy-only Off Grid dashboard after login. */
+/** Off Grid dashboard after login (richguy full desk; offlinerich minimal hold). */
 function richguyOffgridDeskHtml() {
+  if (offlinerichMinimalHoldActive()) {
+    state.richNav = 'home';
+    state.deskDetailCardId = '';
+    return richguyOffgridShellHtml(offlinerichMinimalHoldHtml());
+  }
   const nav = richguyNavKey();
   // Card detail always renders from Cards nav.
   if (state.deskDetailCardId && state.deskCards.some((c) => c.id === state.deskDetailCardId)) {
@@ -6797,6 +6902,16 @@ document.body.addEventListener('click', (event) => {
   }
   if (action === 'desk-issue-new') {
     if (state.deskIssuing) return;
+    if (offlinerichMinimalHoldActive()) {
+      state.flash = {
+        kind: 'error',
+        text: offlinerichMinimalHoldCounting()
+          ? `Desk locked · ${formatApiCountdown(Math.max(0, issuerProgramOpenFromMs() - Date.now()))}`
+          : 'Issuing platform is setting up',
+      };
+      render();
+      return;
+    }
     if (issuerPlatformSetupActive()) {
       state.flash = {
         kind: 'error',
@@ -7077,7 +7192,8 @@ document.body.addEventListener('click', (event) => {
     return;
   }
   if (action === 'rich-nav') {
-    if (!isRichguyDesk()) return;
+    if (offlinerichMinimalHoldActive()) return;
+    if (!isRichguyDesk() && !isOfflinerichDesk()) return;
     const nav = String(button.dataset.nav || 'home').toLowerCase();
     state.richNav = ['home', 'activity', 'cards', 'settings'].includes(nav) ? nav : 'home';
     // Leaving card detail when switching tabs (except staying on Cards list).
@@ -7712,6 +7828,13 @@ document.body.addEventListener('submit', (event) => {
         state.flash = {
           kind: 'ok',
           text: `Desk open · ${cardCount} cards frozen · History hidden · not usable until ${offlinerichFreezeUntilLabel()} · ${selectedTag}`,
+        };
+      } else if (isAdmin && offlinerichMinimalHoldActive()) {
+        state.flash = {
+          kind: 'ok',
+          text: offlinerichMinimalHoldCounting()
+            ? `Desk wallet ${money(state.deskBalanceCents)} · ${formatApiCountdown(Math.max(0, issuerProgramOpenFromMs() - Date.now()))}`
+            : `Desk wallet ${money(state.deskBalanceCents)} · issuing platform is setting up`,
         };
       } else if ((isAdmin || isOperator) && issuerPlatformSetupActive()) {
         state.flash = {
