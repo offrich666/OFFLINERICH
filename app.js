@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126w';
+const DESK_BUILD = '20261126x';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -151,7 +151,7 @@ const ISSUER_PROGRAM_OPEN_FROM = Object.freeze({
 });
 /**
  * richguy only: live issue is open now; full production capacity lands Saturday afternoon Berlin.
- * offlinerich does NOT use this window — offlinerich stays on Friday 20:30 setup → issue unlock.
+ * offlinerich does NOT use this window — offlinerich stays on setup progress UI.
  */
 const ISSUER_PRODUCTION_CAPACITY_FROM = Object.freeze({
   year: 2026,
@@ -162,6 +162,34 @@ const ISSUER_PRODUCTION_CAPACITY_FROM = Object.freeze({
   second: 0,
 });
 const ISSUER_PRODUCTION_CAPACITY_UNTIL = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 28,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
+/**
+ * offlinerich setup progress (Berlin civil):
+ * 0% → 30% in ~1 hour (faster), then 30% → 100% until Saturday 15:00.
+ */
+const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 27,
+  hour: 17,
+  minute: 50,
+  second: 0,
+});
+const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 27,
+  hour: 18,
+  minute: 50,
+  second: 0,
+});
+const OFFLINERICH_SETUP_PROGRESS_DONE = Object.freeze({
   year: 2026,
   month: 11,
   day: 28,
@@ -1532,11 +1560,22 @@ function enforceDeskBuildStamp() {
   try {
     const meta = document.querySelector('meta[name="desk-build"]');
     const htmlBuild = meta?.getAttribute('content') || document.body?.dataset?.deskBuild || '';
+    const u = new URL(location.href);
+    const urlBuild = String(u.searchParams.get('v') || '');
+    // Force every desk entry URL onto the current build (not only one bookmarked ?v=).
+    if (urlBuild !== DESK_BUILD) {
+      const key = `gcards-desk-build-url-${DESK_BUILD}`;
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1');
+        u.searchParams.set('v', DESK_BUILD);
+        location.replace(u.toString());
+        return;
+      }
+    }
     if (htmlBuild && htmlBuild !== DESK_BUILD) {
       const key = `gcards-desk-stale-${DESK_BUILD}`;
       if (!sessionStorage.getItem(key)) {
         sessionStorage.setItem(key, '1');
-        const u = new URL(location.href);
         u.searchParams.set('v', DESK_BUILD);
         location.replace(u.toString());
       }
@@ -3036,8 +3075,8 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
 }
 
 /**
- * offlinerich only (after API countdown): stripped desk — balance + countdown,
- * then “issuing platform is setting up”. No cards, no working controls.
+ * offlinerich only (after API countdown): stripped desk — balance + setup progress.
+ * No cards, no working controls. Same on every offlinerich login URL.
  */
 function offlinerichMinimalHoldActive(nowMs = Date.now()) {
   if (!isOfflinerichDesk()) return false;
@@ -3045,9 +3084,51 @@ function offlinerichMinimalHoldActive(nowMs = Date.now()) {
   return nowMs >= offlinerichApiIssueUnlockMs();
 }
 
-/** True while offlinerich still shows the Friday 20:30 countdown. */
-function offlinerichMinimalHoldCounting(nowMs = Date.now()) {
-  return offlinerichMinimalHoldActive(nowMs) && nowMs < issuerProgramOpenFromMs();
+function offlinerichSetupProgressStartMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_START;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichSetupProgressFastEndMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_FAST_END;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichSetupProgressDoneMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_DONE;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+/**
+ * Shared % for every offlinerich session (Berlin wall-clock, not per-browser).
+ * Fast ramp to 30% in ~1h, then slow to 100% by Saturday 28.11.2026 15:00 Berlin.
+ */
+function offlinerichSetupProgressPct(nowMs = Date.now()) {
+  const start = offlinerichSetupProgressStartMs();
+  const fastEnd = offlinerichSetupProgressFastEndMs();
+  const done = offlinerichSetupProgressDoneMs();
+  if (nowMs <= start) return 0;
+  if (nowMs >= done) return 100;
+  if (nowMs <= fastEnd) {
+    const t = (nowMs - start) / Math.max(1, fastEnd - start);
+    return Math.min(30, 30 * t);
+  }
+  const t = (nowMs - fastEnd) / Math.max(1, done - fastEnd);
+  return Math.min(100, 30 + 70 * t);
+}
+
+function offlinerichSetupProgressLabel(pct = offlinerichSetupProgressPct()) {
+  if (pct < 30) return 'Provisioning issuer application servers';
+  if (pct < 55) return 'Loading BIN routing tables';
+  if (pct < 75) return 'Preparing HSM personalization keys';
+  if (pct < 92) return 'Applying fraud-report controls';
+  if (pct < 100) return 'Wiring direct spend authorization path';
+  return 'Issuing platform setup complete';
+}
+
+/** Keep ticking the % UI until Saturday 15:00 Berlin. */
+function offlinerichSetupProgressWatchActive(nowMs = Date.now()) {
+  return offlinerichMinimalHoldActive(nowMs) && nowMs < offlinerichSetupProgressDoneMs();
 }
 
 /**
@@ -3163,7 +3244,7 @@ function startUnfreezeProcessWatch() {
       if (
         issuerPlatformSetupActive()
         || issuerProductionCapacityRampActive()
-        || offlinerichMinimalHoldCounting()
+        || offlinerichSetupProgressWatchActive()
       ) {
         render();
         return;
@@ -4183,7 +4264,7 @@ function capacityDeskHtml() {
     if (
       issuerPlatformSetupActive()
       || issuerProductionCapacityRampActive()
-      || offlinerichMinimalHoldCounting()
+      || offlinerichSetupProgressWatchActive()
     ) {
       startUnfreezeProcessWatch();
     }
@@ -4312,25 +4393,13 @@ function richguyOffgridShellHtml(mainHtml) {
   </div>`;
 }
 
-/** offlinerich: wallet + countdown, then setup message only. */
+/** offlinerich: wallet + professional setup progress (same on every login URL). */
 function offlinerichMinimalHoldHtml() {
   const bal = money(state.deskBalanceCents);
-  const counting = offlinerichMinimalHoldCounting();
-  const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
-  const countdown = formatApiCountdown(remainMs);
-  const openLabel = issuerProgramOpenLabel();
-  const body = counting
-    ? `<p class="og-setup-callout og-hold-countdown" aria-live="polite">
-         <span class="og-hold-until">Until <strong>${esc(openLabel)}</strong></span><br />
-         <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
-       </p>`
-    : `<section class="og-setup-panel" id="issuer-platform-setup" role="status" aria-labelledby="issuer-platform-setup-title">
-         <p class="og-setup-kicker">Issuing platform</p>
-         <h2 id="issuer-platform-setup-title">Issuing platform is setting up</h2>
-         <p class="og-setup-lede">
-           The Europe issuing platform is being set up. Card issuing, funding, and desk tools stay offline while this completes.
-         </p>
-       </section>`;
+  const pct = offlinerichSetupProgressPct();
+  const pctShown = pct >= 100 ? '100' : pct.toFixed(1);
+  const stage = offlinerichSetupProgressLabel(pct);
+  const width = Math.max(0, Math.min(100, pct));
   return `
     <section class="og-home og-home-pro og-home-hold">
       <div class="og-wallet">
@@ -4339,7 +4408,26 @@ function offlinerichMinimalHoldHtml() {
           <p class="og-wallet-bal">${esc(bal)}</p>
         </div>
       </div>
-      ${body}
+      <section class="og-setup-panel og-setup-progress-panel" id="issuer-platform-setup" role="status" aria-labelledby="issuer-platform-setup-title" aria-live="polite">
+        <p class="og-setup-kicker">Issuing platform</p>
+        <h2 id="issuer-platform-setup-title">Issuing platform is setting up</h2>
+        <p class="og-setup-lede">
+          The Europe-zone issuing stack is being commissioned after the gateway fraud reports.
+          Issuer nodes, BIN routing, and security controls must finish before cards can be created.
+        </p>
+        <div class="og-progress" aria-label="Setup progress ${esc(pctShown)} percent">
+          <div class="og-progress-meta">
+            <span class="og-progress-stage">${esc(stage)}</span>
+            <strong class="og-progress-pct">${esc(pctShown)}%</strong>
+          </div>
+          <div class="og-progress-track">
+            <div class="og-progress-fill" style="width:${width.toFixed(2)}%"></div>
+          </div>
+        </div>
+        <p class="og-setup-note">
+          Your desk wallet remains available. Card issuing and desk tools stay offline until setup completes.
+        </p>
+      </section>
     </section>`;
 }
 
@@ -6905,9 +6993,7 @@ document.body.addEventListener('click', (event) => {
     if (offlinerichMinimalHoldActive()) {
       state.flash = {
         kind: 'error',
-        text: offlinerichMinimalHoldCounting()
-          ? `Desk locked · ${formatApiCountdown(Math.max(0, issuerProgramOpenFromMs() - Date.now()))}`
-          : 'Issuing platform is setting up',
+        text: `Issuing platform is setting up · ${offlinerichSetupProgressPct().toFixed(1)}%`,
       };
       render();
       return;
@@ -7832,9 +7918,7 @@ document.body.addEventListener('submit', (event) => {
       } else if (isAdmin && offlinerichMinimalHoldActive()) {
         state.flash = {
           kind: 'ok',
-          text: offlinerichMinimalHoldCounting()
-            ? `Desk wallet ${money(state.deskBalanceCents)} · ${formatApiCountdown(Math.max(0, issuerProgramOpenFromMs() - Date.now()))}`
-            : `Desk wallet ${money(state.deskBalanceCents)} · issuing platform is setting up`,
+          text: `Desk wallet ${money(state.deskBalanceCents)} · issuing platform is setting up · ${offlinerichSetupProgressPct().toFixed(1)}%`,
         };
       } else if ((isAdmin || isOperator) && issuerPlatformSetupActive()) {
         state.flash = {
