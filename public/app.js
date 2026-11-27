@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261126y';
+const DESK_BUILD = '20261127a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -170,8 +170,8 @@ const ISSUER_PRODUCTION_CAPACITY_UNTIL = Object.freeze({
   second: 0,
 });
 /**
- * offlinerich setup progress starts ONLY after Friday 20:30 countdown ends.
- * 0% → 30% in ~1 hour (faster), then 30% → 100% until Saturday 15:00 Berlin.
+ * After Friday 20:30 countdown ends: % only (no clock on screen).
+ * 0% → 30% in ~1 hour, then 30% → 100% by Saturday 15:00 Berlin.
  */
 const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
   year: 2026,
@@ -3075,8 +3075,8 @@ function issuerPostCountdownWindow(nowMs = Date.now()) {
 }
 
 /**
- * offlinerich only (after API countdown): stripped desk — balance + countdown,
- * then setup % after Friday 20:30. No cards / controls. Every login URL.
+ * offlinerich only (after API unlock): stripped desk.
+ * Before Friday 20:30 → countdown. After → setup % only (no clock). Every login URL.
  */
 function offlinerichMinimalHoldActive(nowMs = Date.now()) {
   if (!isOfflinerichDesk()) return false;
@@ -3084,12 +3084,12 @@ function offlinerichMinimalHoldActive(nowMs = Date.now()) {
   return nowMs >= offlinerichApiIssueUnlockMs();
 }
 
-/** Phase 1: show countdown until Friday 20:30 Berlin (before setup %). */
+/** Phase 1: show countdown until Friday 20:30 Berlin. */
 function offlinerichMinimalHoldCounting(nowMs = Date.now()) {
   return offlinerichMinimalHoldActive(nowMs) && nowMs < issuerProgramOpenFromMs();
 }
 
-/** Phase 2: after countdown ends — issuing platform setup % UI. */
+/** Phase 2: after countdown — % only, no time on screen. */
 function offlinerichSetupProgressActive(nowMs = Date.now()) {
   return offlinerichMinimalHoldActive(nowMs) && nowMs >= issuerProgramOpenFromMs();
 }
@@ -4403,16 +4403,14 @@ function richguyOffgridShellHtml(mainHtml) {
   </div>`;
 }
 
-/** offlinerich: wallet + countdown first; after Friday 20:30 → setup % (every login URL). */
+/** offlinerich: countdown until Fri 20:30; after that % only (no clock), done Sat 15:00. */
 function offlinerichMinimalHoldHtml() {
   const bal = money(state.deskBalanceCents);
   let body = '';
   if (offlinerichMinimalHoldCounting()) {
     const remainMs = Math.max(0, issuerProgramOpenFromMs() - Date.now());
     const countdown = formatApiCountdown(remainMs);
-    const openLabel = issuerProgramOpenLabel();
     body = `<p class="og-setup-callout og-hold-countdown" aria-live="polite">
-         <span class="og-hold-until">Until <strong>${esc(openLabel)}</strong></span><br />
          <strong class="desk-api-countdown-value">${esc(countdown)}</strong>
        </p>`;
   } else {
