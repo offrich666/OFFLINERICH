@@ -1930,6 +1930,67 @@ a.desk-issuer-mail { color: #7a2424; font-weight: 650; font-size: 14px; text-dec
   color: #f2f2f2;
   font-size: 1.25rem;
 }
+.og-setup-panel {
+  width: 100%;
+  margin: 0 0 22px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(28, 34, 30, 0.95), rgba(18, 22, 20, 0.98));
+  border: 1px solid rgba(196, 168, 110, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.og-setup-kicker {
+  margin: 0 0 6px;
+  color: #c4a86e;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.og-setup-panel h2 {
+  margin: 0 0 10px;
+  color: #f3efe6;
+  font-size: 1.28rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+.og-setup-lede,
+.og-setup-note {
+  margin: 0 0 12px;
+  color: #b9c2b8;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+.og-setup-callout {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(196, 168, 110, 0.08);
+  border: 1px solid rgba(196, 168, 110, 0.22);
+  color: #e8e2d4;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.og-setup-steps {
+  margin: 0 0 12px;
+  padding: 0 0 0 1.1rem;
+  color: #d5ddd4;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.og-setup-steps li + li {
+  margin-top: 6px;
+}
+.og-setup-steps strong {
+  color: #f0ebe1;
+}
+.og-issue-preview {
+  width: 100%;
+  margin: 8px 0 18px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(196, 168, 110, 0.35);
+  background: rgba(24, 28, 26, 0.7);
+}
 .og-plastic {
   width: min(340px, 88vw);
   aspect-ratio: 1.62 / 1;
