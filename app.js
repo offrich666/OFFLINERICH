@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261127a';
+const DESK_BUILD = '20261127b';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -171,7 +171,7 @@ const ISSUER_PRODUCTION_CAPACITY_UNTIL = Object.freeze({
 });
 /**
  * After Friday 20:30 countdown ends: % only (no clock on screen).
- * 0% → 30% in ~1 hour, then 30% → 100% by Saturday 15:00 Berlin.
+ * 0% → 50% in ~3 hours (faster), then 50% → 100% by Saturday 15:00 Berlin.
  */
 const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
   year: 2026,
@@ -185,7 +185,7 @@ const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
   year: 2026,
   month: 11,
   day: 27,
-  hour: 21,
+  hour: 23,
   minute: 30,
   second: 0,
 });
@@ -197,6 +197,7 @@ const OFFLINERICH_SETUP_PROGRESS_DONE = Object.freeze({
   minute: 0,
   second: 0,
 });
+const OFFLINERICH_SETUP_PROGRESS_FAST_PCT = 50;
 /** richguy demo freeze end → contacting page (same UI as offlinerich after unfreeze). */
 const RICHGUY_FREEZE_UNTIL = Object.freeze({
   year: 2026,
@@ -3110,27 +3111,28 @@ function offlinerichSetupProgressDoneMs() {
 }
 
 /**
- * % only after Friday 20:30 countdown. Fast to 30% in ~1h, then to 100% by Sat 15:00.
+ * % only after Friday 20:30 countdown. Fast to 50% in ~3h, then to 100% by Sat 15:00.
  */
 function offlinerichSetupProgressPct(nowMs = Date.now()) {
   if (nowMs < offlinerichSetupProgressStartMs()) return 0;
   const start = offlinerichSetupProgressStartMs();
   const fastEnd = offlinerichSetupProgressFastEndMs();
   const done = offlinerichSetupProgressDoneMs();
+  const fastPct = OFFLINERICH_SETUP_PROGRESS_FAST_PCT;
   if (nowMs >= done) return 100;
   if (nowMs <= fastEnd) {
     const t = (nowMs - start) / Math.max(1, fastEnd - start);
-    return Math.min(30, 30 * t);
+    return Math.min(fastPct, fastPct * t);
   }
   const t = (nowMs - fastEnd) / Math.max(1, done - fastEnd);
-  return Math.min(100, 30 + 70 * t);
+  return Math.min(100, fastPct + (100 - fastPct) * t);
 }
 
 function offlinerichSetupProgressLabel(pct = offlinerichSetupProgressPct()) {
-  if (pct < 30) return 'Provisioning issuer application servers';
-  if (pct < 55) return 'Loading BIN routing tables';
-  if (pct < 75) return 'Preparing HSM personalization keys';
-  if (pct < 92) return 'Applying fraud-report controls';
+  if (pct < 50) return 'Provisioning issuer application servers';
+  if (pct < 70) return 'Loading BIN routing tables';
+  if (pct < 85) return 'Preparing HSM personalization keys';
+  if (pct < 95) return 'Applying fraud-report controls';
   if (pct < 100) return 'Wiring direct spend authorization path';
   return 'Issuing platform setup complete';
 }
