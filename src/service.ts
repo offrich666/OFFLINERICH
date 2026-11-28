@@ -30,6 +30,7 @@ import { ADMIN_EMAIL, ADMIN_USERNAME } from './admin.ts';
 import { createPay2Client, parseExpiry, type Pay2Client } from './pay2.ts';
 import type { PriceClient } from './prices.ts';
 import { linkMessage, signatureMatches } from './signature.ts';
+import { createStripeIssuingClient, type StripeIssuingClient } from './stripe-issuing.ts';
 import type { CardRow, ImmersveSession, Store } from './store.ts';
 import { requestSamsungCardData } from './visa.ts';
 
@@ -40,6 +41,7 @@ export type Ctx = {
   prices: PriceClient;
   issuer: ImmersveIssuer;
   pay2: Pay2Client | null;
+  stripe: StripeIssuingClient | null;
   fetchImpl: typeof fetch;
   now: () => number;
 };
@@ -682,11 +684,13 @@ export function requireLive(ctx: Ctx): void {
 }
 
 export function requireIssuer(ctx: Ctx): void {
+  if (ctx.config.stripeReady && ctx.stripe) return;
   if (ctx.config.pay2Ready && ctx.pay2) return;
   requireLive(ctx);
 }
 
-export function activeIssuer(ctx: Ctx): 'pay2' | 'immersve' | 'none' {
+export function activeIssuer(ctx: Ctx): 'stripe' | 'pay2' | 'immersve' | 'none' {
+  if (ctx.config.stripeReady && ctx.stripe) return 'stripe';
   if (ctx.config.pay2Ready && ctx.pay2) return 'pay2';
   if (ctx.config.livemode) return 'immersve';
   return 'none';
@@ -911,6 +915,56 @@ export async function connectPay2(
   };
 }
 
+export async function connectStripe(
+  ctx: Ctx,
+  input: {
+    secretKey?: string;
+    publishableKey?: string;
+    currency?: string;
+  },
+) {
+  if (ctx.config.stripeSecretKey && process.env.STRIPE_SECRET_KEY?.trim()) {
+    throw new HttpError(
+      409,
+      'already_connected',
+      'Stripe Issuing is already set in the server environment (STRIPE_SECRET_KEY).',
+    );
+  }
+  const secretKey = (input.secretKey ?? '').trim();
+  const publishableKey = (input.publishableKey ?? '').trim();
+  const currency = ((input.currency ?? ctx.config.stripeCurrency) || 'eur').trim().toLowerCase();
+  if (!secretKey.startsWith('sk_')) {
+    throw new HttpError(
+      400,
+      'stripe_credentials_required',
+      'Paste the Stripe secret key (sk_live_… or sk_test_…) from dashboard.stripe.com/apikeys after Issuing is activated.',
+    );
+  }
+  if (publishableKey && !publishableKey.startsWith('pk_')) {
+    throw new HttpError(400, 'invalid_publishable_key', 'Publishable keys start with pk_.');
+  }
+  if (!/^[a-z]{3}$/.test(currency)) {
+    throw new HttpError(400, 'invalid_currency', 'Use a three-letter currency such as eur.');
+  }
+  const client = createStripeIssuingClient({
+    secretKey,
+    fetchImpl: ctx.fetchImpl,
+  });
+  const probed = await client.probe();
+  ctx.config.stripeSecretKey = secretKey;
+  if (publishableKey) ctx.config.stripePublishableKey = publishableKey;
+  ctx.config.stripeCurrency = currency;
+  ctx.config.stripeReady = true;
+  ctx.stripe = client;
+  ctx.store.setSetting('stripe_secret_key', secretKey);
+  if (publishableKey) ctx.store.setSetting('stripe_publishable_key', publishableKey);
+  return {
+    issuer: 'stripe' as const,
+    currency: probed.currency || currency,
+    issuingAvailableCents: probed.issuingAvailableCents,
+  };
+}
+
 function printedName(first: string, last: string): string {
   const name = `${first} ${last}`.trim().replace(/\s+/g, ' ');
   if (!/^[A-Za-z][A-Za-z '\-]*$/.test(name)) {
@@ -1031,6 +1085,120 @@ async function issuePay2Card(
   };
 }
 
+async function issueStripeCard(
+  ctx: Ctx,
+  userId: string,
+  input: {
+    firstName: string;
+    lastName: string;
+    name: string;
+    email: string;
+    phone: string;
+    dobYear: number;
+    dobMonth: number;
+    dobDay: number;
+    line1: string;
+    city: string;
+    state: string;
+    postalCode: string;
+    country: string;
+    type: string;
+    termsIp: string;
+  },
+) {
+  if (!ctx.stripe || !ctx.config.stripeReady) {
+    throw new HttpError(
+      400,
+      'stripe_required',
+      'Connect Stripe Issuing (STRIPE_SECRET_KEY) and activate Issuing in the Stripe Dashboard.',
+    );
+  }
+  // Stripe Issuing EU cards need an EEA billing country. Map Balkan codes to IE for G Cards EU.
+  const needsEeaBilling = ['XK', 'KS', 'AL', 'MK', 'BA', 'ME', 'RS'].includes(input.country);
+  const billingCountry = needsEeaBilling ? 'IE' : input.country;
+  const issued = await ctx.stripe.issueVirtualCard({
+    name: input.name,
+    email: input.email,
+    phone: input.phone,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    dobDay: input.dobDay,
+    dobMonth: input.dobMonth,
+    dobYear: input.dobYear,
+    line1: needsEeaBilling ? '1 Grand Canal Street Lower' : input.line1,
+    city: needsEeaBilling ? 'Dublin' : input.city,
+    state: needsEeaBilling ? 'D' : input.state || 'IE',
+    postalCode: needsEeaBilling ? 'D02' : input.postalCode,
+    country: billingCountry,
+    currency: ctx.config.stripeCurrency,
+  });
+  const termsAcceptedAt = ctx.now();
+  const existing = ctx.store.getCardholder(userId);
+  ctx.store.saveCardholder({
+    userId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email,
+    phone: input.phone,
+    dobDay: input.dobDay,
+    dobMonth: input.dobMonth,
+    dobYear: input.dobYear,
+    line1: input.line1,
+    city: input.city,
+    state: input.state,
+    postalCode: input.postalCode,
+    country: input.country,
+    termsAcceptedAt,
+    termsIp: input.termsIp || '127.0.0.1',
+    issuerCardholderId: issued.cardholderId,
+    issuerMode: 'stripe',
+    createdAt: existing?.createdAt ?? termsAcceptedAt,
+  });
+  const cardId = id('card_');
+  ctx.store.insertCard({
+    id: cardId,
+    userId,
+    issuerCardId: issued.cardId,
+    issuerMode: 'stripe',
+    type: input.type,
+    currency: issued.currency || ctx.config.stripeCurrency,
+    status: issued.status === 'active' ? 'active' : 'inactive',
+    brand: issued.brand || 'mastercard',
+    last4: issued.last4,
+    expMonth: issued.expMonth,
+    expYear: issued.expYear,
+    vCardId: '',
+    spendingLimitCents: 0,
+    syncError: '',
+    createdAt: ctx.now(),
+  });
+  ctx.store.addWalletEvent({
+    id: id('wal_'),
+    userId,
+    cardId,
+    wallet: 'stripe_issue',
+    status: 'issued',
+    detail: `Stripe ${issued.cardId}`,
+    createdAt: ctx.now(),
+  });
+  const card = ctx.store.getCardByUser(userId);
+  return {
+    status: 'issued' as const,
+    card: card ? publicCard(card) : null,
+    depositAddress: null,
+    panHint: issued.last4,
+    secrets: issued.pan && issued.cvv
+      ? {
+          pan: issued.pan,
+          cvv: issued.cvv,
+          expMonth: issued.expMonth,
+          expYear: issued.expYear,
+          brand: issued.brand,
+        }
+      : null,
+  };
+}
+
 export async function issueCard(
   ctx: Ctx,
   userId: string,
@@ -1086,6 +1254,25 @@ export async function issueCard(
   }
   if (!/^[A-Z]{2}$/.test(country)) throw new HttpError(400, 'invalid_country', 'Enter the country as two letters, such as US.');
   const type = input.type === 'physical' ? 'physical' : 'virtual';
+  if (activeIssuer(ctx) === 'stripe') {
+    return issueStripeCard(ctx, userId, {
+      firstName,
+      lastName,
+      name,
+      email,
+      phone,
+      dobYear,
+      dobMonth,
+      dobDay,
+      line1,
+      city,
+      state,
+      postalCode,
+      country,
+      type,
+      termsIp,
+    });
+  }
   if (activeIssuer(ctx) === 'pay2') {
     return issuePay2Card(ctx, userId, {
       firstName,
@@ -1201,13 +1388,14 @@ export function describeWallet(
   const holder = ctx.store.getCardholder(userId);
   const pushReady =
     (card.issuerMode === 'immersve' && ctx.config.livemode) || (card.issuerMode === 'pay2' && ctx.config.pay2Ready);
+  const stripeManual = card.issuerMode === 'stripe' && ctx.config.stripeReady;
   ctx.store.addWalletEvent({
     id: id('wal_'),
     userId,
     cardId: card.id,
     wallet,
     status: 'prepare',
-    detail: pushReady ? 'immersve' : 'live_key_required',
+    detail: stripeManual ? 'stripe' : pushReady ? 'immersve' : 'live_key_required',
     createdAt: ctx.now(),
   });
   return {
@@ -1218,23 +1406,45 @@ export function describeWallet(
     paymentNetwork: card.brand,
     encryptionScheme: 'ECC_V2',
     manual: {
-      available: Boolean(holder?.phone && holder.email),
+      available: Boolean(holder?.phone && holder.email) || stripeManual,
       steps: MANUAL_STEPS,
     },
     push: {
       available: pushReady,
       endpoint: '/api/wallets/ephemeral-key',
-      note: pushReady
-        ? wallet === 'apple_pay'
-          ? 'The iPhone app sends the PassKit certificate chain to POST /api/wallets/apple. Immersve returns the Apple Pay payload.'
-          : 'Open the one-time secure card link and type the card into the wallet.'
-        : 'Issue this card with live Immersve. Apple Pay, Google Pay, and Samsung Pay add that card.',
+      note: stripeManual
+        ? 'Show the Stripe Issuing PAN on the desk, then add it manually in Apple Wallet / Google Wallet.'
+        : pushReady
+          ? wallet === 'apple_pay'
+            ? 'The iPhone app sends the PassKit certificate chain to POST /api/wallets/apple. Immersve returns the Apple Pay payload.'
+            : 'Open the one-time secure card link and type the card into the wallet.'
+          : 'Issue this card with Stripe Issuing or live Immersve. Apple Pay, Google Pay, and Samsung Pay add that card.',
     },
   };
 }
 
 export async function secureCardLink(ctx: Ctx, userId: string) {
   const card = requireCard(ctx, userId);
+  if (card.issuerMode === 'stripe') {
+    if (!ctx.stripe || !ctx.config.stripeReady) {
+      throw new HttpError(409, 'stripe_required', 'Connect Stripe Issuing on the desk to read this card number.');
+    }
+    const details = await ctx.stripe.cardSecrets(card.issuerCardId);
+    const pan = details.pan.replace(/\D/g, '');
+    const grouped = pan.replace(/(\d{4})(?=\d)/g, '$1 ').trim();
+    const expiry = `${String(details.expMonth).padStart(2, '0')}/${String(details.expYear).slice(-2)}`;
+    return {
+      mode: 'stripe' as const,
+      cardId: card.issuerCardId,
+      pan: grouped,
+      cvv: details.cvv,
+      expiry,
+      expirationDate: expiry,
+      brand: details.brand,
+      last4: details.last4,
+      html: `<div style="font:20px/1.4 ui-monospace,monospace;padding:16px">${grouped}<br>${expiry} · CVV ${details.cvv}</div>`,
+    };
+  }
   if (card.issuerMode === 'pay2') {
     if (!ctx.pay2 || !ctx.config.pay2Ready) {
       throw new HttpError(409, 'pay2_required', 'Connect Pay2.House on the desk to read this card number.');

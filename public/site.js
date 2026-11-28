@@ -14,13 +14,14 @@
     host.endsWith('.tmp.now');
 
   /** Your personal domain — primary public URL for PC and iPhone. */
-  const CUSTOM_ORIGIN = 'https://g-cards.eu';
+  const CUSTOM_ORIGIN = 'https://www.g-cards.eu';
 
-  const LIVE_SHA = 'f1852c370a839a2485c8d6bf8dc375dc33c30734';
+  const LIVE_SHA = 'a0ddad92ef46a8d6351c33170107c802cef30e2f';
   const MIRROR_HTML =
     'https://rawcdn.githack.com/offrich666/OFFLINERICH/' + LIVE_SHA + '/public';
+  // Prefer SHA assets (cache-stable across Chrome / Safari / mobile). Branch tip lags on jsDelivr.
   const MIRROR_ASSETS =
-    'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@gcards-eu-live/public';
+    'https://cdn.jsdelivr.net/gh/offrich666/OFFLINERICH@' + LIVE_SHA + '/public';
 
   const PERMANENT_HTML = onCustomDomain ? CUSTOM_ORIGIN : CUSTOM_ORIGIN;
   const PERMANENT_INDEX = CUSTOM_ORIGIN + '/';
@@ -32,6 +33,8 @@
       if (file === 'index.html' || file === './' || file === '') return '/';
       if (file === 'desk.html') return '/desk';
       if (file === 'company.html') return '/company';
+      if (file === 'pay.html') return '/pay';
+      if (file === 'integration.html') return '/integration';
       return '/' + file.replace(/^\.\//, '');
     }
     if (staticHost) {
@@ -40,11 +43,27 @@
     if (file === 'index.html' || file === './' || file === '') return `${location.origin}/`;
     if (file === 'desk.html') return `${location.origin}/desk`;
     if (file === 'company.html') return `${location.origin}/company`;
+    if (file === 'pay.html') return `${location.origin}/pay`;
+    if (file === 'integration.html') return `${location.origin}/integration`;
     return `${location.origin}/${file.replace(/^\.\//, '')}`;
   }
 
   function hasApi() {
     return !staticHost;
+  }
+
+  /** True on localhost / LAN IP — desk login may open. Public domain stays on security hold. */
+  function isLanHost() {
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+    if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+    return false;
+  }
+
+  /** Desk sign-in never opens on public or LAN — always security hold / wait. */
+  function deskLoginOpens() {
+    return false;
   }
 
   function qrImageUrl(text) {
@@ -59,6 +78,12 @@
       });
       document.querySelectorAll('a[href="company.html"], a[href="./company.html"]').forEach((a) => {
         a.setAttribute('href', '/company');
+      });
+      document.querySelectorAll('a[href="pay.html"], a[href="./pay.html"]').forEach((a) => {
+        a.setAttribute('href', '/pay');
+      });
+      document.querySelectorAll('a[href="integration.html"], a[href="./integration.html"]').forEach((a) => {
+        a.setAttribute('href', '/integration');
       });
       document.querySelectorAll('a[href="index.html"], a[href="./index.html"]').forEach((a) => {
         a.setAttribute('href', '/');
@@ -92,6 +117,8 @@
     staticHost,
     onCustomDomain,
     hasApi,
+    isLanHost,
+    deskLoginOpens,
     pageUrl,
     qrImageUrl,
     fixStaticNav,
