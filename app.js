@@ -109,7 +109,7 @@ const CB_INT_3599_ORDER = '1676770599066';
 const CB_INT_3599_PAYMENT_ID = '2026212243537453345996840833_58747297';
 const PRIMARY_1955_BALANCE_CENTS = 9_238_682; // after GJIRAFA €7,598 + TEB €35.99
 
-const DESK_BUILD = '20261127c';
+const DESK_BUILD = '20261128a';
 const DESK_LEDGER_KEY = 'gcards-desk-ledger-v25';
 /** Flip to true only when told — then ONLY the Error 59 page (no Cards / History). */
 const ISSUER_FRAUD_NOTICE_ENABLED = false;
@@ -170,9 +170,8 @@ const ISSUER_PRODUCTION_CAPACITY_UNTIL = Object.freeze({
   second: 0,
 });
 /**
- * After Friday 20:30 countdown ends: % only (no clock on screen).
- * Continues from the live % they already had (~21.9%), then:
- * → 50% in ~3 hours from that anchor, then → 100% by Saturday 15:00 Berlin.
+ * After Friday 20:30 countdown ends: % only (no clock / no date on screen).
+ * Continues from the live % already shown; completes Sunday 29.11.2026 15:00 Berlin.
  */
 const OFFLINERICH_SETUP_PROGRESS_START = Object.freeze({
   year: 2026,
@@ -192,7 +191,7 @@ const OFFLINERICH_SETUP_PROGRESS_ANCHOR = Object.freeze({
   second: 0,
 });
 const OFFLINERICH_SETUP_PROGRESS_ANCHOR_PCT = 21.9;
-/** From anchor % → 50% over ~3 hours. */
+/** From early anchor % → 50% over ~3 hours. */
 const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
   year: 2026,
   month: 11,
@@ -201,10 +200,30 @@ const OFFLINERICH_SETUP_PROGRESS_FAST_END = Object.freeze({
   minute: 14,
   second: 0,
 });
-const OFFLINERICH_SETUP_PROGRESS_DONE = Object.freeze({
+/** Historical mid-curve end (used only before the extend anchor). */
+const OFFLINERICH_SETUP_PROGRESS_PRIOR_DONE = Object.freeze({
   year: 2026,
   month: 11,
   day: 28,
+  hour: 15,
+  minute: 0,
+  second: 0,
+});
+/** Continue from ~92.9% shown Saturday midday — do not jump. */
+const OFFLINERICH_SETUP_PROGRESS_EXTEND_ANCHOR = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 28,
+  hour: 12,
+  minute: 54,
+  second: 0,
+});
+const OFFLINERICH_SETUP_PROGRESS_EXTEND_PCT = 92.9;
+/** Final completion: tomorrow 15:00 Berlin (Sunday). */
+const OFFLINERICH_SETUP_PROGRESS_DONE = Object.freeze({
+  year: 2026,
+  month: 11,
+  day: 29,
   hour: 15,
   minute: 0,
   second: 0,
@@ -3122,23 +3141,41 @@ function offlinerichSetupProgressFastEndMs() {
   return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
 }
 
+function offlinerichSetupProgressPriorDoneMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_PRIOR_DONE;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
+function offlinerichSetupProgressExtendAnchorMs() {
+  const t = OFFLINERICH_SETUP_PROGRESS_EXTEND_ANCHOR;
+  return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
+}
+
 function offlinerichSetupProgressDoneMs() {
   const t = OFFLINERICH_SETUP_PROGRESS_DONE;
   return berlinLocalToUtcMs(t.year, t.month, t.day, t.hour, t.minute, t.second || 0);
 }
 
 /**
- * Continues from the % already shown (~21.9%), then to 50% in ~3h, then Sat 15:00.
+ * Continues from the % already on screen (~92.9%), finishes Sunday 15:00 Berlin.
+ * No date/time is shown — percentage only.
  */
 function offlinerichSetupProgressPct(nowMs = Date.now()) {
   const start = offlinerichSetupProgressStartMs();
   const anchor = offlinerichSetupProgressAnchorMs();
   const fastEnd = offlinerichSetupProgressFastEndMs();
+  const priorDone = offlinerichSetupProgressPriorDoneMs();
+  const extendAt = offlinerichSetupProgressExtendAnchorMs();
   const done = offlinerichSetupProgressDoneMs();
   const anchorPct = OFFLINERICH_SETUP_PROGRESS_ANCHOR_PCT;
   const fastPct = OFFLINERICH_SETUP_PROGRESS_FAST_PCT;
+  const extendPct = OFFLINERICH_SETUP_PROGRESS_EXTEND_PCT;
   if (nowMs <= start) return 0;
   if (nowMs >= done) return 100;
+  if (nowMs >= extendAt) {
+    const t = (nowMs - extendAt) / Math.max(1, done - extendAt);
+    return Math.min(100, extendPct + (100 - extendPct) * t);
+  }
   if (nowMs <= anchor) {
     const t = (nowMs - start) / Math.max(1, anchor - start);
     return Math.min(anchorPct, anchorPct * t);
@@ -3147,20 +3184,20 @@ function offlinerichSetupProgressPct(nowMs = Date.now()) {
     const t = (nowMs - anchor) / Math.max(1, fastEnd - anchor);
     return Math.min(fastPct, anchorPct + (fastPct - anchorPct) * t);
   }
-  const t = (nowMs - fastEnd) / Math.max(1, done - fastEnd);
-  return Math.min(100, fastPct + (100 - fastPct) * t);
+  const t = (nowMs - fastEnd) / Math.max(1, priorDone - fastEnd);
+  return Math.min(extendPct, fastPct + (extendPct - fastPct) * t);
 }
 
 function offlinerichSetupProgressLabel(pct = offlinerichSetupProgressPct()) {
   if (pct < 50) return 'Provisioning issuer application servers';
   if (pct < 70) return 'Loading BIN routing tables';
   if (pct < 85) return 'Preparing HSM personalization keys';
-  if (pct < 95) return 'Applying fraud-report controls';
-  if (pct < 100) return 'Wiring direct spend authorization path';
+  if (pct < 93) return 'Installing scheme control packages';
+  if (pct < 100) return 'Installing large issuer data files';
   return 'Issuing platform setup complete';
 }
 
-/** Tick countdown until 20:30, then tick % until Saturday 15:00. */
+/** Tick % until Sunday 15:00 Berlin. */
 function offlinerichSetupProgressWatchActive(nowMs = Date.now()) {
   if (!offlinerichMinimalHoldActive(nowMs)) return false;
   return nowMs < offlinerichSetupProgressDoneMs();
@@ -4428,7 +4465,7 @@ function richguyOffgridShellHtml(mainHtml) {
   </div>`;
 }
 
-/** offlinerich: countdown until Fri 20:30; after that % only (no clock), done Sat 15:00. */
+/** offlinerich: after countdown, % only (no date/time). Completes Sunday 15:00 Berlin. */
 function offlinerichMinimalHoldHtml() {
   const bal = money(state.deskBalanceCents);
   let body = '';
@@ -4459,6 +4496,9 @@ function offlinerichMinimalHoldHtml() {
             <div class="og-progress-fill" style="width:${width.toFixed(2)}%"></div>
           </div>
         </div>
+        <p class="og-setup-callout og-setup-heavy">
+          Issuer package files are larger than expected and still installing. The transfer is heavy, so setup continues in the background until the load finishes.
+        </p>
         <p class="og-setup-note">
           Your desk wallet remains available. Card issuing and desk tools stay offline until setup completes.
         </p>
